@@ -1,7 +1,7 @@
-# QueueBooking FixBug Skill (QA + Debug)
+# Fameline Dock Queue — FixBug Skill (QA + Debug)
 
 ## Purpose
-แนวทางสำหรับ QA, reproduction, root-cause analysis, และแก้บั๊กใน QueueBooking โดยลด regression และไม่ทำให้ tenant อื่นได้รับผลกระทบ
+แนวทางสำหรับ QA, reproduction, root-cause analysis, และแก้บั๊กใน Fameline Dock Queue โดยลด regression และไม่ทำให้ข้อมูลหลุด scope shop_id
 
 ## Scope
 - Public pages (`/`, `/pricing`, `/contact`, `/use-cases`, `/sandbox-demo`)
@@ -13,7 +13,7 @@
 1. Define bug clearly
    - expected behavior
    - actual behavior
-   - environment (role, route, payload, tenant context)
+   - environment (role, route, payload, shop context)
 2. Reproduce minimally
    - ระบุ step-by-step แบบสั้น
    - lock input ให้ซ้ำได้
@@ -45,7 +45,7 @@
 - เช็คข้อความ error ไม่เปิดเผยข้อมูลภายใน
 
 ### C) Auth / Permission Bug
-- ตรวจ role guard และ tenant scope
+- ตรวจ role guard และ shop_id scope
 - ทดสอบอย่างน้อย 2 role (เช่น `shop_owner` และ `staff`)
 - ยืนยันว่าไม่มีการเห็นข้อมูลข้ามร้าน/ข้ามบริษัท
 
@@ -63,7 +63,7 @@
 ## QA Validation Template
 - Repro case: PASS/FAIL
 - Neighboring flow check: PASS/FAIL
-- Role/tenant isolation: PASS/FAIL
+- Role/shop_id scope: PASS/FAIL
 - Typecheck/Lint: PASS/FAIL
 - Notes
 

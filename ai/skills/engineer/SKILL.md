@@ -1,14 +1,14 @@
-# QueueBooking Engineer Skill
+# Fameline Dock Queue — Engineer Skill
 
 ## Purpose
-แนวทางสำหรับการเขียนโค้ดในโปรเจค QueueBooking (Next.js App Router + TypeScript + MUI + Supabase) ให้สอดคล้องกับโครงสร้างเดิม, ปลอดภัยต่อ multi-tenant, และพร้อมใช้งาน production
+แนวทางสำหรับการเขียนโค้ดในโปรเจค Fameline Dock Queue (Next.js App Router + TypeScript + MUI + Supabase) ให้สอดคล้องกับโครงสร้างเดิม, scope ด้วย shop_id เสมอ, และพร้อมใช้งาน production
 
 ## Project Context
 - Framework: Next.js App Router (`src/app`)
 - Language: TypeScript
 - UI: MUI (`@mui/material`, `@mui/icons-material`)
 - Data/Auth: Supabase (`src/lib/supabase`, `src/lib/auth`)
-- Public pages: ใช้ `PublicNavbar` + `PublicFooter` และ metadata/schema ผ่าน Next Metadata API
+- Public pages: `/book/[token]`, `/driver/[token]`, `/display` เป็น Tailwind (ไม่มี MUI provider) และไม่มี SEO — `robots: noindex`
 - Backoffice: อยู่ใต้ `/portal/*`
 
 ## Golden Rules
@@ -20,12 +20,8 @@
 
 ## Coding Conventions
 - Import alias ใช้ `@/...`
-- ตั้งชื่อชัดเจน สอดคล้องโดเมน (`bookings`, `branches`, `services`, `notifications`)
+- ตั้งชื่อชัดเจน สอดคล้องโดเมน (`bookings`, `documents`, `partners`, `docks`, `vehicle types` — ดูตาราง mapping ใน CLAUDE.md)
 - MUI style ใช้ `sx` ตาม pattern เดิม
-- Public SEO page:
-  - export `metadata` หรือ `generateMetadata`
-  - มี `alternates.canonical`
-  - ใส่ JSON-LD ผ่าน `<script type="application/ld+json" ... />`
 - Internal links ใช้ `next/link`
 - รูปภาพใช้ `next/image` เมื่อเหมาะสม และระบุ `width/height/alt`
 
@@ -38,8 +34,9 @@
 
 ## Database / Supabase Checklist
 - ถ้าต้องเปลี่ยน schema: เพิ่ม migration ใหม่ใน `supabase/migrations/`
-- ต้องคำนึงถึง RLS policy (`supabase/rls.sql` และ migration ที่เกี่ยวข้อง)
-- ห้าม query ข้าม tenant โดยไม่มีเงื่อนไข `company_id`/`shop_id` (ตามโดเมน)
+- ต้องคำนึงถึง RLS policy (ดู `202605090004_rls.sql` และ migration ที่เกี่ยวข้อง)
+- ห้าม query โดยไม่มีเงื่อนไข `shop_id`
+- ทดสอบ chain ด้วย `scripts/apply-migrations.sh` บน DB เปล่าก่อน commit
 
 ## Frontend Page Checklist
 - Mobile-first และ responsive (`Grid`, `Stack`, `Container`)
@@ -51,7 +48,7 @@
 1. รัน `npm run typecheck`
 2. รัน `npm run lint` (ถ้าสcopeงานแตะ frontend/API)
 3. ทดสอบเส้นทางที่เปลี่ยนทั้ง happy path และ error path
-4. ตรวจ metadata, canonical, และ structured data ถ้าเป็นหน้า public
+4. รัน `npm run test` เมื่อแตะ `src/lib/**` (pure logic ต้องมี vitest)
 
 ## Output Format (when reporting work)
 - What changed

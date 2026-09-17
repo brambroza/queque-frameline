@@ -12,6 +12,7 @@ for f in "$DIR"/*.sql; do
   name="$(basename "$f")"
   if [[ -n "$FROM" && "$name" < "$FROM" ]]; then continue; fi
   echo "==> $name"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+  # -1 = one transaction per file, the same way `supabase db push` applies them.
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -1 -f "$f"
 done
 echo "all migrations applied"
