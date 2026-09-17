@@ -3,6 +3,7 @@
 import { Chip } from '@mui/material';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { getStatusMeta } from '@/lib/booking/status-meta';
+import { STATUS_LABEL } from '@/components/bookings/booking-types';
 
 /**
  * Booking status chip. Colour comes from the shared `STATUS_META` map so it matches
@@ -10,5 +11,5 @@ import { getStatusMeta } from '@/lib/booking/status-meta';
  */
 export function StatusChip({ status }: { status: string }) {
   const { t } = useTranslation('status');
-  return <Chip size="small" label={t(status, status)} color={getStatusMeta(status).palette} variant="filled" />;
+  return <Chip size="small" label={t(status, (STATUS_LABEL as Record<string, string>)[status] ?? status)} color={getStatusMeta(status).palette} variant="filled" />;
 }

@@ -1,241 +1,216 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Divider,
-  Drawer,
-  IconButton,
-  MenuItem,
-  Stack,
-  Step,
-  StepLabel,
-  Stepper,
-  TextField,
-  Typography,
+  Alert, Autocomplete, Box, Button, Divider, Drawer, IconButton, MenuItem, Stack, Step, StepLabel, Stepper,
+  TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { useTranslation } from '@/lib/i18n/useTranslation';
-import { NICKNAME_MAX } from '@/lib/booking/customer-label';
-import { formatDateDMY, getTodayISOInBangkok } from '@/lib/utils/date-format';
-import type { Branch, LineUser, Resource, Service } from './booking-types';
-import { filterResourcesForService } from '@/lib/booking/resource-service-link';
+import type { BookingDirection } from '@/types/db';
+import { isPlausiblePlate } from '@/lib/booking/plate';
+import { formatDateDMY } from '@/lib/utils/date-format';
+import { DockSlotPicker } from './dock-slot-picker';
+import { DIRECTION_META, type Dock, type DocumentOption, type VehicleType } from './booking-types';
 
 export type CreateDraft = {
-  branch_id: string;
+  direction: BookingDirection;
+  document_id: string;
+  partner_name: string;
+  partner_phone: string;
   service_id: string;
+  resource_id: string;
   booking_date: string;
   start_time: string;
-  party_size: string;
-  resource_id: string;
-  customer_name: string;
-  customer_nickname: string;
-  customer_phone: string;
+  plate_number: string;
+  driver_name: string;
+  driver_phone: string;
+  receiver_name: string;
+  receiver_phone: string;
   note: string;
 };
 
-export type CreateResult = { queueNo: string; branch: string; service: string; date: string; time: string };
+export type CreateResult = { queueNo: string; doNumber: string | null; date: string; time: string; vehicle: string };
 
-export const EMPTY_CREATE_DRAFT: CreateDraft = {
-  branch_id: '', service_id: '', booking_date: '', start_time: '',
-  party_size: '', resource_id: '', customer_name: '', customer_nickname: '', customer_phone: '', note: '',
+const EMPTY: CreateDraft = {
+  direction: 'outbound', document_id: '', partner_name: '', partner_phone: '', service_id: '', resource_id: '',
+  booking_date: '', start_time: '', plate_number: '', driver_name: '', driver_phone: '', receiver_name: '', receiver_phone: '', note: '',
 };
 
 /**
- * Three-step walk-in booking drawer: customer, slot, result.
- * The parent owns submission so the list can refresh after success.
+ * Admin / staff "สร้างคิว": 1) direction, document or partner, vehicle
+ * 2) free day + slot 3) result. The parent owns submission so the list refreshes.
  */
 export function BookingCreateDrawer({
-  open,
-  onClose,
-  branches,
-  services,
-  lineUsers,
-  resources,
-  resourceLabel,
-  creating,
-  result,
-  onSubmit,
-  onReset,
+  open, onClose, vehicleTypes, docks, creating, result, onSubmit, onReset,
 }: {
   open: boolean;
   onClose: () => void;
-  branches: Branch[];
-  services: Service[];
-  lineUsers: LineUser[];
-  resources: Resource[];
-  resourceLabel: string;
+  vehicleTypes: VehicleType[];
+  docks: Dock[];
   creating: boolean;
-  /** Set by the parent after a successful create; switches to the result step. */
   result: CreateResult | null;
-  onSubmit: (draft: CreateDraft, lineUserId: string) => void;
+  onSubmit: (draft: CreateDraft) => void;
   onReset: () => void;
 }) {
-  const { t } = useTranslation('bookings');
   const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<CreateDraft>(EMPTY_CREATE_DRAFT);
-  const [lineUserId, setLineUserId] = useState('');
+  const [draft, setDraft] = useState<CreateDraft>(EMPTY);
+  const [docOptions, setDocOptions] = useState<DocumentOption[]>([]);
+  const [docQuery, setDocQuery] = useState('');
+  const [selectedDoc, setSelectedDoc] = useState<DocumentOption | null>(null);
 
   const activeStep = result ? 2 : step;
   const set = (key: keyof CreateDraft) => (e: React.ChangeEvent<HTMLInputElement>) => setDraft((p) => ({ ...p, [key]: e.target.value }));
+  const docType = draft.direction === 'outbound' ? 'so' : 'po';
+  const dir = DIRECTION_META[draft.direction];
 
-  const step1Ok = Boolean(draft.branch_id && draft.service_id && draft.customer_name.trim() && draft.customer_phone.trim());
+  // Document search, debounced. Only open / booked documents of the matching type.
+  useEffect(() => {
+    if (!open) return;
+    const ctl = new AbortController();
+    const id = setTimeout(() => {
+      fetch(`/api/documents?${new URLSearchParams({ doc_type: docType, bookable: '1', page_size: '20', q: docQuery })}`, { cache: 'no-store', signal: ctl.signal })
+        .then((r) => r.json())
+        .then((j: { data?: DocumentOption[] }) => setDocOptions(j.data ?? []))
+        .catch(() => undefined);
+    }, 250);
+    return () => { clearTimeout(id); ctl.abort(); };
+  }, [open, docType, docQuery]);
+
+  const vehicleOptions = useMemo(
+    () => vehicleTypes.filter((v) => v.active !== false && (!v.direction || v.direction === draft.direction)),
+    [vehicleTypes, draft.direction],
+  );
+  const dockOptions = useMemo(
+    () => docks.filter((d) => d.active !== false && d.resource_type === 'dock' && (!d.direction || d.direction === draft.direction)
+      && (!d.service_ids || d.service_ids.length === 0 || !draft.service_id || d.service_ids.includes(draft.service_id))),
+    [docks, draft.direction, draft.service_id],
+  );
+
+  const plateOk = isPlausiblePlate(draft.plate_number);
+  const partnerOk = Boolean(selectedDoc || draft.partner_name.trim());
+  const step1Ok = Boolean(partnerOk && draft.service_id && plateOk);
   const step2Ok = Boolean(draft.booking_date && draft.start_time);
 
   function resetAll() {
     setStep(0);
-    setDraft(EMPTY_CREATE_DRAFT);
-    setLineUserId('');
+    setDraft(EMPTY);
+    setSelectedDoc(null);
+    setDocQuery('');
     onReset();
   }
 
   function handleClose() {
     if (creating) return;
     onClose();
-    // Reset after the slide-out so the form does not flash empty while closing.
-    setTimeout(resetAll, 200);
+    setTimeout(resetAll, 200); // after the slide-out, so the form does not flash empty
   }
 
-  // Resources linked to specific services only show up for those services.
-  const resourceOptions = filterResourcesForService(
-    resources.filter((r) => !r.branch_id || r.branch_id === draft.branch_id),
-    draft.service_id,
-  );
-
-  /** LINE profile avatar + "nickname (display name)" for the picker. */
-  function renderLineUser(u: LineUser) {
-    const displayName = u.display_name?.trim() || 'LINE User';
-    const nickname = u.nickname?.trim() || '';
-    return (
-      <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0 }}>
-        <Avatar src={u.picture_url ?? undefined} alt={displayName} sx={{ width: 28, height: 28, fontSize: 13 }}>
-          {(nickname || displayName).charAt(0)}
-        </Avatar>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="body2" noWrap>
-            {nickname ? <><b>{nickname}</b> ({displayName})</> : displayName}
-          </Typography>
-        </Box>
-      </Stack>
-    );
+  function changeDirection(next: BookingDirection | null) {
+    if (!next || next === draft.direction) return;
+    // Documents, vehicle types and docks are all direction-specific.
+    setSelectedDoc(null);
+    setDraft((p) => ({ ...p, direction: next, document_id: '', service_id: '', resource_id: '', booking_date: '', start_time: '' }));
   }
-
-  const selectedLineUser = lineUsers.find((x) => x.id === lineUserId) ?? null;
 
   return (
-    <Drawer anchor="right" open={open} onClose={handleClose} PaperProps={{ sx: { width: { xs: '100%', sm: 520 } } }}>
+    <Drawer anchor="right" open={open} onClose={handleClose} PaperProps={{ sx: { width: { xs: '100%', sm: 560 } } }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 3, py: 2 }}>
-        <Typography variant="h6" fontWeight={700}>{t('add_queue', 'เพิ่มคิวใหม่')}</Typography>
-        <IconButton onClick={handleClose} aria-label={t('close', 'ปิด')} disabled={creating}><CloseRoundedIcon /></IconButton>
+        <Typography variant="h6" fontWeight={700}>สร้างคิว</Typography>
+        <IconButton onClick={handleClose} aria-label="ปิด" disabled={creating}><CloseRoundedIcon /></IconButton>
       </Stack>
       <Divider />
 
       <Box sx={{ px: 3, pt: 2 }}>
         <Stepper activeStep={activeStep} alternativeLabel>
-          <Step><StepLabel>{t('step_customer', 'ลูกค้า')}</StepLabel></Step>
-          <Step><StepLabel>{t('step_slot', 'วันเวลา')}</StepLabel></Step>
-          <Step><StepLabel>{t('step_done', 'เสร็จสิ้น')}</StepLabel></Step>
+          <Step><StepLabel>เอกสารและรถ</StepLabel></Step>
+          <Step><StepLabel>วันเวลา</StepLabel></Step>
+          <Step><StepLabel>เสร็จสิ้น</StepLabel></Step>
         </Stepper>
       </Box>
 
       <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 3 }}>
         {activeStep === 0 ? (
           <Stack spacing={2}>
-            <TextField
-              id="create-line-user"
-              select
+            <ToggleButtonGroup exclusive fullWidth size="small" value={draft.direction} onChange={(_, v: BookingDirection | null) => changeDirection(v)} aria-label="ประเภทคิว">
+              <ToggleButton value="outbound">{DIRECTION_META.outbound.label}</ToggleButton>
+              <ToggleButton value="inbound">{DIRECTION_META.inbound.label}</ToggleButton>
+            </ToggleButtonGroup>
+
+            <Autocomplete
               size="small"
-              label={t('line_user', 'LINE User (ไม่บังคับ — ส่งยืนยันอัตโนมัติ)')}
-              value={lineUserId}
-              onChange={(e) => {
-                setLineUserId(e.target.value);
-                const u = lineUsers.find((x) => x.id === e.target.value);
-                if (!u) return;
-                // Prefill untouched fields from the LINE profile; never overwrite what staff typed.
-                setDraft((p) => ({
-                  ...p,
-                  customer_name: p.customer_name.trim() ? p.customer_name : (u.display_name ?? ''),
-                  customer_nickname: p.customer_nickname.trim() ? p.customer_nickname : (u.nickname ?? ''),
-                }));
+              options={docOptions}
+              value={selectedDoc}
+              filterOptions={(x) => x}
+              getOptionLabel={(o) => `${o.doc_no} · ${o.partner_name ?? '-'}`}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              noOptionsText={`ไม่พบ ${dir.docLabel} ที่เปิดอยู่`}
+              onInputChange={(_, v, reason) => { if (reason === 'input') setDocQuery(v); }}
+              onChange={(_, v) => {
+                setSelectedDoc(v);
+                setDraft((p) => ({ ...p, document_id: v?.id ?? '', partner_name: v ? '' : p.partner_name, partner_phone: v ? '' : p.partner_phone }));
               }}
-              slotProps={{
-                select: {
-                  displayEmpty: false,
-                  renderValue: () => (selectedLineUser ? renderLineUser(selectedLineUser) : null),
-                  MenuProps: { PaperProps: { sx: { maxHeight: 360 } } },
-                },
-              }}
-              // Keep the small-input height stable when the avatar row is rendered as the value.
-              sx={{ '& .MuiSelect-select': { display: 'flex', alignItems: 'center', py: 0.75 } }}
-            >
-              <MenuItem value="">{t('none', 'ไม่เลือก')}</MenuItem>
-              {lineUsers.map((u) => (
-                <MenuItem key={u.id} value={u.id}>{renderLineUser(u)}</MenuItem>
-              ))}
-            </TextField>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField id="create-branch" select required fullWidth size="small" label={t('branch', 'สาขา')} value={draft.branch_id} onChange={set('branch_id')}>
-                {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
-              </TextField>
-              <TextField id="create-service" select required fullWidth size="small" label={t('service', 'บริการ')} value={draft.service_id} onChange={set('service_id')}>
-                {services.map((s) => (
-                  <MenuItem key={s.id} value={s.id}>{s.service_name}{s.price ? ` — ฿${s.price}` : ''}</MenuItem>
-                ))}
-              </TextField>
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField id="create-name" required fullWidth size="small" label={t('customer_name', 'ชื่อลูกค้า')} value={draft.customer_name} onChange={set('customer_name')} />
-              <TextField id="create-phone" required fullWidth size="small" label={t('customer_phone', 'เบอร์โทร')} value={draft.customer_phone} onChange={set('customer_phone')} placeholder="0812345678" slotProps={{ htmlInput: { inputMode: 'tel' } }} />
-            </Stack>
-            <TextField
-              id="create-nickname"
-              fullWidth
-              size="small"
-              label={t('customer_nickname', 'ชื่อเล่น (ไม่บังคับ)')}
-              helperText={t('customer_nickname_hint', 'ใช้เรียกคิว แสดงบนจอคิว')}
-              value={draft.customer_nickname}
-              onChange={set('customer_nickname')}
-              slotProps={{ htmlInput: { maxLength: NICKNAME_MAX } }}
+              renderInput={(params) => <TextField {...params} label={`เอกสาร ${dir.docLabel} (ไม่บังคับ)`} placeholder={`ค้นหาเลขที่ ${dir.docLabel} หรือชื่อคู่ค้า`} />}
             />
+
+            {selectedDoc ? (
+              <Alert severity="info" sx={{ py: 0.25 }}>{draft.direction === 'outbound' ? 'ลูกค้า' : 'Supplier'}: <b>{selectedDoc.partner_name ?? '-'}</b></Alert>
+            ) : (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField required fullWidth size="small" label={draft.direction === 'outbound' ? 'ชื่อลูกค้า' : 'ชื่อ Supplier'} value={draft.partner_name} onChange={set('partner_name')} />
+                <TextField fullWidth size="small" label="เบอร์โทร" value={draft.partner_phone} onChange={set('partner_phone')} placeholder="0812345678" slotProps={{ htmlInput: { inputMode: 'tel' } }} />
+              </Stack>
+            )}
+
+            <TextField select required size="small" label="ประเภทรถ" value={draft.service_id}
+              onChange={(e) => setDraft((p) => ({ ...p, service_id: e.target.value, resource_id: '', booking_date: '', start_time: '' }))}
+              helperText={vehicleOptions.length === 0 ? 'ยังไม่มีประเภทรถสำหรับคิวประเภทนี้ — เพิ่มที่เมนู ประเภทรถ' : 'ประเภทรถกำหนดเวลาที่ใช้ท่า'}
+            >
+              {vehicleOptions.map((v) => <MenuItem key={v.id} value={v.id}>{v.service_name} — {v.duration_minutes ?? '-'} นาที</MenuItem>)}
+            </TextField>
+
+            <TextField required size="small" label="ทะเบียนรถ" value={draft.plate_number} onChange={set('plate_number')} placeholder="เช่น 70-1234 หรือ กข 1234"
+              error={Boolean(draft.plate_number) && !plateOk} helperText={draft.plate_number && !plateOk ? 'ทะเบียนต้องมีตัวเลขอย่างน้อย 1 ตัว' : 'แก้ไขได้ภายหลังถ้ารถที่มาไม่ตรง'} />
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField fullWidth size="small" label="ชื่อคนขับ" value={draft.driver_name} onChange={set('driver_name')} />
+              <TextField fullWidth size="small" label="เบอร์คนขับ" value={draft.driver_phone} onChange={set('driver_phone')} slotProps={{ htmlInput: { inputMode: 'tel' } }} />
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField fullWidth size="small" label={draft.direction === 'outbound' ? 'ชื่อผู้รับสินค้า' : 'ชื่อผู้ติดต่อ'} value={draft.receiver_name} onChange={set('receiver_name')} />
+              <TextField fullWidth size="small" label="เบอร์โทร" value={draft.receiver_phone} onChange={set('receiver_phone')} slotProps={{ htmlInput: { inputMode: 'tel' } }} />
+            </Stack>
+            <TextField fullWidth size="small" label="หมายเหตุ" value={draft.note} onChange={set('note')} multiline minRows={2} />
           </Stack>
         ) : null}
 
         {activeStep === 1 ? (
           <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField id="create-date" type="date" required fullWidth size="small" label={t('date', 'วันที่')} value={draft.booking_date} onChange={set('booking_date')} slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: getTodayISOInBangkok() } }} />
-              <TextField id="create-time" type="time" required fullWidth size="small" label={t('time_start', 'เวลาเริ่ม')} value={draft.start_time} onChange={set('start_time')} slotProps={{ inputLabel: { shrink: true } }} />
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField id="create-party" type="number" fullWidth size="small" label={t('party_size', 'จำนวนคน (ไม่บังคับ)')} value={draft.party_size} onChange={set('party_size')} slotProps={{ htmlInput: { min: 1, max: 200 } }} />
-              {resourceOptions.length > 0 ? (
-                <TextField id="create-resource" select fullWidth size="small" label={`${resourceLabel} (${t('optional', 'ไม่บังคับ')})`} value={draft.resource_id} onChange={set('resource_id')}>
-                  <MenuItem value="">{`${t('filter_unassigned', 'ยังไม่ระบุ')}${resourceLabel}`}</MenuItem>
-                  {resourceOptions.map((r) => (
-                    <MenuItem key={r.id} value={r.id}>{r.resource_code ? `${r.resource_code} · ` : ''}{r.resource_name} (cap {r.capacity})</MenuItem>
-                  ))}
-                </TextField>
-              ) : null}
-            </Stack>
-            <TextField id="create-note" fullWidth size="small" label={t('note', 'หมายเหตุ (ไม่บังคับ)')} value={draft.note} onChange={set('note')} multiline minRows={2} />
+            <TextField select size="small" label="ท่า (Dock)" value={draft.resource_id} onChange={(e) => setDraft((p) => ({ ...p, resource_id: e.target.value, start_time: '' }))}>
+              <MenuItem value="">ให้ระบบเลือกท่าที่ว่าง</MenuItem>
+              {dockOptions.map((d) => <MenuItem key={d.id} value={d.id}>{d.resource_code ? `${d.resource_code} · ` : ''}{d.resource_name}</MenuItem>)}
+            </TextField>
+            <DockSlotPicker
+              direction={draft.direction}
+              serviceId={draft.service_id}
+              dockId={draft.resource_id || undefined}
+              date={draft.booking_date}
+              time={draft.start_time}
+              onChange={(n) => setDraft((p) => ({ ...p, booking_date: n.date, start_time: n.time }))}
+            />
           </Stack>
         ) : null}
 
         {activeStep === 2 && result ? (
           <Stack spacing={2}>
-            <Alert severity="success">{t('create_success', 'สร้างคิวสำเร็จ')}</Alert>
+            <Alert severity="success">สร้างคิวและออก DO แล้ว</Alert>
             <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2.5, textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary">{t('queue_number', 'เลขคิว')}</Typography>
+              <Typography variant="caption" color="text.secondary">เลขคิว</Typography>
               <Typography variant="h3" fontWeight={800} sx={{ lineHeight: 1.1 }}>{result.queueNo}</Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>{result.doNumber ?? '-'}</Typography>
             </Box>
-            <Stack spacing={0.5}>
-              <Typography variant="body2"><b>{t('service', 'บริการ')}:</b> {result.service}</Typography>
-              <Typography variant="body2"><b>{t('branch', 'สาขา')}:</b> {result.branch}</Typography>
-              <Typography variant="body2"><b>{t('date', 'วันที่')}:</b> {formatDateDMY(result.date)} {result.time}</Typography>
-            </Stack>
+            <Typography variant="body2"><b>วันเวลา:</b> {formatDateDMY(result.date)} {result.time}</Typography>
+            <Typography variant="body2"><b>ประเภทรถ:</b> {result.vehicle}</Typography>
+            <Typography variant="caption" color="text.secondary">เปิดรายการคิวเพื่อพิมพ์ DO หรือส่งลิงก์ให้คนขับ</Typography>
           </Stack>
         ) : null}
       </Box>
@@ -244,22 +219,20 @@ export function BookingCreateDrawer({
       <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ px: 3, py: 2 }}>
         {activeStep === 0 ? (
           <>
-            <Button color="inherit" onClick={handleClose}>{t('cancel', 'ยกเลิก')}</Button>
-            <Button variant="contained" disabled={!step1Ok} onClick={() => setStep(1)}>{t('next_slot', 'ถัดไป: วันเวลา')}</Button>
+            <Button color="inherit" onClick={handleClose}>ปิด</Button>
+            <Button variant="contained" disabled={!step1Ok} onClick={() => setStep(1)}>ถัดไป: วันเวลา</Button>
           </>
         ) : null}
         {activeStep === 1 ? (
           <>
-            <Button color="inherit" onClick={() => setStep(0)} disabled={creating}>{t('back', 'ย้อนกลับ')}</Button>
-            <Button variant="contained" disabled={creating || !step2Ok} onClick={() => onSubmit(draft, lineUserId)}>
-              {creating ? t('creating', 'กำลังสร้าง…') : t('create_confirm', 'ยืนยันสร้างคิว')}
-            </Button>
+            <Button color="inherit" onClick={() => setStep(0)} disabled={creating}>ย้อนกลับ</Button>
+            <Button variant="contained" disabled={creating || !step2Ok} onClick={() => onSubmit(draft)}>{creating ? 'กำลังสร้าง…' : 'สร้างคิว + ออก DO'}</Button>
           </>
         ) : null}
         {activeStep === 2 ? (
           <>
-            <Button color="inherit" onClick={resetAll}>{t('create_another', 'จองคิวใหม่')}</Button>
-            <Button variant="contained" onClick={handleClose}>{t('done', 'เสร็จสิ้น')}</Button>
+            <Button color="inherit" onClick={resetAll}>สร้างคิวใหม่</Button>
+            <Button variant="contained" onClick={handleClose}>เสร็จสิ้น</Button>
           </>
         ) : null}
       </Stack>

@@ -1,133 +1,356 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Box, Button, Card, CardContent, Divider, Drawer, IconButton, Stack, Typography } from '@mui/material';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer, IconButton,
+  Skeleton, Stack, Tab, Tabs, TextField, Tooltip, Typography,
+} from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { StatusChip } from '@/components/shared/status-chip';
-import { useTranslation } from '@/lib/i18n/useTranslation';
+import { QrCode } from '@/components/ui/qr-code';
+import { useToast } from '@/components/ui/toast';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
+import { useDoPrint } from '@/components/delivery-order/do-print';
+import { effectivePlate, hasPlateMismatch, isPlausiblePlate } from '@/lib/booking/plate';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
-import { AckChip } from './bookings-table';
-import { CANCELLABLE, MOVABLE, NEXT_STATUSES, changeAckState, customerName, customerPhone, hhmm, type BookingRow } from './booking-types';
+import { CANCELLABLE, DIRECTION_META, MOVABLE, NEXT_STATUSES, customerName, customerPhone, hhmm, type BookingRow } from './booking-types';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+type LogRow = { id: string; action: string; description: string | null; actor_kind: string | null; actor_name: string | null; created_at: string };
+type DocItems = Array<{ sku?: string | null; name: string; qty: number; uom?: string | null }>;
+
+const ACTOR_LABEL: Record<string, string> = { admin: 'ผู้ดูแล', staff: 'พนักงาน', customer: 'ลูกค้า', driver: 'คนขับ', system: 'ระบบ' };
+
+function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <Card variant="outlined">
-      <CardContent sx={{ '&:last-child': { pb: 2 } }}>
-        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>{title}</Typography>
-        {children}
-      </CardContent>
-    </Card>
+    <Stack direction="row" spacing={1.5} sx={{ py: 0.4 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ width: 112, flexShrink: 0 }}>{k}</Typography>
+      <Typography variant="body2" component="div" sx={{ minWidth: 0, wordBreak: 'break-word' }}>{v || '-'}</Typography>
+    </Stack>
   );
 }
 
 /**
- * Booking detail drawer: summary, payment, status transitions and cancel.
- * Moving the slot / resource lives in the move dialog, opened via `onMove`.
+ * Queue detail drawer: facts + actions, audit timeline, DO (print) and the
+ * driver link. Status changes go through `onStatus`; plate edits and the
+ * driver link are handled here because they only concern this drawer.
  */
 export function BookingEditDrawer({
-  booking,
-  resourceLabel,
-  saving,
-  onClose,
-  onStatus,
-  onMove,
+  booking, isAdmin, saving, siteName, onClose, onStatus, onMove, onChanged,
 }: {
   booking: BookingRow | null;
-  resourceLabel: string;
+  isAdmin: boolean;
   saving: boolean;
+  siteName: string;
   onClose: () => void;
-  onStatus: (b: BookingRow, status: string) => void;
+  onStatus: (b: BookingRow, status: string, cancelReason?: string) => void;
   onMove: (b: BookingRow) => void;
+  /** Something other than status changed (plate) — parent should reload. */
+  onChanged: () => void;
 }) {
-  const { t } = useTranslation('bookings');
-  const [confirmCancel, setConfirmCancel] = useState(false);
-
-  useEffect(() => { setConfirmCancel(false); }, [booking?.id]);
+  const { push } = useToast();
+  const confirm = useConfirm();
+  const [tab, setTab] = useState(0);
+  const [logs, setLogs] = useState<LogRow[] | null>(null);
+  const [logsError, setLogsError] = useState(false);
+  const [items, setItems] = useState<DocItems>([]);
+  const [link, setLink] = useState<{ url: string; expires_at: string } | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [plateOpen, setPlateOpen] = useState(false);
+  const [plateDraft, setPlateDraft] = useState('');
+  const [plateReason, setPlateReason] = useState('');
+  const [plateSaving, setPlateSaving] = useState(false);
 
   const b = booking;
-  const next = b ? NEXT_STATUSES[b.status] ?? [] : [];
-  const ack = b ? changeAckState(b) : 'none';
+  const id = b?.id ?? null;
+
+  useEffect(() => { setTab(0); setLogs(null); setLink(null); setItems([]); setPlateOpen(false); }, [id]);
+
+  const loadLogs = useCallback(async () => {
+    if (!id) return;
+    setLogsError(false);
+    try {
+      const res = await fetch(`/api/bookings/${id}/logs`, { cache: 'no-store' });
+      const j = (await res.json()) as { data?: LogRow[] };
+      if (!res.ok) throw new Error();
+      setLogs(j.data ?? []);
+    } catch {
+      setLogsError(true);
+    }
+  }, [id]);
+
+  const loadLink = useCallback(async (regenerate: boolean) => {
+    if (!id) return;
+    setLinkLoading(true);
+    try {
+      const res = await fetch(`/api/bookings/${id}/driver-link`, { method: regenerate ? 'POST' : 'GET', cache: 'no-store' });
+      const j = (await res.json()) as { data?: { url: string; expires_at: string }; error?: string };
+      if (!res.ok || !j.data) { push(j.error ?? 'ออกลิงก์คนขับไม่สำเร็จ', 'error'); return; }
+      setLink(j.data);
+      if (regenerate) push('สร้างลิงก์ใหม่แล้ว ลิงก์เดิมใช้ไม่ได้แล้ว');
+    } finally {
+      setLinkLoading(false);
+    }
+  }, [id, push]);
+
+  useEffect(() => { if (tab === 1 && logs === null) void loadLogs(); }, [tab, logs, loadLogs]);
+  useEffect(() => { if ((tab === 2 || tab === 3) && !link && b?.do_number) void loadLink(false); }, [tab, link, b?.do_number, loadLink]);
+  useEffect(() => {
+    if (tab !== 2 || !b?.document_id) return;
+    let alive = true;
+    fetch(`/api/documents/${b.document_id}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j: { data?: { items?: DocItems } }) => { if (alive) setItems(j.data?.items ?? []); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [tab, b?.document_id]);
+
+  const doData: DoDocumentData | null = b
+    ? {
+        siteName,
+        doNumber: b.do_number ?? null,
+        queueNumber: b.queue_number,
+        direction: b.direction,
+        docNo: b.external_documents?.doc_no ?? null,
+        partnerName: customerName(b),
+        bookingDate: b.booking_date,
+        startTime: b.start_time,
+        endTime: b.end_time ?? null,
+        dockName: b.resource_name ?? null,
+        vehicleType: b.services?.service_name ?? null,
+        plate: effectivePlate(b),
+        driverName: b.driver_name ?? null,
+        driverPhone: b.driver_phone ?? null,
+        receiverName: b.receiver_name ?? null,
+        receiverPhone: b.receiver_phone ?? null,
+        note: b.note ?? null,
+        issuedAt: b.do_issued_at ?? null,
+        items,
+      }
+    : null;
+  const qrNode = link ? <QrCode value={link.url} size={110} alt="ลิงก์คนขับ" /> : undefined;
+  const { print, sheet } = useDoPrint(doData, qrNode);
+
+  async function savePlate() {
+    if (!b || plateSaving) return;
+    if (!isPlausiblePlate(plateDraft)) { push('ทะเบียนรถไม่ถูกต้อง', 'error'); return; }
+    setPlateSaving(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/plate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plate_number_actual: plateDraft, reason: plateReason }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { push(j.error ?? 'บันทึกทะเบียนไม่สำเร็จ', 'error'); return; }
+      push('บันทึกทะเบียนรถแล้ว');
+      setPlateOpen(false);
+      setLogs(null);
+      onChanged();
+    } finally {
+      setPlateSaving(false);
+    }
+  }
+
+  async function cancelBooking() {
+    if (!b) return;
+    const ok = await confirm({
+      tone: 'error',
+      title: 'ยกเลิกคิวนี้?',
+      description: 'ช่วงเวลาและท่าจะว่างให้คิวอื่นทันที ลูกค้าจะเห็นสถานะยกเลิกในลิงก์ของตน',
+      context: { primary: `${b.queue_number} · ${effectivePlate(b) || '-'}`, secondary: customerName(b) },
+      confirmLabel: 'ยกเลิกคิว',
+      cancelLabel: 'ไม่ยกเลิก',
+    });
+    if (ok) onStatus(b, 'cancelled');
+  }
+
+  async function copyLink() {
+    if (!link) return;
+    try { await navigator.clipboard.writeText(link.url); push('คัดลอกลิงก์แล้ว'); } catch { push('คัดลอกไม่สำเร็จ', 'error'); }
+  }
+
+  const next = b ? (NEXT_STATUSES[b.status] ?? []).filter((o) => !o.adminOnly || isAdmin) : [];
+  const needsAdmin = b?.status === 'pending' && !isAdmin;
+  const dir = b ? DIRECTION_META[b.direction] ?? DIRECTION_META.outbound : DIRECTION_META.outbound;
+  const terminal = b ? ['completed', 'cancelled', 'no_show'].includes(b.status) : false;
 
   return (
-    <Drawer anchor="right" open={Boolean(b)} onClose={saving ? undefined : onClose} PaperProps={{ sx: { width: { xs: '100%', sm: 460 } } }}>
+    <Drawer anchor="right" open={Boolean(b)} onClose={saving ? undefined : onClose} PaperProps={{ sx: { width: { xs: '100%', sm: 520 } } }}>
       {b ? (
         <>
           <Stack direction="row" alignItems="flex-start" justifyContent="space-between" sx={{ px: 3, py: 2 }}>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="h6" fontWeight={700}>{t('queue_unit', 'คิว')} {b.queue_number}</Typography>
-              <Typography variant="body2" color="text.secondary" noWrap>
-                {customerName(b)}{customerPhone(b) ? ` · ${customerPhone(b)}` : ''}
-              </Typography>
-            </Box>
-            <IconButton onClick={onClose} aria-label={t('close', 'ปิด')} disabled={saving}><CloseRoundedIcon /></IconButton>
-          </Stack>
-          <Divider />
-
-          <Stack spacing={2} sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
-            <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2 }}>
-              <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="h6" fontWeight={800}>{b.queue_number}</Typography>
                 <StatusChip status={b.status} />
+                <Chip size="small" variant="outlined" color={dir.palette === 'default' ? undefined : dir.palette} label={dir.short + 'สินค้า'} />
               </Stack>
-              <Stack spacing={0.25}>
-                <Typography variant="body2"><b>{formatDateDMY(b.booking_date)}</b> {hhmm(b.start_time)}{b.end_time ? ` – ${hhmm(b.end_time)}` : ''}</Typography>
-                <Typography variant="body2">{b.services?.service_name ?? '-'}{b.branches?.branch_name ? ` · ${b.branches.branch_name}` : ''}</Typography>
-                <Typography variant="body2" color={b.resource_name ? 'text.primary' : 'text.disabled'}>
-                  {resourceLabel}: {b.resource_name ?? t('unassigned', 'ยังไม่ระบุ')}
-                </Typography>
-                {b.note ? <Typography variant="caption" color="text.secondary">{t('note_short', 'หมายเหตุ')}: {b.note}</Typography> : null}
-              </Stack>
-              {ack !== 'none' ? (
-                <Stack spacing={0.5} sx={{ mt: 1.5 }}>
-                  <AckChip state={ack} />
-                  <Typography variant="caption" color="text.secondary">
-                    {t('ack_notified_at', 'แจ้งลูกค้าเมื่อ')} {formatDateTimeDMY(b.change_notified_at)}
-                    {ack === 'acked' ? ` · ${t('ack_acked_at', 'รับทราบเมื่อ')} ${formatDateTimeDMY(b.change_acknowledged_at)}` : ''}
-                  </Typography>
-                </Stack>
-              ) : null}
-              {MOVABLE.has(b.status) ? (
-                <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1.5 }} disabled={saving} onClick={() => onMove(b)}>
-                  {t('move_queue', 'โยกย้ายคิว')}
-                </Button>
-              ) : null}
+              <Typography variant="body2" color="text.secondary" noWrap>{customerName(b)}{customerPhone(b) ? ` · ${customerPhone(b)}` : ''}</Typography>
             </Box>
-
-            {next.length > 0 ? (
-              <Section title={t('change_status', 'เปลี่ยนสถานะ')}>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {next.map((o) => (
-                    <Button key={o.status} variant={o.primary ? 'contained' : 'outlined'} color={o.primary ? 'primary' : 'inherit'} disabled={saving} onClick={() => onStatus(b, o.status)} sx={{ flex: 1 }}>
-                      {o.label}
-                    </Button>
-                  ))}
-                </Stack>
-              </Section>
-            ) : null}
-
-            {CANCELLABLE.has(b.status) ? (
-              <Section title={t('cancel_booking', 'ยกเลิกการจอง')}>
-                {!confirmCancel ? (
-                  <Button fullWidth variant="outlined" color="error" disabled={saving} onClick={() => setConfirmCancel(true)}>
-                    {t('cancel_this', 'ยกเลิกการจองนี้')}
-                  </Button>
-                ) : (
-                  <Stack spacing={1.5}>
-                    <Typography variant="body2" color="error.main" fontWeight={600}>{t('cancel_confirm_title', 'ยืนยันการยกเลิก?')}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {t('cancel_confirm_desc', 'คิวนี้จะถูกยกเลิกและแจ้งเตือนไปยังระบบ')}
-                    </Typography>
-                    <Stack direction="row" spacing={1}>
-                      <Button fullWidth variant="contained" color="error" disabled={saving} onClick={() => onStatus(b, 'cancelled')}>
-                        {saving ? t('cancelling', 'กำลังยกเลิก…') : t('cancel_yes', 'ใช่ ยกเลิกการจอง')}
-                      </Button>
-                      <Button fullWidth variant="outlined" color="inherit" disabled={saving} onClick={() => setConfirmCancel(false)}>{t('cancel_no', 'ไม่ใช่')}</Button>
-                    </Stack>
-                  </Stack>
-                )}
-              </Section>
-            ) : null}
+            <IconButton onClick={onClose} aria-label="ปิด" disabled={saving}><CloseRoundedIcon /></IconButton>
           </Stack>
+          <Tabs value={tab} onChange={(_, v: number) => setTab(v)} variant="fullWidth" sx={{ borderBottom: 1, borderColor: 'divider' }}>
+            <Tab label="ข้อมูล" />
+            <Tab label="ไทม์ไลน์" />
+            <Tab label="DO" />
+            <Tab label="ลิงก์คนขับ" />
+          </Tabs>
+
+          <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
+            {tab === 0 ? (
+              <Stack spacing={2}>
+                {needsAdmin ? <Alert severity="info">คิวนี้รอผู้ดูแลระบบยืนยันและออก DO</Alert> : null}
+                {b.status === 'late' ? <Alert severity="warning">เลยเวลานัดแล้ว รถยังไม่มาถึง — ยังเช็คอินได้เมื่อรถมา</Alert> : null}
+                <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2 }}>
+                  <Row k="วันเวลา" v={<><b>{formatDateDMY(b.booking_date)}</b> {hhmm(b.start_time)}{b.end_time ? ` – ${hhmm(b.end_time)}` : ''}</>} />
+                  <Row k="ท่า (Dock)" v={b.resource_name} />
+                  <Row k="ประเภทรถ" v={b.services?.service_name} />
+                  <Row k={`เอกสาร ${dir.docLabel}`} v={b.external_documents?.doc_no} />
+                  <Row k="เลข DO" v={b.do_number ? <b>{b.do_number}</b> : 'ยังไม่ออก'} />
+                  {MOVABLE.has(b.status) && isAdmin ? (
+                    <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onMove(b)}>
+                      เลื่อนวัน / เวลา / ท่า
+                    </Button>
+                  ) : null}
+                </Box>
+
+                <Box>
+                  <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    <Typography variant="subtitle2" fontWeight={700}>รถและคนขับ</Typography>
+                    {!terminal ? (
+                      <Button size="small" startIcon={<EditRoundedIcon />} onClick={() => { setPlateDraft(effectivePlate(b)); setPlateReason(''); setPlateOpen(true); }}>
+                        แก้ทะเบียน
+                      </Button>
+                    ) : null}
+                  </Stack>
+                  <Row
+                    k="ทะเบียนรถ"
+                    v={
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        <b>{effectivePlate(b) || '-'}</b>
+                        {hasPlateMismatch(b) ? (
+                          <Tooltip title="ทะเบียนหน้างานไม่ตรงกับที่จอง">
+                            <Chip size="small" color="warning" icon={<WarningAmberRoundedIcon />} label={`จองไว้: ${b.plate_number}`} />
+                          </Tooltip>
+                        ) : null}
+                      </Stack>
+                    }
+                  />
+                  <Row k="คนขับ" v={[b.driver_name, b.driver_phone].filter(Boolean).join(' · ')} />
+                  <Row k={b.direction === 'outbound' ? 'ผู้รับสินค้า' : 'ผู้ติดต่อ'} v={[b.receiver_name, b.receiver_phone].filter(Boolean).join(' · ')} />
+                  <Row k="หมายเหตุ" v={b.note} />
+                  {b.cancel_reason ? <Row k="เหตุผลยกเลิก" v={b.cancel_reason} /> : null}
+                </Box>
+
+                {next.length > 0 ? (
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>ขั้นตอนถัดไป</Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      {next.map((o) => (
+                        <Button
+                          key={`${o.kind}-${o.status}`}
+                          variant={o.primary ? 'contained' : 'outlined'}
+                          color={o.kind === 'no_show' ? 'error' : o.kind === 'uncall' ? 'inherit' : 'primary'}
+                          disabled={saving}
+                          onClick={() => onStatus(b, o.status)}
+                          sx={{ minHeight: 40 }}
+                        >
+                          {o.label}
+                        </Button>
+                      ))}
+                    </Stack>
+                  </Box>
+                ) : null}
+              </Stack>
+            ) : null}
+
+            {tab === 1 ? (
+              <Stack spacing={1.5}>
+                {logsError ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void loadLogs()}>ลองใหม่</Button>}>โหลดไทม์ไลน์ไม่สำเร็จ</Alert> : null}
+                {!logsError && logs === null ? <><Skeleton height={48} /><Skeleton height={48} /><Skeleton height={48} /></> : null}
+                {logs && logs.length === 0 ? <Typography variant="body2" color="text.secondary">ยังไม่มีประวัติ</Typography> : null}
+                {logs?.map((l) => (
+                  <Box key={l.id} sx={{ borderLeft: 2, borderColor: 'divider', pl: 1.5 }}>
+                    <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>{l.description ?? l.action}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {formatDateTimeDMY(l.created_at)} · {ACTOR_LABEL[l.actor_kind ?? ''] ?? '-'}{l.actor_name ? ` (${l.actor_name})` : ''}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            ) : null}
+
+            {tab === 2 ? (
+              <Stack spacing={2}>
+                {!b.do_number ? (
+                  <Alert severity="info">DO จะออกเมื่อผู้ดูแลระบบยืนยันคิว</Alert>
+                ) : (
+                  <>
+                    <Button variant="contained" startIcon={<PrintRoundedIcon />} onClick={print} sx={{ alignSelf: 'flex-start' }}>พิมพ์ / บันทึกเป็น PDF</Button>
+                    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'auto' }}>
+                      <Box sx={{ transform: 'scale(0.6)', transformOrigin: 'top left', width: '166.7%' }}>
+                        {doData ? <DoDocument data={doData} qr={qrNode} /> : null}
+                      </Box>
+                    </Box>
+                  </>
+                )}
+              </Stack>
+            ) : null}
+
+            {tab === 3 ? (
+              <Stack spacing={2} alignItems="flex-start">
+                {!b.do_number ? (
+                  <Alert severity="info" sx={{ width: '100%' }}>ออกลิงก์คนขับได้หลังยืนยันคิวแล้ว</Alert>
+                ) : linkLoading && !link ? (
+                  <Skeleton variant="rounded" width={200} height={200} />
+                ) : link ? (
+                  <>
+                    <Typography variant="body2" color="text.secondary">ส่งลิงก์หรือให้คนขับสแกน QR เพื่อดู DO และท่าที่ต้องเข้า (ไม่ต้องล็อกอิน)</Typography>
+                    <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: 1, borderColor: 'divider' }}><QrCode value={link.url} size={200} alt="ลิงก์คนขับ" /></Box>
+                    <TextField fullWidth size="small" value={link.url} slotProps={{ input: { readOnly: true } }} />
+                    <Typography variant="caption" color="text.secondary">ใช้ได้ถึง {formatDateTimeDMY(link.expires_at)}</Typography>
+                    <Stack direction="row" spacing={1}>
+                      <Button variant="contained" startIcon={<ContentCopyRoundedIcon />} onClick={() => void copyLink()}>คัดลอกลิงก์</Button>
+                      <Button color="inherit" disabled={linkLoading} onClick={() => void loadLink(true)}>สร้างลิงก์ใหม่</Button>
+                    </Stack>
+                  </>
+                ) : (
+                  <Button variant="outlined" onClick={() => void loadLink(false)}>ออกลิงก์คนขับ</Button>
+                )}
+              </Stack>
+            ) : null}
+          </Box>
+
+          {CANCELLABLE.has(b.status) ? (
+            <>
+              <Divider />
+              <Stack direction="row" justifyContent="flex-end" sx={{ px: 3, py: 1.5 }}>
+                <Button color="error" disabled={saving} onClick={() => void cancelBooking()}>ยกเลิกคิว</Button>
+              </Stack>
+            </>
+          ) : null}
+
+          <Dialog open={plateOpen} onClose={plateSaving ? undefined : () => setPlateOpen(false)} fullWidth maxWidth="xs">
+            <DialogTitle>แก้ทะเบียนรถที่มาจริง</DialogTitle>
+            <DialogContent>
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <Typography variant="body2" color="text.secondary">ทะเบียนที่จองไว้: <b>{b.plate_number || '-'}</b> — ระบบเก็บทั้งสองค่าและบันทึกผู้แก้ไข</Typography>
+                <TextField autoFocus size="small" label="ทะเบียนรถที่มาจริง" value={plateDraft} onChange={(e) => setPlateDraft(e.target.value)} placeholder="เช่น 70-1234" />
+                <TextField size="small" label="เหตุผล (ไม่บังคับ)" value={plateReason} onChange={(e) => setPlateReason(e.target.value)} placeholder="เช่น เปลี่ยนรถ / ลูกค้ากรอกผิด" />
+              </Stack>
+            </DialogContent>
+            <DialogActions>
+              <Button color="inherit" onClick={() => setPlateOpen(false)} disabled={plateSaving}>ปิด</Button>
+              <Button variant="contained" onClick={() => void savePlate()} disabled={plateSaving}>{plateSaving ? 'กำลังบันทึก…' : 'บันทึกทะเบียน'}</Button>
+            </DialogActions>
+          </Dialog>
+          {sheet}
         </>
       ) : null}
     </Drawer>

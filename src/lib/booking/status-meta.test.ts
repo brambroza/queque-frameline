@@ -1,25 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareStatus, getStatusMeta, shouldNotifyCancellation, statusOccupiesSlot } from './status-meta';
-
-describe('shouldNotifyCancellation', () => {
-  it('notifies when a live booking is cancelled for the first time', () => {
-    expect(shouldNotifyCancellation({ status: 'confirmed' })).toBe(true);
-    expect(shouldNotifyCancellation({ status: 'waiting', is_deleted: false })).toBe(true);
-  });
-
-  it('does not push a second notice for a booking that is already cancelled', () => {
-    expect(shouldNotifyCancellation({ status: 'cancelled' })).toBe(false);
-  });
-
-  it('does not notify for a booking that was already soft-deleted', () => {
-    expect(shouldNotifyCancellation({ status: 'confirmed', is_deleted: true })).toBe(false);
-  });
-
-  it('does not notify without a prior row', () => {
-    expect(shouldNotifyCancellation(null)).toBe(false);
-    expect(shouldNotifyCancellation(undefined)).toBe(false);
-  });
-});
+import { compareStatus, getStatusMeta, statusOccupiesSlot } from './status-meta';
 
 describe('status metadata', () => {
   it('keeps the chip palette of every legacy status', () => {

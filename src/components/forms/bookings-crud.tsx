@@ -5,23 +5,21 @@ import { Alert, Button, Stack } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/components/ui/toast';
-import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
-import { resourceTypeLabel } from '@/lib/booking/resource-types';
 import { BookingsFilterBar, dateForRange, type BookingsFilter } from '@/components/bookings/bookings-filter-bar';
 import { BookingsTable } from '@/components/bookings/bookings-table';
 import { BookingMoveDialog, type MoveDraft } from '@/components/bookings/booking-move-dialog';
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
-import { hhmm, type BookingRow, type Branch, type LineUser, type Resource, type Service } from '@/components/bookings/booking-types';
+import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Initial filter: `?date=YYYY-MM-DD` deep-links from the dashboard into one day. */
 function initialFilter(): BookingsFilter {
   const today = getTodayISOInBangkok();
-  const base: BookingsFilter = { range: 'today', date: today, status: '', resource: '', search: '' };
+  const base: BookingsFilter = { range: 'today', date: today, status: '', direction: '', resource: '', search: '' };
   if (typeof window === 'undefined') return base;
   const d = new URLSearchParams(window.location.search).get('date') ?? '';
   if (!ISO_DATE.test(d)) return base;
@@ -29,7 +27,7 @@ function initialFilter(): BookingsFilter {
   return { ...base, range: 'custom', date: d };
 }
 
-type PatchResult = { ok: boolean; error?: string; lineNotified: boolean };
+type PatchResult = { ok: boolean; error?: string; doNumber: string | null; autoCalled: string[] };
 
 async function patchBooking(body: Record<string, unknown>): Promise<PatchResult> {
   const res = await fetch('/api/bookings', {
@@ -37,19 +35,17 @@ async function patchBooking(body: Record<string, unknown>): Promise<PatchResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { line_notified?: boolean } };
-  return { ok: res.ok, error: j.error, lineNotified: Boolean(j.data?.line_notified) };
+  const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { do_number?: string | null; auto_called?: string[] } };
+  return { ok: res.ok, error: j.error, doNumber: j.data?.do_number ?? null, autoCalled: j.data?.auto_called ?? [] };
 }
 
 /**
  * Bookings list page: filter strip, table with inline actions, create drawer,
  * detail drawer and the move dialog (date / time / resource in one step).
  */
-export function BookingsCrud() {
+export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useTranslation('bookings');
   const { push } = useToast();
-  // Topbar branch selection narrows the list; the API enforces the caller's own scope.
-  const { branchId, withBranch } = useBranchScope();
 
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -63,10 +59,9 @@ export function BookingsCrud() {
   const [filter, setFilter] = useState<BookingsFilter>(initialFilter);
   const [debouncedSearch, setDebouncedSearch] = useState(filter.search);
 
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [lineUsers, setLineUsers] = useState<LineUser[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
+  const [resources, setResources] = useState<Dock[]>([]);
+  const [siteName, setSiteName] = useState('Fameline');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -83,16 +78,17 @@ export function BookingsCrud() {
 
   const queryDate = filter.range === 'custom' ? filter.date : dateForRange(filter.range, filter.date);
   const queryString = useMemo(() => {
-    const params = withBranch(new URLSearchParams({ page: String(page), page_size: String(pageSize) }));
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (queryDate) params.set('date', queryDate);
     if (filter.status) params.set('status', filter.status);
+    if (filter.direction) params.set('direction', filter.direction);
     if (filter.resource) params.set('resource_id', filter.resource);
     if (debouncedSearch) params.set('q', debouncedSearch);
     return params.toString();
-  }, [withBranch, page, pageSize, queryDate, filter.status, filter.resource, debouncedSearch]);
+  }, [page, pageSize, queryDate, filter.status, filter.direction, filter.resource, debouncedSearch]);
 
   // Any filter change goes back to page 1.
-  useEffect(() => { setPage(1); }, [queryDate, filter.status, filter.resource, debouncedSearch, branchId, pageSize]);
+  useEffect(() => { setPage(1); }, [queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, pageSize]);
 
   useEffect(() => {
     if (filter.range === 'custom' && !ISO_DATE.test(filter.date)) return;
@@ -123,67 +119,44 @@ export function BookingsCrud() {
   useEffect(() => {
     (async () => {
       try {
-        const [brRes, sRes, uRes, rRes] = await Promise.all([
-          fetch('/api/branches', { cache: 'no-store' }),
-          fetch('/api/services', { cache: 'no-store' }),
-          fetch('/api/chat-inbox?page_size=100', { cache: 'no-store' }),
+        const [sRes, rRes, shopRes] = await Promise.all([
+          fetch('/api/services?page_size=200', { cache: 'no-store' }),
           fetch('/api/resources?page_size=500', { cache: 'no-store' }),
+          fetch('/api/shop-profile', { cache: 'no-store' }),
         ]);
-        const [br, s, u, r] = (await Promise.all([brRes.json(), sRes.json(), uRes.json(), rRes.json()])) as [
-          { data?: Branch[] }, { data?: Service[] }, { data?: { users?: LineUser[] } }, { data?: Resource[] },
+        const [sv, r, shop] = (await Promise.all([sRes.json(), rRes.json(), shopRes.json()])) as [
+          { data?: VehicleType[] }, { data?: Dock[] }, { data?: { name?: string | null } },
         ];
-        setBranches(br.data ?? []);
-        setServices(s.data ?? []);
-        setLineUsers(u.data?.users ?? []);
-        setResources(r.data ?? []);
+        setVehicleTypes(sv.data ?? []);
+        setResources((r.data ?? []).filter((d) => d.resource_type === 'dock'));
+        if (shop.data?.name) setSiteName(shop.data.name);
       } catch {
         // Reference data only feeds dropdowns; the list still renders without it.
       }
     })();
   }, []);
 
-  // A shop usually runs one kind of resource, so name the column after it
-  // ("เทรนเนอร์", "โต๊ะ"). Mixed shops fall back to a neutral word.
-  const resourceTypes = Array.from(new Set(resources.map((r) => r.resource_type)));
-  const resourceLabel = resourceTypes.length === 1 ? resourceTypeLabel(resourceTypes[0]) : t('resource_generic', 'ผู้ให้บริการ');
+  const resourceLabel = t('dock', 'ท่า');
   const activeResources = resources.filter((r) => r.active !== false);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
-  async function submitCreate(draft: CreateDraft, lineUserId: string) {
+  async function submitCreate(draft: CreateDraft) {
     if (creating) return;
-    // Untouched optional inputs hold '' — the API validates party_size/resource_id as
-    // number/uuid, so sending '' fails the whole payload. Drop blanks instead.
-    const payload: Record<string, unknown> = Object.fromEntries(
-      Object.entries(draft).filter(([, v]) => String(v ?? '').trim() !== ''),
-    );
-    const selected = lineUsers.find((x) => x.id === lineUserId);
-    if (selected) {
-      payload.line_user_pk = selected.id;
-      payload.line_user_external_id = selected.line_user_id;
-    }
-
+    // Untouched optional inputs hold '' — drop blanks so uuid / phone validation does not trip on them.
+    const payload = Object.fromEntries(Object.entries(draft).filter(([, v]) => String(v ?? '').trim() !== ''));
     setCreating(true);
     try {
-      const res = await fetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const j = (await res.json().catch(() => ({}))) as { data?: { queue_number?: string; line_push_sent?: boolean; line_push_error?: string }; error?: string };
-
-      if (!res.ok) { push(j.error ?? t('create_failed', 'เพิ่มคิวไม่สำเร็จ'), 'error'); return; }
-
-      if (j.data?.line_push_sent) push(t('create_ok_line', 'เพิ่มคิวสำเร็จ และส่งข้อความ LINE แล้ว'));
-      else if (selected) push(`${t('create_ok_line_failed', 'เพิ่มคิวสำเร็จ แต่ส่ง LINE ไม่สำเร็จ')}: ${j.data?.line_push_error ?? '-'}`, 'error');
-      else push(t('create_ok', 'เพิ่มคิวสำเร็จ'));
-
+      const res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const j = (await res.json().catch(() => ({}))) as { data?: { queue_number?: string; do_number?: string | null }; error?: string };
+      if (!res.ok) { push(j.error ?? t('create_failed', 'สร้างคิวไม่สำเร็จ'), 'error'); return; }
+      push(t('create_ok', 'สร้างคิวสำเร็จ'));
       setCreateResult({
         queueNo: String(j.data?.queue_number ?? '-'),
-        branch: branches.find((b) => b.id === draft.branch_id)?.branch_name ?? '-',
-        service: services.find((s) => s.id === draft.service_id)?.service_name ?? '-',
+        doNumber: j.data?.do_number ?? null,
         date: draft.booking_date,
         time: draft.start_time,
+        vehicle: vehicleTypes.find((v) => v.id === draft.service_id)?.service_name ?? '-',
       });
       reload();
     } finally {
@@ -196,20 +169,12 @@ export function BookingsCrud() {
     setSaving(true);
     try {
       const r = await patchBooking({ id: b.id, status });
-      if (!r.ok) { push(r.error ?? t('status_failed', 'เปลี่ยนสถานะไม่สำเร็จ'), 'error'); return; }
-      if (status === 'cancelled') {
-        push(r.lineNotified ? t('cancel_ok_line', 'ยกเลิกคิวแล้ว และแจ้งลูกค้าทาง LINE') : b.line_user_id ? t('cancel_ok_line_failed', 'ยกเลิกคิวแล้ว แต่ส่ง LINE ไม่สำเร็จ') : t('cancel_ok', 'ยกเลิกคิวแล้ว'));
-      } else if (status === 'called') {
-        // Staff need to know whether the customer's phone actually buzzed; a
-        // walk-in without LINE means they have to shout the number themselves.
-        if (r.lineNotified) push(t('call_ok_line', 'เรียกคิวแล้ว และแจ้งลูกค้าทาง LINE'));
-        else if (b.line_user_id) push(t('call_ok_line_failed', 'เรียกคิวแล้ว แต่ส่ง LINE ไม่สำเร็จ — กรุณาเรียกลูกค้าเอง'), 'error');
-        else push(t('call_ok_no_line', 'เรียกคิวแล้ว (คิวไม่ได้ผูก LINE กรุณาเรียกลูกค้าเอง)'));
-      } else if (b.status === 'pending_approval' && status === 'confirmed') {
-        push(r.lineNotified ? t('approve_ok_line', 'อนุมัติคิวแล้ว และแจ้งลูกค้าทาง LINE') : b.line_user_id ? t('approve_ok_line_failed', 'อนุมัติคิวแล้ว แต่ส่ง LINE ไม่สำเร็จ') : t('approve_ok', 'อนุมัติคิวแล้ว'));
-      } else {
-        push(t('status_ok', 'อัปเดตสถานะแล้ว'));
-      }
+      if (!r.ok) { push(r.error ?? t('status_failed', 'เปลี่ยนสถานะไม่สำเร็จ'), 'error'); reload(); return; }
+      if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}`);
+      else if (status === 'cancelled') push(t('cancel_ok', 'ยกเลิกคิวแล้ว'));
+      else if (status === 'called') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
+      else push(t('status_ok', 'อัปเดตสถานะแล้ว'));
+      if (r.autoCalled.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${r.autoCalled.join(', ')}`);
       setEditTarget(null);
       reload();
     } finally {
@@ -217,28 +182,20 @@ export function BookingsCrud() {
     }
   }
 
-  /**
-   * Move = reschedule + reassign in one PATCH, so the API validates the target
-   * once and the customer receives a single LINE notice.
-   */
   async function submitMove(draft: MoveDraft) {
     const b = moveTarget;
     if (!b || saving) return;
     setSaving(true);
     try {
-      const slotChanged = draft.date !== b.booking_date || draft.time !== hhmm(b.start_time);
-      const resourceChanged = draft.resourceId !== (b.resource_id ?? '');
-      const body: Record<string, unknown> = { id: b.id };
-      if (slotChanged) { body.booking_date = draft.date; body.start_time = draft.time; }
-      if (resourceChanged) body.resource_id = draft.resourceId || null;
-
-      const r = await patchBooking(body);
-      if (!r.ok) { push(r.error ?? t('move_failed', 'ย้ายคิวไม่สำเร็จ'), 'error'); return; }
-
-      if (r.lineNotified) push(t('move_ok_line', 'ย้ายคิวแล้ว และแจ้งลูกค้าทาง LINE'));
-      else if (b.line_user_id && slotChanged) push(t('move_ok_line_failed', 'ย้ายคิวแล้ว แต่ส่ง LINE ไม่สำเร็จ — กรุณาแจ้งลูกค้าเอง'), 'error');
-      else if (!b.line_user_id) push(t('move_ok_no_line', 'ย้ายคิวแล้ว (คิวไม่ได้ผูก LINE กรุณาแจ้งลูกค้าเอง)'));
-      else push(t('move_ok', 'ย้ายคิวแล้ว'));
+      const res = await fetch(`/api/bookings/${b.id}/reschedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_date: draft.date, start_time: draft.time, resource_id: draft.resourceId || null }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { queue_number?: string } };
+      if (!res.ok) { push(j.error ?? t('move_failed', 'เลื่อนคิวไม่สำเร็จ'), 'error'); return; }
+      const renumbered = j.data?.queue_number && j.data.queue_number !== b.queue_number;
+      push(renumbered ? `เลื่อนคิวแล้ว — เลขคิวใหม่ ${j.data?.queue_number} (แจ้งลูกค้าด้วย)` : 'เลื่อนคิวแล้ว — อย่าลืมแจ้งลูกค้า');
       setMoveTarget(null);
       setEditTarget(null);
       reload();
@@ -250,8 +207,8 @@ export function BookingsCrud() {
   return (
     <Stack spacing={2}>
       <PageHeader
-        title={t('title', 'จัดการคิว')}
-        description={t('subtitle', 'รายการจองทั้งหมด เปลี่ยนสถานะ โยกย้ายคิว และเพิ่มคิวหน้าร้าน')}
+        title={t('title_dock', 'คิวรับ-ส่งสินค้า')}
+        description={t('subtitle_dock', 'คิวรับสินค้าของลูกค้าและคิวส่งสินค้าของ Supplier — ยืนยัน ออก DO เช็คอิน และเลื่อนคิว')}
         action={
           <Button
             variant="contained"
@@ -259,7 +216,7 @@ export function BookingsCrud() {
             onClick={() => { setCreateResult(null); setCreateOpen(true); }}
             sx={{ width: { xs: '100%', sm: 'auto' }, minHeight: { xs: 44, sm: 'auto' } }} // phones: full-width thumb target
           >
-            {t('add_queue', 'เพิ่มคิวใหม่')}
+            {t('create_queue', 'สร้างคิว')}
           </Button>
         }
       />
@@ -287,11 +244,10 @@ export function BookingsCrud() {
         pageSize={pageSize}
         loading={loading}
         busy={saving}
-        resourceLabel={resourceLabel}
+        isAdmin={isAdmin}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         onStatus={(b, s) => void updateStatus(b, s)}
-        onMove={setMoveTarget}
         onEdit={setEditTarget}
         onCreate={() => { setCreateResult(null); setCreateOpen(true); }}
       />
@@ -299,30 +255,28 @@ export function BookingsCrud() {
       <BookingCreateDrawer
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        branches={branches}
-        services={services}
-        lineUsers={lineUsers}
-        resources={activeResources}
-        resourceLabel={resourceLabel}
+        vehicleTypes={vehicleTypes}
+        docks={activeResources}
         creating={creating}
         result={createResult}
-        onSubmit={(d, u) => void submitCreate(d, u)}
+        onSubmit={(d) => void submitCreate(d)}
         onReset={() => setCreateResult(null)}
       />
 
       <BookingEditDrawer
         booking={editTarget}
-        resourceLabel={resourceLabel}
+        isAdmin={isAdmin}
         saving={saving}
+        siteName={siteName}
         onClose={() => setEditTarget(null)}
         onStatus={(b, s) => void updateStatus(b, s)}
         onMove={setMoveTarget}
+        onChanged={() => { setEditTarget(null); reload(); }}
       />
 
       <BookingMoveDialog
         booking={moveTarget}
         resources={resources}
-        resourceLabel={resourceLabel}
         saving={saving}
         onClose={() => setMoveTarget(null)}
         onSubmit={(d) => void submitMove(d)}

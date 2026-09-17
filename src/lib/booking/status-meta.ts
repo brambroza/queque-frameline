@@ -21,6 +21,7 @@ export const STATUS_META: Record<string, StatusMeta> = {
   pending: { palette: 'warning', order: 10, occupies: true },
   pending_approval: { palette: 'info', order: 11, occupies: true },
   confirmed: { palette: 'primary', order: 20, occupies: true },
+  late: { palette: 'warning', order: 21, occupies: true },
   checked_in: { palette: 'secondary', order: 30, occupies: true },
   waiting: { palette: 'secondary', order: 31, occupies: true },
   called: { palette: 'info', order: 40, occupies: true },
@@ -47,18 +48,6 @@ export function getStatusMeta(status: string): StatusMeta {
  */
 export function statusOccupiesSlot(status: string): boolean {
   return getStatusMeta(status).occupies;
-}
-
-/**
- * Whether a cancellation notice should go to the customer for a booking that
- * was in `prevStatus` before the change. A booking already cancelled (or
- * already soft-deleted) has been told once; cancelling it again must not
- * push a second LINE message.
- */
-export function shouldNotifyCancellation(prev: { status?: string | null; is_deleted?: boolean | null } | null | undefined): boolean {
-  if (!prev) return false;
-  if (prev.is_deleted) return false;
-  return prev.status !== 'cancelled';
 }
 
 /**

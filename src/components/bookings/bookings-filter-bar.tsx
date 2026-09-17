@@ -19,7 +19,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { StatusChip } from '@/components/shared/status-chip';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
-import { FILTER_STATUSES, addDays, type Resource } from './booking-types';
+import { DIRECTION_META, FILTER_STATUSES, addDays, type Dock } from './booking-types';
 
 export type DateRangeKind = 'today' | 'tomorrow' | 'all' | 'custom';
 
@@ -29,6 +29,8 @@ export type BookingsFilter = {
   /** ISO date sent to the API; empty when `range` is `all`. */
   date: string;
   status: string;
+  /** '' = both directions. */
+  direction: '' | 'inbound' | 'outbound';
   /** '' = every resource, 'none' = unassigned, otherwise a resource id. */
   resource: string;
   search: string;
@@ -61,7 +63,7 @@ export function BookingsFilterBar({
   value: BookingsFilter;
   onChange: (next: BookingsFilter) => void;
   onRefresh: () => void;
-  resources: Resource[];
+  resources: Dock[];
   resourceLabel: string;
   total: number;
   loading?: boolean;
@@ -126,6 +128,20 @@ export function BookingsFilterBar({
             ))}
           </TextField>
 
+          <TextField
+            id="bookings-direction"
+            select
+            size="small"
+            value={value.direction}
+            onChange={(e) => onChange({ ...value, direction: e.target.value as BookingsFilter['direction'] })}
+            sx={fieldSx}
+            slotProps={{ select: { displayEmpty: true } }}
+          >
+            <MenuItem value="">{t('filter_all_direction', 'รับ + ส่ง')}</MenuItem>
+            <MenuItem value="outbound">{DIRECTION_META.outbound.label}</MenuItem>
+            <MenuItem value="inbound">{DIRECTION_META.inbound.label}</MenuItem>
+          </TextField>
+
           {resources.length > 0 ? (
             <TextField
               id="bookings-resource"
@@ -149,7 +165,7 @@ export function BookingsFilterBar({
             size="small"
             value={value.search}
             onChange={(e) => onChange({ ...value, search: e.target.value })}
-            placeholder={t('search_placeholder', 'ค้นหาเลขคิว / หมายเหตุ')}
+            placeholder={t('search_placeholder_dock', 'ค้นหาเลขคิว / ทะเบียน / เลข DO')}
             sx={{ ...fieldSx, minWidth: { xs: 0, sm: 200 }, width: { xs: '100%', sm: 'auto' } }}
             slotProps={{
               input: {
