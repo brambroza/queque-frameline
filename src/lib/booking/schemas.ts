@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { NICKNAME_MAX } from '@/lib/booking/customer-label';
+import { isPlausiblePlate } from '@/lib/booking/plate';
+
+export const directionSchema = z.enum(['inbound', 'outbound']);
+/** '' / 'both' from a select = the row serves both directions (stored as null). */
+export const nullableDirectionSchema = z.preprocess(
+  (v) => (v === '' || v === 'both' || v === undefined ? null : v),
+  directionSchema.nullable(),
+);
 
 export const branchSchema = z.object({
   branch_name: z.string().min(2),
@@ -20,8 +27,12 @@ export const serviceSchema = z.object({
   capacity_per_slot: z.coerce.number().int().min(1).default(1),
   requires_approval: z.coerce.boolean().default(false),
   allow_walk_in: z.coerce.boolean().default(false),
-  price: z.coerce.number().nonnegative(),
+  price: z.coerce.number().nonnegative().default(0),
   active: z.coerce.boolean().default(true),
+  /** Dock turnaround blocked after this vehicle type. */
+  buffer_minutes: z.coerce.number().int().min(0).max(240).default(0),
+  direction: nullableDirectionSchema.optional(),
+  sort_order: z.coerce.number().int().min(0).max(9999).default(0),
 });
 
 export const workingHourSchema = z.object({
@@ -34,30 +45,71 @@ export const workingHourSchema = z.object({
   slot_interval_minutes: z.coerce.number().int().min(5).max(180),
   capacity_per_slot: z.coerce.number().int().min(1).max(100),
   active: z.coerce.boolean().default(true),
+  direction: nullableDirectionSchema.optional(),
 });
 
 /** HTML inputs send '' for an untouched field; treat that as "not provided". */
 const emptyToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 
-export const bookingSchema = z.object({
-  branch_id: z.string().uuid(),
-  service_id: z.string().uuid(),
-  customer_name: z.string().trim().min(1),
-  /** ชื่อเล่น saved on the customer profile; blank = leave as is. */
-  customer_nickname: z.preprocess(emptyToUndefined, z.string().trim().max(NICKNAME_MAX).optional()),
-  customer_phone: z.string().min(8),
-  line_user_pk: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
-  line_user_external_id: z.preprocess(emptyToUndefined, z.string().optional()),
-  booking_date: z.string(),
-  start_time: z.string(),
-  party_size: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(200).optional()),
-  resource_id: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
-  note: z.string().optional().default(''),
-  status: z.enum(['pending', 'pending_approval', 'confirmed', 'waiting', 'called', 'seating', 'serving', 'in_service', 'checked_in', 'completed', 'skipped', 'cancelled', 'no_show']).default('confirmed'),
+const optionalText = (max: number) => z.preprocess(emptyToUndefined, z.string().trim().max(max).optional());
+const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable());
+
+export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
+export const slotTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/, 'HH:MM');
+export const phoneSchema = z.string().trim().min(8).max(20).regex(/^[0-9+\-\s()]+$/);
+export const plateSchema = z.string().trim().min(2).max(30).refine(isPlausiblePlate, 'ทะเบียนรถไม่ถูกต้อง');
+
+/** Vehicle / driver / receiver details — shared by the portal and the public booking link. */
+export const vehicleDetailsSchema = z.object({
+  plate_number: plateSchema,
+  driver_name: optionalText(120),
+  driver_phone: z.preprocess(emptyToUndefined, phoneSchema.optional()),
+  receiver_name: optionalText(120),
+  receiver_phone: z.preprocess(emptyToUndefined, phoneSchema.optional()),
+  note: optionalText(500),
+});
+
+/**
+ * Portal "สร้างคิว". The partner comes from `partner_id`, from the linked
+ * document, or is created from `partner_name` + `partner_phone`.
+ */
+export const dockBookingSchema = vehicleDetailsSchema
+  .extend({
+    direction: directionSchema,
+    service_id: z.string().uuid(),
+    booking_date: isoDateSchema,
+    start_time: slotTimeSchema,
+    branch_id: optionalUuid,
+    resource_id: optionalUuid,
+    document_id: optionalUuid,
+    partner_id: optionalUuid,
+    partner_name: optionalText(160),
+    partner_phone: z.preprocess(emptyToUndefined, phoneSchema.optional()),
+  })
+  .refine((v) => Boolean(v.partner_id || v.document_id || v.partner_name), {
+    message: 'ต้องระบุคู่ค้า หรือเลือกเอกสาร SO/PO',
+    path: ['partner_name'],
+  });
+
+export const bookingStatusPatchSchema = z.object({
+  id: z.string().uuid(),
+  status: z.enum(['confirmed', 'late', 'checked_in', 'called', 'serving', 'completed', 'cancelled', 'no_show']),
+  cancel_reason: optionalText(300),
+});
+
+export const plateChangeSchema = z.object({
+  plate_number_actual: plateSchema,
+  reason: optionalText(300),
+});
+
+export const rescheduleSchema = z.object({
+  booking_date: isoDateSchema,
+  start_time: slotTimeSchema,
+  resource_id: optionalUuid,
 });
 
 export const bookingResourceSchema = z.object({
-  resource_type: z.enum(['table', 'buffet_zone', 'meeting_room', 'counter', 'service_area', 'trainer']),
+  resource_type: z.enum(['dock', 'table', 'buffet_zone', 'meeting_room', 'counter', 'service_area', 'trainer']).default('dock'),
   resource_code: z.string().trim().min(1).max(40).optional().nullable(),
   resource_name: z.string().trim().min(1).max(120),
   capacity: z.coerce.number().int().min(1).max(1000).default(1),
@@ -66,14 +118,15 @@ export const bookingResourceSchema = z.object({
   zone: z.string().trim().max(80).optional().nullable(),
   description: z.string().trim().max(500).optional().nullable(),
   active: z.coerce.boolean().default(true),
-  /** Services this resource serves; empty / omitted = every service. */
+  /** Vehicle types allowed on this dock; empty / omitted = every type. */
   service_ids: z.array(z.string().uuid()).max(200).optional().nullable(),
+  direction: nullableDirectionSchema.optional(),
 });
 
 export const bookingResourceBulkSchema = z.object({
   /** Services every generated resource serves; empty / omitted = every service. */
   service_ids: z.array(z.string().uuid()).max(200).optional().nullable(),
-  resource_type: z.enum(['table', 'buffet_zone', 'meeting_room', 'counter', 'service_area', 'trainer']),
+  resource_type: z.enum(['dock', 'table', 'buffet_zone', 'meeting_room', 'counter', 'service_area', 'trainer']).default('dock'),
   branch_id: z.string().uuid().optional().nullable(),
   floor: z.string().trim().max(50).optional().nullable(),
   zone: z.string().trim().max(80).optional().nullable(),

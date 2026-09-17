@@ -1,68 +1,121 @@
 import { describe, expect, it } from 'vitest';
 import {
-  checkInDenialMessage,
-  checkInEligibility,
-  isApprovalTransition,
+  ALLOWED_TRANSITIONS,
+  canTransition,
+  freesDock,
+  isArrivalTransition,
   isCallTransition,
+  isConfirmTransition,
+  isTerminalStatus,
   resolveInitialBookingStatus,
+  transitionStamps,
 } from './status-flow';
 
 describe('resolveInitialBookingStatus', () => {
-  it('confirms by default', () => {
-    expect(resolveInitialBookingStatus(null)).toBe('confirmed');
-    expect(resolveInitialBookingStatus({})).toBe('confirmed');
-    expect(resolveInitialBookingStatus({ requires_approval: false, booking_mode: 'fixed_slot' })).toBe('confirmed');
+  it('confirms admin-created queues at once', () => {
+    expect(resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true })).toBe('confirmed');
   });
-
-  it('holds for approval when the service asks for it', () => {
-    expect(resolveInitialBookingStatus({ requires_approval: true })).toBe('pending_approval');
-    expect(resolveInitialBookingStatus({ booking_mode: 'request_approval' })).toBe('pending_approval');
-    expect(resolveInitialBookingStatus({ requires_approval: false, booking_mode: 'request_approval' })).toBe('pending_approval');
+  it('holds link bookings for the admin unless the site turned that off', () => {
+    expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: true })).toBe('pending');
+    expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: false })).toBe('confirmed');
+    expect(resolveInitialBookingStatus({ source: 'api', requireAdminConfirm: true })).toBe('pending');
   });
 });
 
-describe('checkInEligibility', () => {
-  const today = '2026-09-13';
-
-  it('allows a confirmed booking on its day', () => {
-    expect(checkInEligibility({ status: 'confirmed', booking_date: today }, today)).toEqual({ ok: true });
-    expect(checkInEligibility({ status: 'pending', booking_date: today }, today)).toEqual({ ok: true });
+describe('canTransition', () => {
+  it('follows the happy path for staff, except confirm', () => {
+    expect(canTransition('pending', 'confirmed', 'admin')).toEqual({ ok: true });
+    expect(canTransition('pending', 'confirmed', 'staff')).toEqual({ ok: false, reason: 'admin_only' });
+    expect(canTransition('confirmed', 'checked_in', 'staff')).toEqual({ ok: true });
+    expect(canTransition('checked_in', 'called', 'staff')).toEqual({ ok: true });
+    expect(canTransition('called', 'serving', 'staff')).toEqual({ ok: true });
+    expect(canTransition('serving', 'completed', 'staff')).toEqual({ ok: true });
   });
 
-  it('refuses another day', () => {
-    expect(checkInEligibility({ status: 'confirmed', booking_date: '2026-09-14' }, today)).toEqual({ ok: false, reason: 'not_today' });
-  });
-
-  it('refuses once called, served, cancelled or awaiting approval', () => {
-    for (const status of ['pending_approval', 'waiting', 'called', 'serving', 'completed', 'cancelled', 'no_show']) {
-      expect(checkInEligibility({ status, booking_date: today }, today)).toEqual({ ok: false, reason: 'wrong_status' });
+  it('refuses skipping steps and leaving terminal states', () => {
+    expect(canTransition('confirmed', 'called', 'admin')).toEqual({ ok: false, reason: 'not_allowed' });
+    expect(canTransition('pending', 'checked_in', 'admin')).toEqual({ ok: false, reason: 'not_allowed' });
+    expect(canTransition('serving', 'cancelled', 'admin')).toEqual({ ok: false, reason: 'not_allowed' });
+    for (const s of ['completed', 'cancelled', 'no_show'] as const) {
+      expect(ALLOWED_TRANSITIONS[s]).toEqual([]);
+      expect(isTerminalStatus(s)).toBe(true);
     }
   });
 
-  it('reports a second tap as already checked in', () => {
-    expect(checkInEligibility({ status: 'checked_in', booking_date: today }, today)).toEqual({ ok: false, reason: 'already_checked_in' });
+  it('rejects statuses inherited from Queue', () => {
+    expect(canTransition('waiting', 'called', 'admin')).toEqual({ ok: false, reason: 'unknown_status' });
+    expect(canTransition('confirmed', 'pending_approval', 'admin')).toEqual({ ok: false, reason: 'unknown_status' });
   });
 
-  it('has a Thai message for every reason', () => {
-    expect(checkInDenialMessage('already_checked_in')).toContain('แล้ว');
-    expect(checkInDenialMessage('not_today')).toContain('วันที่จอง');
-    expect(checkInDenialMessage('wrong_status')).toContain('ไม่สามารถ');
+  it('lets a customer cancel only before arrival', () => {
+    expect(canTransition('pending', 'cancelled', 'customer')).toEqual({ ok: true });
+    expect(canTransition('late', 'cancelled', 'customer')).toEqual({ ok: true });
+    expect(canTransition('checked_in', 'cancelled', 'customer')).toEqual({ ok: false, reason: 'not_customer_cancellable' });
+    expect(canTransition('confirmed', 'checked_in', 'customer')).toEqual({ ok: false, reason: 'not_customer_cancellable' });
+  });
+
+  it('limits the system to sweep + auto-call moves', () => {
+    expect(canTransition('confirmed', 'late', 'system')).toEqual({ ok: true });
+    expect(canTransition('late', 'no_show', 'system')).toEqual({ ok: true });
+    expect(canTransition('called', 'no_show', 'system')).toEqual({ ok: true });
+    expect(canTransition('checked_in', 'called', 'system')).toEqual({ ok: true });
+    expect(canTransition('pending', 'confirmed', 'system')).toEqual({ ok: false, reason: 'not_allowed' });
+    expect(canTransition('serving', 'completed', 'system')).toEqual({ ok: false, reason: 'not_allowed' });
+  });
+
+  it('allows a late truck to still check in', () => {
+    expect(canTransition('late', 'checked_in', 'staff')).toEqual({ ok: true });
   });
 });
 
-describe('transitions', () => {
-  it('detects a call from every waiting-ish status and re-calls', () => {
-    expect(isCallTransition('confirmed', 'called')).toBe(true);
+describe('transition predicates', () => {
+  it('detects confirm, arrival and call', () => {
+    expect(isConfirmTransition('pending', 'confirmed')).toBe(true);
+    expect(isConfirmTransition('late', 'confirmed')).toBe(false);
+    expect(isArrivalTransition('late', 'checked_in')).toBe(true);
+    expect(isArrivalTransition('called', 'checked_in')).toBe(false);
     expect(isCallTransition('checked_in', 'called')).toBe(true);
-    expect(isCallTransition('waiting', 'called')).toBe(true);
     expect(isCallTransition('called', 'called')).toBe(true);
-    expect(isCallTransition('serving', 'called')).toBe(false);
-    expect(isCallTransition('waiting', 'serving')).toBe(false);
+    expect(isCallTransition('confirmed', 'called')).toBe(false);
   });
 
-  it('detects approval only from pending_approval', () => {
-    expect(isApprovalTransition('pending_approval', 'confirmed')).toBe(true);
-    expect(isApprovalTransition('pending', 'confirmed')).toBe(false);
-    expect(isApprovalTransition('pending_approval', 'cancelled')).toBe(false);
+  it('knows when a dock is released', () => {
+    expect(freesDock('serving', 'completed')).toBe(true);
+    expect(freesDock('called', 'no_show')).toBe(true);
+    expect(freesDock('called', 'checked_in')).toBe(true);
+    expect(freesDock('called', 'serving')).toBe(false);
+    expect(freesDock('confirmed', 'cancelled')).toBe(false);
+  });
+});
+
+describe('transitionStamps', () => {
+  const now = new Date('2026-09-21T02:00:00.000Z');
+  const ctx = { now, actorId: 'u1', callCount: 1, calledTimeoutMinutes: 15 };
+
+  it('stamps a call with count and timeout', () => {
+    expect(transitionStamps('checked_in', 'called', ctx)).toEqual({
+      called_at: '2026-09-21T02:00:00.000Z',
+      called_by: 'u1',
+      call_count: 2,
+      called_timeout_at: '2026-09-21T02:15:00.000Z',
+      auto_called: false,
+    });
+  });
+
+  it('marks auto calls and leaves called_by empty', () => {
+    const s = transitionStamps('checked_in', 'called', { ...ctx, actorId: null, auto: true });
+    expect(s.auto_called).toBe(true);
+    expect(s.called_by).toBeNull();
+  });
+
+  it('clears the call when it is taken back', () => {
+    expect(transitionStamps('called', 'checked_in', ctx)).toEqual({ called_at: null, called_timeout_at: null, auto_called: false });
+  });
+
+  it('stamps arrival, service start, completion and cancel', () => {
+    expect(transitionStamps('confirmed', 'checked_in', ctx)).toEqual({ arrived_at: now.toISOString(), checked_in_at: now.toISOString() });
+    expect(transitionStamps('called', 'serving', ctx)).toEqual({ serving_started_at: now.toISOString() });
+    expect(transitionStamps('serving', 'completed', ctx)).toEqual({ completed_at: now.toISOString() });
+    expect(transitionStamps('confirmed', 'cancelled', ctx)).toEqual({ cancelled_by: 'u1' });
   });
 });
