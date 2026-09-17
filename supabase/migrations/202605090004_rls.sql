@@ -1,3 +1,5 @@
+-- Copied from Queue's supabase/rls.sql. Fixed for a fresh database:
+-- `create policy if not exists` is not valid SQL, and `shops` has no shop_id column.
 create or replace function public.has_role(p_role text)
 returns boolean
 language sql
@@ -62,7 +64,8 @@ BEGIN
   END LOOP;
 END$$;
 
-create policy if not exists p_companies_rw on public.companies
+drop policy if exists p_companies_rw on public.companies;
+create policy p_companies_rw on public.companies
 for all using (
   public.has_role('super_admin') or exists(select 1 from public.users_profile up where up.id = auth.uid() and up.company_id = companies.id)
 ) with check (
@@ -78,7 +81,12 @@ BEGIN
   ])
   LOOP
     EXECUTE format('drop policy if exists p_%s_rw on public.%s;', t, t);
-    EXECUTE format('create policy p_%s_rw on public.%s for all using (public.can_access_shop(shop_id)) with check (public.can_access_shop(shop_id));', t, t);
+    -- shops is keyed by its own id; every other tenant table carries shop_id.
+    IF t = 'shops' THEN
+      EXECUTE 'create policy p_shops_rw on public.shops for all using (public.can_access_shop(id)) with check (public.can_access_shop(id));';
+    ELSE
+      EXECUTE format('create policy p_%s_rw on public.%s for all using (public.can_access_shop(shop_id)) with check (public.can_access_shop(shop_id));', t, t);
+    END IF;
   END LOOP;
 END$$;
 
