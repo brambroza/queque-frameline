@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
-import { PlanCard } from '@/components/subscription/plan-card';
 import { formatDateTimeDMY } from '@/lib/utils/date-format';
 
 type ShopProfile = {
@@ -195,7 +194,6 @@ export function SettingsCrud() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
-              <PlanCard source="settings" />
             </div>
             <label className="text-sm">
               <span className="mb-1 block text-slate-600">ชื่อร้าน</span>

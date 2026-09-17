@@ -11,7 +11,7 @@ function extFromFileName(name: string) {
 
 export async function GET() {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { data, error } = await supabase
       .from('shops')
       .select('id,company_id,name,shop_key,logo_url,phone,email,address')
@@ -26,7 +26,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
     const form = await req.formData();
 
     const name = String(form.get('name') ?? '').trim();

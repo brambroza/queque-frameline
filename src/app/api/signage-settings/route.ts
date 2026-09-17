@@ -5,8 +5,8 @@ import { assertBranchAllowed, assertBranchWritable } from '@/lib/auth/branch-sco
 import { writeAuditLog } from '@/lib/audit/activity-log';
 import { loadSignageSettings, saveSignageSettings, SignageConfigSchema } from '@/lib/signage/settings';
 
-const READ_ROLES = ['super_admin', 'shop_owner', 'branch_manager', 'staff'] as const;
-const WRITE_ROLES = ['super_admin', 'shop_owner', 'branch_manager'] as const;
+const READ_ROLES = ['admin', 'staff'] as const;
+const WRITE_ROLES = ['admin'] as const;
 
 const BranchIdSchema = z.string().uuid();
 

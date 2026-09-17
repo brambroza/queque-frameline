@@ -1,4 +1,15 @@
 #!/usr/bin/env node
+/**
+ * Create (or reset) a portal account for this site and grant it a role.
+ *
+ * Usage:
+ *   node scripts/create-admin.mjs <email> <password> [fullName] [role]
+ *   role = admin (default) | staff
+ *
+ * Reads NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SITE_SHOP_KEY
+ * from .env / .env.local. The shop row (shop_key = SITE_SHOP_KEY) must already
+ * exist — it is created by the seed migration.
+ */
 import fs from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
@@ -31,26 +42,30 @@ loadEnvFile(path.resolve(process.cwd(), '.env.local'));
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SITE_SHOP_KEY = process.env.SITE_SHOP_KEY || 'fameline';
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   console.error('Missing env: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
 }
 
-const email = process.argv[2] || process.env.SUPER_ADMIN_EMAIL;
-const password = process.argv[3] || process.env.SUPER_ADMIN_PASSWORD;
-const fullName = process.argv[4] || process.env.SUPER_ADMIN_NAME || 'Super Admin';
+const email = process.argv[2] || process.env.ADMIN_EMAIL;
+const password = process.argv[3] || process.env.ADMIN_PASSWORD;
+const fullName = process.argv[4] || process.env.ADMIN_NAME || 'Site Admin';
+const roleCode = process.argv[5] || process.env.ADMIN_ROLE || 'admin';
 
 if (!email || !password) {
-  console.error('Usage: node scripts/create-super-admin.mjs <email> <password> [fullName]');
+  console.error('Usage: node scripts/create-admin.mjs <email> <password> [fullName] [admin|staff]');
+  process.exit(1);
+}
+if (!['admin', 'staff'].includes(roleCode)) {
+  console.error(`Unknown role "${roleCode}" — use admin or staff`);
   process.exit(1);
 }
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
-  realtime: {
-    transport: globalThis.WebSocket,
-  },
+  realtime: { transport: globalThis.WebSocket },
 });
 
 async function findUserByEmail(targetEmail) {
@@ -68,10 +83,17 @@ async function findUserByEmail(targetEmail) {
 }
 
 async function main() {
-  const { data: roleRow, error: roleErr } = await admin.from('roles').select('id').eq('code', 'super_admin').single();
-  if (roleErr || !roleRow) {
-    throw new Error('Role super_admin not found. Run supabase/seed.sql first.');
-  }
+  const { data: shop, error: shopErr } = await admin
+    .from('shops')
+    .select('id, company_id, name')
+    .eq('shop_key', SITE_SHOP_KEY)
+    .eq('is_deleted', false)
+    .maybeSingle();
+  if (shopErr) throw shopErr;
+  if (!shop) throw new Error(`Site shop "${SITE_SHOP_KEY}" not found. Apply supabase/migrations first (seed creates it).`);
+
+  const { data: roleRow, error: roleErr } = await admin.from('roles').select('id').eq('code', roleCode).single();
+  if (roleErr || !roleRow) throw new Error(`Role ${roleCode} not found. Apply the seed migration first.`);
 
   let user = await findUserByEmail(email);
   if (!user) {
@@ -99,6 +121,8 @@ async function main() {
 
   const { error: profileErr } = await admin.from('users_profile').upsert({
     id: userId,
+    company_id: shop.company_id,
+    shop_id: shop.id,
     full_name: fullName,
     email,
     active: true,
@@ -109,10 +133,10 @@ async function main() {
 
   const { data: existingUserRole, error: existingRoleErr } = await admin
     .from('user_roles')
-    .select('id')
+    .select('id, is_deleted')
     .eq('user_id', userId)
     .eq('role_id', roleRow.id)
-    .is('shop_id', null)
+    .eq('shop_id', shop.id)
     .maybeSingle();
   if (existingRoleErr) throw existingRoleErr;
 
@@ -120,15 +144,19 @@ async function main() {
     const { error: userRoleErr } = await admin.from('user_roles').insert({
       user_id: userId,
       role_id: roleRow.id,
-      company_id: null,
-      shop_id: null,
+      company_id: shop.company_id,
+      shop_id: shop.id,
       created_by: userId,
       updated_by: userId,
     });
     if (userRoleErr) throw userRoleErr;
-    console.log('Assigned role: super_admin');
+    console.log(`Assigned role: ${roleCode} @ ${shop.name}`);
+  } else if (existingUserRole.is_deleted) {
+    const { error: reviveErr } = await admin.from('user_roles').update({ is_deleted: false, updated_by: userId }).eq('id', existingUserRole.id);
+    if (reviveErr) throw reviveErr;
+    console.log(`Re-enabled role: ${roleCode} @ ${shop.name}`);
   } else {
-    console.log('Role super_admin already assigned');
+    console.log(`Role ${roleCode} already assigned @ ${shop.name}`);
   }
 
   console.log('Done.');

@@ -50,7 +50,7 @@ async function customerIdsInBranchScope(
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q');
     const page = toInt(searchParams.get('page'), 1);
@@ -95,7 +95,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = customerSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload', issues: parsed.error.issues }, { status: 400 });
 
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const body = await req.json();
     const id = body.id as string;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -169,7 +169,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

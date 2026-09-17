@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
-import { readPaywallDetail, useUpgrade } from '@/components/subscription/upgrade-provider';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -66,7 +65,6 @@ function ServiceLinkPicker({ services, selected, onToggle }: { services: Service
 export function ResourcesCrud() {
   const { push } = useToast();
   const confirm = useConfirm();
-  const { openPaywall } = useUpgrade();
   const [rows, setRows] = useState<Resource[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -166,8 +164,6 @@ export function ResourcesCrud() {
       body: JSON.stringify(payload),
     });
     const json = await res.json();
-    const paywall = readPaywallDetail(res, json);
-    if (paywall) return openPaywall(paywall);
     if (!res.ok) return push(json.error ?? 'บันทึก resource ไม่สำเร็จ', 'error');
     push(isEdit ? 'อัปเดตทรัพยากรแล้ว' : 'เพิ่มทรัพยากรสำเร็จ');
     closeSingleDrawer();

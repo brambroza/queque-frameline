@@ -7,7 +7,8 @@
  * comparison is done on Bangkok-local strings too (see `toBangkokStamp`).
  * The device clock is never trusted: both callers pass a server-side `now`.
  */
-import type { LocalStamp } from '@/lib/line/booking-reminder';
+/** A point in Bangkok local time as the strings the DB stores (`booking_date` / `start_time`). */
+export type LocalStamp = { date: string; time: string };
 
 /** Machine-readable code on the 400 from `/book`, so the LIFF can reload the grid. */
 export const SLOT_PAST_CODE = 'slot_past';

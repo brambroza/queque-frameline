@@ -31,7 +31,6 @@ import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import PaymentsRoundedIcon from '@mui/icons-material/PaymentsRounded';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { readPaywallDetail, useUpgrade } from '@/components/subscription/upgrade-provider';
 import { BookingModeChip } from '@/components/shared/booking-mode-chip';
 import { ActionIconGroup } from '@/components/ui/action-icon-group';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -101,7 +100,6 @@ function ServiceMobileCard({ service, onEdit, onDelete }: { service: Service; on
 export function ServicesCrud() {
   const { push } = useToast();
   const confirm = useConfirm();
-  const { openPaywall } = useUpgrade();
   const [rows, setRows] = useState<Service[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -325,8 +323,6 @@ export function ServicesCrud() {
     });
     const json = await res.json();
     setSaving(false);
-    const paywall = readPaywallDetail(res, json);
-    if (paywall) return openPaywall(paywall);
     if (!res.ok) return push(json.error ?? (editingId ? 'แก้ไขบริการไม่สำเร็จ' : 'เพิ่มบริการไม่สำเร็จ'), 'error');
     push(editingId ? 'แก้ไขบริการสำเร็จ' : 'เพิ่มบริการสำเร็จ');
     resetForm();

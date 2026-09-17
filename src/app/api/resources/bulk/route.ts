@@ -22,7 +22,7 @@ function getErrorPayload(e: unknown) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
     const body = await req.json();
     const normalizedBody = {
       ...body,

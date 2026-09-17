@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { readPaywallDetail, useUpgrade } from '@/components/subscription/upgrade-provider';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { MobileCardList } from '@/components/ui/responsive-table';
 import { MobileRecordCard } from '@/components/ui/mobile-record-card';
@@ -23,7 +22,7 @@ type FormState = {
   mode: StaffMode;
   user_id: string;
   email: string;
-  role: 'branch_manager' | 'staff';
+  role: 'admin' | 'staff';
   display_name: string;
   active: boolean;
   branch_ids: string[];
@@ -44,7 +43,6 @@ export function StaffCrud() {
   const { t } = useTranslation('staff');
   const { push } = useToast();
   const confirm = useConfirm();
-  const { openPaywall } = useUpgrade();
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [users, setUsers] = useState<RefUser[]>([]);
   const [branches, setBranches] = useState<RefBranch[]>([]);
@@ -103,10 +101,6 @@ export function StaffCrud() {
       push(invitingNew ? t('err_email', 'กรุณากรอกอีเมลผู้ใช้ใหม่') : t('err_user', 'กรุณาเลือกผู้ใช้'), 'error');
       return;
     }
-    if (invitingNew && form.role === 'branch_manager' && form.branch_ids.length === 0) {
-      push(t('err_manager_branch', 'ผู้จัดการสาขาต้องผูกอย่างน้อย 1 สาขา'), 'error');
-      return;
-    }
 
     setSaving(true);
     const res = await fetch('/api/staff', {
@@ -122,12 +116,6 @@ export function StaffCrud() {
     });
     const json = await res.json();
     setSaving(false);
-
-    const paywall = readPaywallDetail(res, json);
-    if (paywall) {
-      openPaywall(paywall);
-      return;
-    }
 
     if (!res.ok) {
       push(json.error ?? t('save_failed', 'บันทึกไม่สำเร็จ'), 'error');
@@ -306,7 +294,7 @@ export function StaffCrud() {
                         onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as FormState['role'] }))}
                       >
                         <option value="staff">{t('role_staff', 'พนักงาน')}</option>
-                        <option value="branch_manager">{t('role_branch_manager', 'ผู้จัดการสาขา')}</option>
+                        <option value="admin">{t('role_admin', 'ผู้ดูแลระบบ')}</option>
                       </select>
                     </label>
                   </>

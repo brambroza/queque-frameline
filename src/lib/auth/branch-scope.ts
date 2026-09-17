@@ -10,7 +10,7 @@ import { AuthError } from './errors';
 export type BranchScope = string[] | null;
 
 /** Roles that always see the whole shop, so no branch lookup is needed. */
-const SHOP_WIDE_ROLES: AppRole[] = ['super_admin', 'shop_owner'];
+const SHOP_WIDE_ROLES: AppRole[] = ['admin', 'staff'];
 
 /**
  * Minimal shape of a Supabase filter builder — enough to attach branch predicates.

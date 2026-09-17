@@ -7,8 +7,8 @@ import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import { StatusChip } from '@/components/shared/status-chip';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
-import { AckChip, PaymentChip } from './bookings-table';
-import { CANCELLABLE, MOVABLE, NEXT_STATUSES, changeAckState, customerName, customerPhone, hhmm, paymentMethodLabel, type BookingRow } from './booking-types';
+import { AckChip } from './bookings-table';
+import { CANCELLABLE, MOVABLE, NEXT_STATUSES, changeAckState, customerName, customerPhone, hhmm, type BookingRow } from './booking-types';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -68,7 +68,6 @@ export function BookingEditDrawer({
             <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2 }}>
               <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
                 <StatusChip status={b.status} />
-                <PaymentChip status={b.payment_status} />
               </Stack>
               <Stack spacing={0.25}>
                 <Typography variant="body2"><b>{formatDateDMY(b.booking_date)}</b> {hhmm(b.start_time)}{b.end_time ? ` – ${hhmm(b.end_time)}` : ''}</Typography>
@@ -93,21 +92,6 @@ export function BookingEditDrawer({
                 </Button>
               ) : null}
             </Box>
-
-            {b.payment_method ? (
-              <Section title={t('payment', 'การชำระเงิน')}>
-                <Stack spacing={0.5}>
-                  <Typography variant="body2">{t('payment_method', 'วิธีชำระ')}: <b>{paymentMethodLabel(b.payment_method)}</b></Typography>
-                  <Typography variant="body2">{t('amount', 'ยอด')}: <b>{Number(b.payment_amount ?? 0).toLocaleString('th-TH')} {t('baht', 'บาท')}</b></Typography>
-                  {b.payment_reject_reason ? <Typography variant="caption" color="error.main">{t('reject_reason', 'เหตุผลที่ปฏิเสธ')}: {b.payment_reject_reason}</Typography> : null}
-                  {b.payment_method === 'bank_transfer' ? (
-                    <Button size="small" variant="text" href={`/portal/payment-verification?booking_id=${b.id}`} sx={{ alignSelf: 'flex-start', mt: 0.5 }}>
-                      {t('view_slip', 'ดูสลิป / ตรวจสอบ')}
-                    </Button>
-                  ) : null}
-                </Stack>
-              </Section>
-            ) : null}
 
             {next.length > 0 ? (
               <Section title={t('change_status', 'เปลี่ยนสถานะ')}>

@@ -52,7 +52,7 @@ const patchSchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const unreadOnly = searchParams.get('unread_only') === 'true';
     const category = (searchParams.get('category') ?? '') as NotificationCategory | '';
@@ -91,7 +91,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const raw = await req.json();
     const parsed = createSchema.safeParse(raw);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload', issues: parsed.error.issues }, { status: 400 });
@@ -127,7 +127,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const raw = await req.json();
     const parsed = patchSchema.safeParse(raw);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload', issues: parsed.error.issues }, { status: 400 });

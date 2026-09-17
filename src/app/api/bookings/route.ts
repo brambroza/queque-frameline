@@ -2,21 +2,9 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope, assertBranchAllowed } from '@/lib/auth/branch-scope';
 import { bookingSchema } from '@/lib/booking/schemas';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { pushMessage } from '@/lib/line/client';
-import { bookingConfirmFlex } from '@/lib/line/messages';
-import { assertFeatureQuota } from '@/lib/subscription/enforcement';
-import { subscriptionErrorResponse } from '@/lib/subscription/response';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
-import { resolvePaymentForBooking } from '@/lib/payments/resolve';
-import { detectOmisePlatform } from '@/lib/payments/mobile-banking/banks';
-import { formatThaiDateLabel } from '@/lib/utils/date-format';
-import { safeSyncBookingToGoogleCalendar } from '@/lib/google-calendar/sync';
-import { isPersonResourceType, resourceBusyMessage, resourceTypeLabel } from '@/lib/booking/resource-types';
+import { resourceBusyMessage, resourceTypeLabel } from '@/lib/booking/resource-types';
 import { resourceServesService, resourceServiceMismatchMessage } from '@/lib/booking/resource-service-link';
-import { safeNotifyBookingChange } from '@/lib/line/notify-booking-change';
-import { safeNotifyBookingStatus } from '@/lib/line/notify-booking-status';
-import { shouldNotifyCancellation } from '@/lib/booking/status-meta';
 import { isApprovalTransition, isCallTransition } from '@/lib/booking/status-flow';
 
 /** Minimal shape needed to call a Postgres function — works for both the session and admin clients. */
@@ -48,7 +36,7 @@ async function isResourceFree(
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const date = searchParams.get('date');
     const status = searchParams.get('status');
@@ -86,7 +74,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = bookingSchema.safeParse(await req.json());
     if (!parsed.success) {
       // Field names only — enough for staff to see which box is wrong, no internal detail leaked.
@@ -99,17 +87,6 @@ export async function POST(req: Request) {
 
     const payload = parsed.data;
     assertBranchAllowed(branchScope, payload.branch_id);
-    const monthStart = `${payload.booking_date.slice(0, 7)}-01`;
-    const monthEnd = `${payload.booking_date.slice(0, 7)}-31`;
-    const { count: monthlyCount } = await supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .eq('shop_id', profile.shop_id)
-      .eq('is_deleted', false)
-      .gte('booking_date', monthStart)
-      .lte('booking_date', monthEnd);
-    await assertFeatureQuota(profile.shop_id, 'bookings', monthlyCount ?? 0);
-
     const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
@@ -168,7 +145,7 @@ export async function POST(req: Request) {
 
     const { data: service } = await supabase
       .from('services')
-      .select('duration_minutes,service_name,price')
+      .select('duration_minutes,service_name')
       .eq('id', payload.service_id)
       .eq('shop_id', profile.shop_id)
       .maybeSingle();
@@ -314,92 +291,15 @@ export async function POST(req: Request) {
       createdBy: user.id,
     });
 
-    await safeSyncBookingToGoogleCalendar(profile.shop_id, inserted.id);
-
-    let linePushSent = false;
-    let linePushError: string | null = null;
-    let qrPaymentCreated = false;
-
-    if (payload.line_user_external_id) {
-      const adminLine = createAdminClient();
-      const [{ data: shop }, { data: branch }] = await Promise.all([
-        adminLine.from('shops').select('name,shop_key,line_channel_access_token').eq('id', profile.shop_id).maybeSingle(),
-        adminLine.from('branches').select('branch_name').eq('id', payload.branch_id).maybeSingle(),
-      ]);
-
-      const token = shop?.line_channel_access_token || process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
-      const shopName = shop?.name ?? 'Queue Booking';
-      const dateLabel = formatThaiDateLabel(payload.booking_date);
-      const timeLabel = payload.start_time.slice(0, 5);
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
-      const liffUrl = shop?.shop_key && appUrl ? `${appUrl}/liff/${encodeURIComponent(shop.shop_key)}` : undefined;
-
-      // LINE booking confirmation
-      if (token) {
-        try {
-          await pushMessage(token, payload.line_user_external_id, [
-            bookingConfirmFlex({
-              shopName,
-              queueNumber,
-              branch: branch?.branch_name ?? '-',
-              service: (service as unknown as { service_name?: string } | null)?.service_name ?? '-',
-              date: dateLabel,
-              time: timeLabel,
-              assignedTo: assignedResource?.resource_name ?? null,
-              assignedLabel: assignedResource ? resourceTypeLabel(assignedResource.resource_type) : null,
-              liffUrl,
-            }),
-          ]);
-          linePushSent = true;
-        } catch (e) {
-          linePushError = e instanceof Error ? e.message : 'LINE push failed';
-        }
-      } else {
-        linePushError = 'LINE token not configured';
-      }
-
-      // Payment setup — non-blocking, never fails the booking
-      try {
-        const resourcePrice = Number(assignedResource?.unit_price ?? 0);
-        const servicePrice = Number((service as unknown as { price?: number } | null)?.price ?? 0);
-        const paymentPrice = resourcePrice > 0 ? resourcePrice : servicePrice;
-        const payment = await resolvePaymentForBooking({
-          bookingId: inserted.id,
-          shopId: profile.shop_id,
-          companyId: profile.company_id,
-          shopKey: shop?.shop_key ?? null,
-          amountTHB: paymentPrice,
-          shopName,
-          queueNumber,
-          serviceName: (service as unknown as { service_name?: string } | null)?.service_name ?? '-',
-          branchName: branch?.branch_name ?? '-',
-          dateLabel,
-          timeLabel,
-          requestedMethod: payload.payment_method ?? null,
-          requestedBankProvider: payload.bank_provider ?? null,
-          // Staff usually book from a desktop; the hint is optional for Omise anyway.
-          platformType: detectOmisePlatform(req.headers.get('user-agent')),
-        });
-        if (payment && token) {
-          await pushMessage(token, payload.line_user_external_id, [payment.flex]);
-          qrPaymentCreated = true;
-        }
-      } catch (payErr) {
-        console.error('[payments] setup error (booking still created):', payErr instanceof Error ? payErr.message : payErr);
-      }
-    }
-
-    return NextResponse.json({ data: { ok: true, queue_number: queueNumber, line_push_sent: linePushSent, line_push_error: linePushError, qr_payment_created: qrPaymentCreated } });
+    return NextResponse.json({ data: { ok: true, queue_number: queueNumber } });
   } catch (e) {
-    const quota = subscriptionErrorResponse(e);
-    if (quota) return quota;
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }
 }
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const body = await req.json();
     const id = body.id as string;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -427,7 +327,7 @@ export async function PATCH(req: Request) {
 
       const slotChanged = newDate !== String(before.booking_date) || newTime.slice(0, 5) !== String(before.start_time).slice(0, 5);
       const resourceChanged = nextResourceId !== prevResourceId;
-      if (!slotChanged && !resourceChanged) return NextResponse.json({ data: { ok: true, line_notified: false } });
+      if (!slotChanged && !resourceChanged) return NextResponse.json({ data: { ok: true } });
 
       const [{ data: svc }, { data: prevResource }, { data: selected }] = await Promise.all([
         supabase.from('services').select('duration_minutes').eq('id', before.service_id).eq('shop_id', profile.shop_id).maybeSingle(),
@@ -526,24 +426,7 @@ export async function PATCH(req: Request) {
         },
         createdBy: user.id,
       });
-      await safeSyncBookingToGoogleCalendar(profile.shop_id, id);
-
-      // Customer notice: a moved slot always matters; a provider swap only when
-      // the provider is a person (a different table is the shop's business).
-      const personInvolved = isPersonResourceType(selected?.resource_type) || isPersonResourceType(prevResource?.resource_type);
-      const kind = slotChanged ? 'moved' : resourceChanged && personInvolved ? 'reassigned' : null;
-      let lineNotified = false;
-      if (kind) {
-        const notice = await safeNotifyBookingChange({
-          shopId: profile.shop_id,
-          bookingId: id,
-          kind,
-          prev: { booking_date: String(before.booking_date), start_time: String(before.start_time), resource_name: before.resource_name ?? null },
-          resourceType: nextResourceType,
-        });
-        lineNotified = notice.sent;
-      }
-      return NextResponse.json({ data: { ok: true, line_notified: lineNotified } });
+      return NextResponse.json({ data: { ok: true } });
     }
 
     // --- Status update ---
@@ -590,29 +473,7 @@ export async function PATCH(req: Request) {
       metadata: { prev_status: before.status, next_status: status, call_count: isCall ? callCount : undefined },
       createdBy: user.id,
     });
-    await safeSyncBookingToGoogleCalendar(profile.shop_id, id);
-
-    // Customer-facing LINE notices per transition. Each helper never throws.
-    // - cancelled: only the first cancellation; re-saving must not push twice.
-    // - called: "ถึงคิวของคุณแล้ว" (repeat calls re-push with the count).
-    // - pending_approval → confirmed: "ร้านยืนยันคิวของคุณแล้ว".
-    let lineNotified = false;
-    if (isCancelled && shouldNotifyCancellation(before)) {
-      const notice = await safeNotifyBookingChange({
-        shopId: profile.shop_id,
-        bookingId: id,
-        kind: 'cancelled',
-        prev: { booking_date: String(before.booking_date), start_time: String(before.start_time) },
-      });
-      lineNotified = notice.sent;
-    } else if (isCall) {
-      const notice = await safeNotifyBookingStatus({ shopId: profile.shop_id, bookingId: id, kind: 'called', callCount });
-      lineNotified = notice.sent;
-    } else if (isApproval) {
-      const notice = await safeNotifyBookingStatus({ shopId: profile.shop_id, bookingId: id, kind: 'approved' });
-      lineNotified = notice.sent;
-    }
-    return NextResponse.json({ data: { ok: true, line_notified: lineNotified, call_count: isCall ? callCount : undefined } });
+    return NextResponse.json({ data: { ok: true, call_count: isCall ? callCount : undefined } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }
@@ -620,7 +481,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -642,19 +503,6 @@ export async function DELETE(req: Request) {
 
     if (error) throw error;
 
-    // Notify only after the soft-delete is committed, so a failed write never
-    // tells the customer their queue is gone while the row is still live. The
-    // lookup inside does not filter is_deleted, so the row is still found.
-    // A booking that was already cancelled or deleted was told once already.
-    if (shouldNotifyCancellation(before)) {
-      await safeNotifyBookingChange({
-        shopId: profile.shop_id,
-        bookingId: before.id,
-        kind: 'cancelled',
-        prev: { booking_date: String(before.booking_date), start_time: String(before.start_time) },
-      });
-    }
-
     if (before) {
       await safeCreateNotification(supabase, {
         companyId: profile.company_id,
@@ -674,7 +522,6 @@ export async function DELETE(req: Request) {
         metadata: { deleted: true },
         createdBy: user.id,
       });
-      await safeSyncBookingToGoogleCalendar(profile.shop_id, before.id);
     }
     return NextResponse.json({ data: true });
   } catch (e) {

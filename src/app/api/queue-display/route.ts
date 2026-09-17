@@ -26,7 +26,7 @@ type ShopRow = {
 export async function GET(req: Request) {
   try {
     const { supabase, profile, branchScope } = await requireAuthContext({
-      roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'],
+      roles: ['admin', 'staff'],
     });
     if (!profile.shop_id) return NextResponse.json({ error: 'No shop in profile' }, { status: 400 });
 

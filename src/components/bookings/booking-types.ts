@@ -1,5 +1,3 @@
-import type { PaymentMethod, PaymentStatus } from '@/types/db';
-import type { StatusPaletteKey } from '@/lib/booking/status-meta';
 import { customerLabel } from '@/lib/booking/customer-label';
 
 /** One row of `/api/bookings` as rendered by the portal list. */
@@ -10,10 +8,6 @@ export type BookingRow = {
   start_time: string;
   end_time?: string | null;
   status: string;
-  payment_status?: PaymentStatus | null;
-  payment_method?: PaymentMethod | null;
-  payment_amount?: number | null;
-  payment_reject_reason?: string | null;
   resource_id?: string | null;
   resource_name?: string | null;
   note?: string | null;
@@ -56,36 +50,6 @@ export type Resource = {
 
 /** Statuses offered in the list filter, in booking-flow order. */
 export const FILTER_STATUSES = ['pending', 'pending_approval', 'confirmed', 'checked_in', 'waiting', 'called', 'serving', 'completed', 'cancelled', 'no_show'] as const;
-
-/**
- * Payment status presentation. Typed as `Record<PaymentStatus, …>` on purpose:
- * adding a status without a label here is a compile error, not a raw key in the UI.
- */
-export const PAYMENT_META: Record<PaymentStatus, { label: string; palette: StatusPaletteKey }> = {
-  unpaid: { label: 'ยังไม่ชำระ', palette: 'default' },
-  pending_payment: { label: 'รอชำระ', palette: 'warning' },
-  awaiting_verification: { label: 'รอตรวจสลิป', palette: 'warning' },
-  paid: { label: 'ชำระแล้ว', palette: 'success' },
-  rejected: { label: 'สลิปไม่ผ่าน', palette: 'error' },
-  failed: { label: 'ชำระไม่สำเร็จ', palette: 'error' },
-  refunded: { label: 'คืนเงินแล้ว', palette: 'secondary' },
-};
-
-/** Human label for a payment method. */
-export function paymentMethodLabel(method: PaymentMethod | null | undefined): string {
-  switch (method) {
-    case 'bank_transfer':
-      return 'โอนเงิน + แนบสลิป';
-    case 'bank_deeplink':
-      return 'จ่ายผ่านแอปธนาคาร';
-    case 'omise_promptpay':
-      return 'QR อัตโนมัติ (Omise)';
-    case 'omise_mobile_banking':
-      return 'แอปธนาคาร (Omise)';
-    default:
-      return '-';
-  }
-}
 
 export type NextStatusKind = 'approve' | 'confirm' | 'wait' | 'call' | 'recall' | 'serve' | 'done' | 'no_show';
 

@@ -24,21 +24,10 @@ import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import EventBusyRoundedIcon from '@mui/icons-material/EventBusyRounded';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
-import SettingsEthernetRoundedIcon from '@mui/icons-material/SettingsEthernetRounded';
-import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
-import QrCodeRoundedIcon from '@mui/icons-material/QrCodeRounded';
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
-import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
-import ScienceRoundedIcon from '@mui/icons-material/ScienceRounded';
-import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded';
-import AppsRoundedIcon from '@mui/icons-material/AppsRounded';
-import AutoAwesomeMosaicRoundedIcon from '@mui/icons-material/AutoAwesomeMosaicRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
-import SlideshowRoundedIcon from '@mui/icons-material/SlideshowRounded';
-import MarkEmailUnreadRoundedIcon from '@mui/icons-material/MarkEmailUnreadRounded';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/i18n/i18n-provider';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
@@ -48,7 +37,6 @@ type NavItem = {
   fallback: string;
   href: string;
   icon: React.ReactNode;
-  superAdminOnly?: boolean;
   /** Hidden from users bound to specific branches — these screens are shop-wide admin. */
   shopWideOnly?: boolean;
 };
@@ -60,19 +48,20 @@ const groups: NavGroup[] = [
     fallback: 'ภาพรวม',
     items: [
       { labelKey: 'menu.dashboard', fallback: 'แดชบอร์ด', href: '/portal/dashboard', icon: <DashboardRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.bookings', fallback: 'การจอง', href: '/portal/bookings', icon: <EventNoteRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.bookings', fallback: 'คิวรับ-ส่งสินค้า', href: '/portal/bookings', icon: <EventNoteRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.calendar', fallback: 'ปฏิทิน', href: '/portal/calendar', icon: <CalendarMonthRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.queue_board', fallback: 'บอร์ดคิว', href: '/portal/queue-board', icon: <ViewKanbanRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.queue_display', fallback: 'จอแสดงคิว', href: '/portal/queue-display', icon: <TvRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.notifications', fallback: 'การแจ้งเตือน', href: '/portal/notifications', icon: <NotificationsRoundedIcon fontSize="small" /> },
     ],
   },
   {
     titleKey: 'menu.group_shop',
-    fallback: 'จัดการร้าน',
+    fallback: 'จัดการคลัง',
     items: [
-      { labelKey: 'menu.branches', fallback: 'สาขา', href: '/portal/branches', icon: <StoreRoundedIcon fontSize="small" />, shopWideOnly: true },
-      { labelKey: 'menu.services', fallback: 'บริการ', href: '/portal/services', icon: <DesignServicesRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.resources', fallback: 'ทรัพยากร', href: '/portal/resources', icon: <TableRestaurantRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.branches', fallback: 'สาขา/ประตู', href: '/portal/branches', icon: <StoreRoundedIcon fontSize="small" />, shopWideOnly: true },
+      { labelKey: 'menu.services', fallback: 'ประเภทรถ', href: '/portal/services', icon: <DesignServicesRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.resources', fallback: 'ท่ารับ-ส่งสินค้า', href: '/portal/resources', icon: <TableRestaurantRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.working_hours', fallback: 'เวลาทำการ', href: '/portal/working-hours', icon: <ScheduleRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.holidays', fallback: 'วันหยุด', href: '/portal/holidays', icon: <EventBusyRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.staff', fallback: 'พนักงาน', href: '/portal/staff', icon: <GroupRoundedIcon fontSize="small" />, shopWideOnly: true },
@@ -80,48 +69,17 @@ const groups: NavGroup[] = [
     ],
   },
   {
-    titleKey: 'menu.group_line',
-    fallback: 'LINE & การสื่อสาร',
-    items: [
-      { labelKey: 'menu.line_settings', fallback: 'ตั้งค่า LINE', href: '/portal/line-settings', icon: <SettingsEthernetRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.line_onboarding', fallback: 'ตั้งค่าเริ่มต้น LINE', href: '/portal/onboarding/line-setup', icon: <ChecklistRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.rich_menu_builder', fallback: 'สร้าง Rich Menu', href: '/portal/rich-menu', icon: <AutoAwesomeMosaicRoundedIcon fontSize="small" />, shopWideOnly: true },
-      { labelKey: 'menu.rich_menu_guide', fallback: 'คู่มือ Rich Menu', href: '/portal/rich-menu-guide', icon: <AppsRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.chat_inbox', fallback: 'กล่องข้อความ', href: '/portal/chat-inbox', icon: <ChatRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.notifications', fallback: 'การแจ้งเตือน', href: '/portal/notifications', icon: <NotificationsRoundedIcon fontSize="small" /> },
-    ],
-  },
-  {
     titleKey: 'menu.group_insights',
     fallback: 'รายงาน & ตั้งค่า',
     items: [
       { labelKey: 'menu.reports', fallback: 'รายงาน', href: '/portal/reports', icon: <InsightsRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.settings', fallback: 'ตั้งค่าร้าน', href: '/portal/settings', icon: <SettingsRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.payment_settings', fallback: 'ตั้งค่าการชำระเงิน', href: '/portal/payment-settings', icon: <QrCodeRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.payment_verification', fallback: 'ตรวจสอบการชำระเงิน', href: '/portal/payment-verification', icon: <ReceiptLongRoundedIcon fontSize="small" /> },
-    ],
-  },
-  {
-    titleKey: 'menu.group_demo',
-    fallback: 'โหมดทดลอง',
-    items: [
-      { labelKey: 'menu.demo_sandbox', fallback: 'Demo Sandbox', href: '/portal/demo-sandbox', icon: <ScienceRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.demo_presentation', fallback: 'Demo Presentation', href: '/portal/demo-presentation', icon: <SlideshowRoundedIcon fontSize="small" /> },
-    ],
-  },
-  {
-    titleKey: 'menu.group_admin',
-    fallback: 'ผู้ดูแลระบบ',
-    items: [
-      { labelKey: 'menu.translations', fallback: 'การแปลภาษา', href: '/portal/translations', icon: <TranslateRoundedIcon fontSize="small" />, superAdminOnly: true },
-      { labelKey: 'menu.shop_packages', fallback: 'แพ็กเกจร้าน', href: '/portal/shop-subscriptions', icon: <WorkspacePremiumRoundedIcon fontSize="small" />, superAdminOnly: true },
-      { labelKey: 'menu.sales_inbox', fallback: 'Sales Inbox', href: '/portal/sales-inbox', icon: <MarkEmailUnreadRoundedIcon fontSize="small" />, superAdminOnly: true },
+      { labelKey: 'menu.settings', fallback: 'ตั้งค่าระบบ', href: '/portal/settings', icon: <SettingsRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.translations', fallback: 'การแปลภาษา', href: '/portal/translations', icon: <TranslateRoundedIcon fontSize="small" />, shopWideOnly: true },
     ],
   },
 ];
 
 type PortalNavProps = {
-  isSuperAdmin?: boolean;
   /** Render icon-only rail with tooltips (desktop collapsed sidebar). */
   collapsed?: boolean;
   /** Called after a nav item is clicked — used to close the mobile drawer. */
@@ -132,7 +90,7 @@ type PortalNavProps = {
  * Portal side navigation. Renders grouped menu items filtered by role and
  * branch scope. In collapsed mode only icons are shown with hover tooltips.
  */
-export function PortalNav({ isSuperAdmin = false, collapsed = false, onNavigate }: PortalNavProps) {
+export function PortalNav({ collapsed = false, onNavigate }: PortalNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
@@ -143,7 +101,7 @@ export function PortalNav({ isSuperAdmin = false, collapsed = false, onNavigate 
   const visibleGroups = groups
     .map((g) => ({
       ...g,
-      items: g.items.filter((it) => (!it.superAdminOnly || isSuperAdmin) && (!it.shopWideOnly || !isBranchBound)),
+      items: g.items.filter((it) => !it.shopWideOnly || !isBranchBound),
     }))
     .filter((g) => g.items.length > 0);
 

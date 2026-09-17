@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { BANK_CODES, PAYMENT_METHODS } from '@/types/db';
 import { NICKNAME_MAX } from '@/lib/booking/customer-label';
 
 export const branchSchema = z.object({
@@ -55,13 +54,6 @@ export const bookingSchema = z.object({
   resource_id: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
   note: z.string().optional().default(''),
   status: z.enum(['pending', 'pending_approval', 'confirmed', 'waiting', 'called', 'seating', 'serving', 'in_service', 'checked_in', 'completed', 'skipped', 'cancelled', 'no_show']).default('confirmed'),
-  /** Lets staff force a method; otherwise the shop's first enabled method wins. */
-  payment_method: z.enum(PAYMENT_METHODS).optional(),
-  /**
-   * Bank app for `bank_deeplink` (scb/kbank only) or `omise_mobile_banking`;
-   * the shop's first configured bank when omitted or not offered.
-   */
-  bank_provider: z.enum(BANK_CODES).optional(),
 });
 
 export const bookingResourceSchema = z.object({

@@ -5,9 +5,7 @@ import { Alert, Button, Stack } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/components/ui/toast';
-import { readPaywallDetail, useUpgrade } from '@/components/subscription/upgrade-provider';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
-import { track } from '@/lib/analytics/track';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { resourceTypeLabel } from '@/lib/booking/resource-types';
@@ -50,7 +48,6 @@ async function patchBooking(body: Record<string, unknown>): Promise<PatchResult>
 export function BookingsCrud() {
   const { t } = useTranslation('bookings');
   const { push } = useToast();
-  const { openPaywall } = useUpgrade();
   // Topbar branch selection narrows the list; the API enforces the caller's own scope.
   const { branchId, withBranch } = useBranchScope();
 
@@ -175,11 +172,8 @@ export function BookingsCrud() {
       });
       const j = (await res.json().catch(() => ({}))) as { data?: { queue_number?: string; line_push_sent?: boolean; line_push_error?: string }; error?: string };
 
-      const paywall = readPaywallDetail(res, j);
-      if (paywall) { openPaywall(paywall); return; }
       if (!res.ok) { push(j.error ?? t('create_failed', 'เพิ่มคิวไม่สำเร็จ'), 'error'); return; }
 
-      track('booking_created', { channel: 'portal', line_push_sent: Boolean(j.data?.line_push_sent) });
       if (j.data?.line_push_sent) push(t('create_ok_line', 'เพิ่มคิวสำเร็จ และส่งข้อความ LINE แล้ว'));
       else if (selected) push(`${t('create_ok_line_failed', 'เพิ่มคิวสำเร็จ แต่ส่ง LINE ไม่สำเร็จ')}: ${j.data?.line_push_error ?? '-'}`, 'error');
       else push(t('create_ok', 'เพิ่มคิวสำเร็จ'));

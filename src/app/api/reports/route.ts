@@ -83,7 +83,7 @@ function hourOf(startTime: string): number {
  */
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const url = new URL(req.url);
     const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid query' }, { status: 400 });

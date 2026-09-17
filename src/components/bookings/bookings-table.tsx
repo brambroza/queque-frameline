@@ -48,12 +48,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { formatDateDMY } from '@/lib/utils/date-format';
-import type { PaymentStatus } from '@/types/db';
 import {
   CANCELLABLE,
   MOVABLE,
   NEXT_STATUSES,
-  PAYMENT_META,
   changeAckState,
   customerName,
   customerPhone,
@@ -123,12 +121,6 @@ export function ArrivalChip({ booking }: { booking: Pick<BookingRow, 'status' | 
     );
   }
   return null;
-}
-
-/** Outlined chip for the payment state, colour shared with the status palette. */
-export function PaymentChip({ status }: { status: PaymentStatus | string | null | undefined }) {
-  const meta = PAYMENT_META[(status ?? 'unpaid') as PaymentStatus] ?? { label: String(status ?? '-'), palette: 'default' as const };
-  return <Chip size="small" variant="outlined" label={meta.label} color={meta.palette} />;
 }
 
 /**
@@ -228,7 +220,6 @@ function BookingMobileCard({
       badge={<StatusChip status={b.status} />}
       tags={
         <>
-          <PaymentChip status={b.payment_status} />
           <AckChip state={changeAckState(b)} />
           <ArrivalChip booking={b} />
         </>
@@ -376,7 +367,6 @@ export function BookingsTable({
                 <TableCell>{t('col_service', 'บริการ / สาขา')}</TableCell>
                 <TableCell>{resourceLabel}</TableCell>
                 <TableCell>{t('col_status', 'สถานะ')}</TableCell>
-                <TableCell>{t('col_payment', 'ชำระ')}</TableCell>
                 <TableCell align="right">{t('col_actions', 'จัดการ')}</TableCell>
               </TableRow>
             </TableHead>
@@ -437,7 +427,6 @@ export function BookingsTable({
                           <ArrivalChip booking={b} />
                         </Stack>
                       </TableCell>
-                      <TableCell><PaymentChip status={b.payment_status} /></TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <ActionIconGroup
                           actions={[

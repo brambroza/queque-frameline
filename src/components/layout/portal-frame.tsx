@@ -27,7 +27,6 @@ import { NotificationsMenu } from '@/components/layout/notifications-menu';
 import { TopbarUserMenu } from '@/components/layout/topbar-user-menu';
 import { BranchScopeProvider } from '@/components/layout/branch-scope-provider';
 import { BranchSwitch } from '@/components/layout/branch-switch';
-import { ShopSwitch } from '@/components/layout/shop-switch';
 import {
   SIDEBAR_MINI_WIDTH,
   SIDEBAR_WIDTH,
@@ -35,9 +34,6 @@ import {
   useSidebarCollapse,
 } from '@/components/layout/sidebar-collapse-context';
 import { useI18n } from '@/components/i18n/i18n-provider';
-import { DemoModeBanner } from '@/components/demo/demo-mode-banner';
-import { PortalTour } from '@/components/layout/portal-tour';
-import { UpgradeProvider } from '@/components/subscription/upgrade-provider';
 
 /** Shared width/margin transition for the desktop sidebar and app bar. */
 const sidebarTransition = (theme: Theme) =>
@@ -58,10 +54,6 @@ type PortalFrameProps = {
   fullName?: string | null;
   email?: string | null;
   appVersion: string;
-  isSuperAdmin?: boolean;
-  demoModeEnabled?: boolean;
-  /** Shop the shell resolved for this request; drives the super_admin shop selector. */
-  activeShopId?: string | null;
 };
 
 /**
@@ -111,7 +103,6 @@ const sidebarHeaderButtonSx = {
 function SidebarContent({
   logoUrl,
   shopName,
-  isSuperAdmin,
   collapsed,
   onNavigate,
   onToggle,
@@ -120,7 +111,6 @@ function SidebarContent({
 }: {
   logoUrl: string | null;
   shopName?: string | null;
-  isSuperAdmin?: boolean;
   collapsed: boolean;
   onNavigate?: () => void;
   onToggle?: () => void;
@@ -200,7 +190,7 @@ function SidebarContent({
         )}
         {toggleButton ?? closeButton}
       </Stack>
-      <PortalNav isSuperAdmin={isSuperAdmin} collapsed={collapsed} onNavigate={onNavigate} />
+      <PortalNav collapsed={collapsed} onNavigate={onNavigate} />
     </Box>
   );
 }
@@ -212,9 +202,6 @@ function PortalFrameInner({
   fullName,
   email,
   appVersion,
-  isSuperAdmin,
-  demoModeEnabled,
-  activeShopId = null,
 }: PortalFrameProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -250,7 +237,6 @@ function PortalFrameInner({
           <SidebarContent
             logoUrl={logoUrl}
             shopName={shopName}
-            isSuperAdmin={isSuperAdmin}
             collapsed={false}
             onNavigate={() => setOpen(false)}
             onClose={() => setOpen(false)}
@@ -274,7 +260,6 @@ function PortalFrameInner({
           <SidebarContent
             logoUrl={logoUrl}
             shopName={shopName}
-            isSuperAdmin={isSuperAdmin}
             collapsed={collapsed}
             onToggle={toggle}
             toggleLabel={toggleLabel}
@@ -310,16 +295,10 @@ function PortalFrameInner({
               <MenuRoundedIcon />
             </IconButton>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              {isSuperAdmin ? (
-                <ShopSwitch activeShopId={activeShopId} />
-              ) : (
-                <>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
-                    {t('menu.shop_selector')}
-                  </Typography>
-                  <Typography variant="body2" fontWeight={700} noWrap>{shopName ? `${shopName}  ` : '-'}</Typography>
-                </>
-              )}
+              <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                {t('menu.shop_selector')}
+              </Typography>
+              <Typography variant="body2" fontWeight={700} noWrap>{shopName ? `${shopName}  ` : '-'}</Typography>
               <Breadcrumbs
                 aria-label="breadcrumb"
                 sx={{
@@ -344,7 +323,6 @@ function PortalFrameInner({
             {/* `useFlexGap` so the `display: contents` wrapper below still gets even spacing between its children. */}
             <Stack data-tour="portal-toolbar" direction="row" spacing={{ xs: 0.5, md: 1.2 }} alignItems="center" useFlexGap>
               <BranchSwitch />
-              <PortalTour />
               {/* Hidden on phones — the same toggles live in the profile drawer (TopbarUserMenu). */}
               <Box sx={{ display: { xs: 'none', sm: 'contents' } }}>
                 <ColorModeToggle />
@@ -358,8 +336,7 @@ function PortalFrameInner({
 
         <Box component="main" data-tour="page-content" sx={{ pt: { xs: 1.5, md: '15px' }, pb: 4 }}>
           <Container maxWidth="xl">
-            <DemoModeBanner show={demoModeEnabled} />
-            <UpgradeProvider>{children}</UpgradeProvider>
+            {children}
           </Container>
         </Box>
       </Box>

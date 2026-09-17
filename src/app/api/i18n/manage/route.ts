@@ -20,7 +20,7 @@ function toInt(v: string | null, fallback: number) {
 
 export async function GET(req: Request) {
   try {
-    await requireAuthContext({ roles: ['super_admin'] });
+    await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const { searchParams } = new URL(req.url);
     const language = searchParams.get('language');
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['super_admin'] });
+    const { user } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const parsed = upsertSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['super_admin'] });
+    const { user } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const parsed = upsertSchema.safeParse(await req.json());
     if (!parsed.success || !parsed.data.id) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
@@ -103,7 +103,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['super_admin'] });
+    const { user } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

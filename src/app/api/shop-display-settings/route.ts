@@ -11,7 +11,7 @@ const PatchSchema = z.object({
 export async function GET() {
   try {
     const { supabase, profile } = await requireAuthContext({
-      roles: ['super_admin', 'shop_owner', 'branch_manager'],
+      roles: ['admin'],
     });
     const showServiceDuration = await isServiceDurationVisible(supabase, profile.shop_id as string);
     return NextResponse.json({ data: { show_service_duration: showServiceDuration } });
@@ -24,7 +24,7 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const { supabase, user, profile } = await requireAuthContext({
-      roles: ['super_admin', 'shop_owner'],
+      roles: ['admin'],
     });
     const body = PatchSchema.parse(await req.json());
 

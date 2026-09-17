@@ -7,7 +7,6 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
-import { identifyUser } from '@/lib/analytics/track';
 
 export function LoginForm() {
   const { push } = useToast();
@@ -24,7 +23,7 @@ export function LoginForm() {
       const email = String(formData.get('email') ?? '');
       const password = String(formData.get('password') ?? '');
 
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
         push(error.message, 'error');
@@ -32,7 +31,6 @@ export function LoginForm() {
       }
 
       // Ties every later event to this account; without it the funnel is anonymous.
-      if (data.user) identifyUser(data.user.id);
       push('เข้าสู่ระบบสำเร็จ');
       router.push('/portal/dashboard');
       router.refresh();

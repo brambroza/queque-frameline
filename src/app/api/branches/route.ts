@@ -3,8 +3,6 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope, assertBranchAllowed } from '@/lib/auth/branch-scope';
 import { branchSchema } from '@/lib/booking/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { assertFeatureQuota } from '@/lib/subscription/enforcement';
-import { subscriptionErrorResponse } from '@/lib/subscription/response';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 
 function toInt(v: string | null, fallback: number) {
@@ -14,7 +12,7 @@ function toInt(v: string | null, fallback: number) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q');
     const active = searchParams.get('active');
@@ -48,7 +46,7 @@ export async function POST(req: Request) {
   try {
     // Creating a branch is an owner-level act: a branch_manager is bound to the
     // branches assigned to them and could not see a branch they created.
-    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['super_admin', 'shop_owner'] });
+    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin'] });
     const body = await req.json();
     const parsed = branchSchema.safeParse(body);
     if (!parsed.success) {
@@ -63,35 +61,6 @@ export async function POST(req: Request) {
 
     let targetCompanyId = profile.company_id;
     let targetShopId = profile.shop_id;
-
-    if ((!targetCompanyId || !targetShopId) && roles.includes('super_admin')) {
-      const requestedShopId = typeof body.shop_id === 'string' && body.shop_id ? body.shop_id : null;
-      const admin = createAdminClient();
-
-      const shopQuery = admin
-        .from('shops')
-        .select('id, company_id')
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-      const { data: shop, error: shopError } = requestedShopId
-        ? await admin.from('shops').select('id, company_id').eq('id', requestedShopId).eq('is_deleted', false).single()
-        : await shopQuery.single();
-
-      if (shopError || !shop) {
-        return NextResponse.json(
-          {
-            error: 'No valid shop context found. Provide shop_id in payload or create a shop first.',
-            debug: { requested_shop_id: requestedShopId, role_context: roles },
-          },
-          { status: 400 },
-        );
-      }
-
-      targetCompanyId = shop.company_id;
-      targetShopId = shop.id;
-    }
 
     if (!targetCompanyId || !targetShopId) {
       const admin = createAdminClient();
@@ -121,13 +90,6 @@ export async function POST(req: Request) {
     }
 
     const payload = parsed.data;
-    const { count: branchCount } = await createAdminClient()
-      .from('branches')
-      .select('id', { count: 'exact', head: true })
-      .eq('shop_id', targetShopId)
-      .eq('is_deleted', false);
-    await assertFeatureQuota(targetShopId, 'branches', branchCount ?? 0);
-
     const branchInsertPayload = {
       company_id: targetCompanyId,
       shop_id: targetShopId,
@@ -142,8 +104,7 @@ export async function POST(req: Request) {
       updated_by: user.id,
     };
 
-    const branchClient = roles.includes('super_admin') ? createAdminClient() : supabase;
-    const { error } = await branchClient.from('branches').insert(branchInsertPayload);
+    const { error } = await supabase.from('branches').insert(branchInsertPayload);
 
     if (error) {
       return NextResponse.json(
@@ -163,8 +124,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ data: true });
   } catch (e) {
-    const quota = subscriptionErrorResponse(e);
-    if (quota) return quota;
     console.log("error : branch :>>> " , e);
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }
@@ -172,7 +131,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const body = await req.json();
     const id = body.id as string;
     const parsed = branchSchema.safeParse(body);
@@ -212,7 +171,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

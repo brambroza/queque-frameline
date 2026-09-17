@@ -3,18 +3,16 @@ import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { assertFeatureQuota } from '@/lib/subscription/enforcement';
-import { subscriptionErrorResponse } from '@/lib/subscription/response';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 
 /** Roles a shop owner may hand out from the staff screen. Never shop_owner or super_admin. */
-const ASSIGNABLE_ROLES = ['branch_manager', 'staff'] as const;
+const ASSIGNABLE_ROLES = ['admin', 'staff'] as const;
 
 /**
  * Managing staff and their branch assignments is owner-level: a branch_manager who
  * could edit staff_branches would be able to widen their own branch scope.
  */
-const STAFF_ADMIN_ROLES = ['super_admin', 'shop_owner'] as const;
+const STAFF_ADMIN_ROLES = ['admin'] as const;
 
 const staffSchema = z
   .object({
@@ -126,7 +124,7 @@ function toInt(v: string | null, fallback: number) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q');
     const page = toInt(searchParams.get('page'), 1);
@@ -227,13 +225,6 @@ export async function POST(req: Request) {
     }
 
     const payload = parsed.data;
-    const { count: staffCount } = await supabase
-      .from('staff')
-      .select('id', { count: 'exact', head: true })
-      .eq('shop_id', profile.shop_id)
-      .eq('is_deleted', false);
-    await assertFeatureQuota(profile.shop_id, 'staff', staffCount ?? 0);
-
     const staffUserId = payload.user_id
       ? payload.user_id
       : await provisionStaffUser({
@@ -280,8 +271,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ data: true });
   } catch (e) {
-    const quota = subscriptionErrorResponse(e);
-    if (quota) return quota;
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }
 }
@@ -328,7 +317,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

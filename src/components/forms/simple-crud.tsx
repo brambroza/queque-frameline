@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { EmptyState } from '@/components/ui/empty-state';
-import { readPaywallDetail, useUpgrade } from '@/components/subscription/upgrade-provider';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -29,7 +28,6 @@ export function SimpleCrud({
 }) {
   const { push } = useToast();
   const confirm = useConfirm();
-  const { openPaywall } = useUpgrade();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,12 +86,6 @@ export function SimpleCrud({
     });
     const json = await res.json();
     setSaving(false);
-
-    const paywall = readPaywallDetail(res, json);
-    if (paywall) {
-      openPaywall(paywall);
-      return;
-    }
 
     if (!res.ok) {
       push(json.error ?? 'บันทึกไม่สำเร็จ', 'error');

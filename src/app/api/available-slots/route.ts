@@ -4,7 +4,7 @@ import { assertBranchAllowed } from '@/lib/auth/branch-scope';
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
 
     const branchId = searchParams.get('branch_id');

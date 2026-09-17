@@ -13,8 +13,8 @@ export default async function PortalTranslationsPage() {
     .select('roles(code)')
     .eq('user_id', user.id)
     .eq('is_deleted', false);
-  const isSuperAdmin = (roleRows ?? []).some((r) => (r.roles as { code?: string } | null)?.code === 'super_admin');
-  if (!isSuperAdmin) redirect('/portal/dashboard');
+  const isAdmin = (roleRows ?? []).some((r) => (r.roles as { code?: string } | null)?.code === 'admin');
+  if (!isAdmin) redirect('/portal/dashboard');
 
   return (
     <PageShell

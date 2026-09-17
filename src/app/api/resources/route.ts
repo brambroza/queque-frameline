@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyNullableBranchScope, assertBranchWritable } from '@/lib/auth/branch-scope';
 import { bookingResourceSchema } from '@/lib/booking/schemas';
-import { assertFeatureQuota } from '@/lib/subscription/enforcement';
-import { subscriptionErrorResponse } from '@/lib/subscription/response';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 
 function toInt(v: string | null, fallback: number) {
@@ -50,7 +48,7 @@ function getErrorPayload(e: unknown) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const resourceType = searchParams.get('resource_type');
     const branchId = searchParams.get('branch_id');
@@ -86,7 +84,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const body = await req.json();
     const normalizedBody = {
       ...body,
@@ -106,13 +104,6 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-
-    const { count: resourceCount } = await supabase
-      .from('booking_resources')
-      .select('id', { count: 'exact', head: true })
-      .eq('shop_id', profile.shop_id)
-      .eq('is_deleted', false);
-    await assertFeatureQuota(profile.shop_id, 'resources', resourceCount ?? 0);
 
     const branchId = typeof body.branch_id === 'string' && body.branch_id.trim() ? body.branch_id : null;
     assertBranchWritable(branchScope, branchId);
@@ -159,15 +150,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ data: true });
   } catch (e) {
-    const quota = subscriptionErrorResponse(e);
-    if (quota) return quota;
     return NextResponse.json(getErrorPayload(e), { status: getErrorStatus(e) });
   }
 }
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['super_admin', 'shop_owner', 'branch_manager'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const body = await req.json();
     const id = String(body.id ?? '');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -259,7 +248,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['super_admin', 'shop_owner'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
