@@ -7,9 +7,10 @@ insert into public.companies (id, name, created_at, updated_at)
 values ('10000000-0000-4000-8000-000000000001', 'Fameline', now(), now())
 on conflict (id) do update set name = excluded.name;
 
-insert into public.shops (id, company_id, name, shop_key, default_language)
-values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'Fameline Warehouse', 'fameline', 'th')
-on conflict (id) do update set name = excluded.name, shop_key = excluded.shop_key;
+-- demo_mode_enabled defaults to true in the inherited schema; this is a real site.
+insert into public.shops (id, company_id, name, shop_key, default_language, demo_mode_enabled, is_demo)
+values ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'Fameline Warehouse', 'fameline', 'th', false, false)
+on conflict (id) do update set name = excluded.name, shop_key = excluded.shop_key, demo_mode_enabled = false, is_demo = false;
 
 insert into public.branches (id, company_id, shop_id, branch_name, open_time, close_time, max_parallel_queues, active)
 values ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'คลังสินค้าหลัก', '08:00', '17:00', 3, true)

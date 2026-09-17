@@ -108,8 +108,11 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 
 ## Slot Engine
 
-- RPC `get_slot_availability(p_shop_id, p_branch_id, p_service_id, p_date, p_resource_type, p_party_size, p_resource_id)` (จาก Queue, `202609150002`) — grid จาก `working_hours`, ความยาว = `services.duration_minutes`; **Phase 1 จะออก v3** ที่รับ `direction`, นับ `buffer_minutes`, capacity = จำนวนท่าที่ direction/ประเภทรถตรง, และ `fits` (ไม่พอเวลาก่อนปิด)
-- ปฏิทิน "เฉพาะวันว่าง" = RPC `get_available_days(...)` (Phase 1)
+- `get_dock_slots(shop, branch, direction, service_id, date, resource_id?, exclude_booking_id?)` — capacity = จำนวนท่าที่ direction + ประเภทรถตรง (`eligible_docks`); คิวเดิมกันท่าไว้ `start .. end + buffer_minutes` (`is_dock_free`); slot ที่เวลาบริการล้ำช่วงพักหรือเลยเวลาปิดจะไม่ถูกสร้าง
+- `get_available_days(..., p_not_before)` — ปฏิทิน "เฉพาะวันว่าง" (ตัด slot ที่ผ่านแล้ว / ไม่ถึง lead time)
+- `create_dock_booking(...)` (service role เท่านั้น) — advisory lock ต่อ shop+วัน, ตรวจ slot ซ้ำ, เลือกท่า (ท่าเฉพาะขาก่อนท่าร่วม), ออกเลขคิว `R-nnn`/`S-nnn`, stamp `grace_deadline`, ออก DO ถ้าสร้างเป็น confirmed
+- `confirm_dock_booking` (status + DO ใน statement เดียว), `move_dock_booking` (ย้ายข้ามวัน = ออกเลขคิวใหม่ของวันปลายทาง)
+- RPC เก่าของ Queue (`get_available_slots`, `get_slot_availability`) ยังอยู่ใน DB แต่ไม่มีโค้ดเรียกแล้ว
 - `src/lib/booking/slot-time.ts` — `isSlotPast`, Bangkok clock; server เป็นคนใส่ `is_past` เสมอ
 
 ---
@@ -131,7 +134,9 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 | ลูกค้าจองต่อ SO/PO `/book/[token]` | `external_documents.booking_token_hash` | `booking_token_ttl_days` |
 | คนขับดู DO `/driver/[token]` | `bookings.driver_token_hash` | `driver_token_ttl_days` หลังวันคิว |
 
-- Token = random 32 byte base64url, เก็บ **sha256 เท่านั้น** (`src/lib/tokens.ts`), regenerate ได้ (token เก่าตาย)
+- Token = `HMAC-SHA256(TOKEN_SECRET, kind:id:version)` (`deriveLinkToken` ใน `src/lib/tokens.ts`) — DB เก็บ **sha256 + version เท่านั้น** จึงแสดงลิงก์/QR เดิมซ้ำได้โดยไม่เก็บ raw; regenerate = version+1 (ลิงก์เก่าตาย)
+- ลิงก์คนขับออกอัตโนมัติตอนยืนยันคิว (`ensureDriverLink`, `src/lib/booking/driver-link.ts`)
+- Resolver: `src/lib/public/resolve.ts` — public route ต้อง resolve token ก่อน แล้ว scope ทุก query ด้วย `shop_id` ของ row นั้น
 - Public API: `/api/public/book/[token]/{meta,days,slots,submit,cancel}`, `/api/public/driver/[token]`, `/api/public/display` — 404 เมื่อ token ผิด, 410 เมื่อหมดอายุ
 - ห้าม log raw token / raw API key
 
@@ -233,7 +238,9 @@ import { xxx } from '../../lib/...';  // ผิด
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | service-role client |
 | `NEXT_PUBLIC_APP_URL` | ✅ | base URL สำหรับลิงก์/QR |
 | `SITE_SHOP_KEY` | ✅ | `fameline` — shop_key ของ site |
-| `CRON_SECRET` | Phase 2 | Bearer สำหรับ `/api/cron/*` (ค่าเดียวกับ Vault `cron_secret`) |
+| `TOKEN_SECRET` | แนะนำ | HMAC สำหรับ derive ลิงก์จอง/คนขับ (ไม่ตั้ง = ใช้ service role key); เปลี่ยน = ลิงก์เดิมตายทั้งหมด |
+| `CRON_SECRET` | auto-call | Bearer สำหรับ `/api/cron/*` (ค่าเดียวกับ Vault `cron_secret`) |
+| `DISPLAY_KEY` | optional | บังคับ `/display?key=` |
 | `SMTP_*` | optional | ส่ง DO / ลิงก์ทางอีเมล |
 
 ---
@@ -266,12 +273,21 @@ Quality gate ก่อน commit: `npm run typecheck && npm run lint && npm run 
 
 ---
 
-## Roadmap
+## Roadmap / Status
 
 - **Phase 0 (done 2026-09-17):** clone + strip + roles + DB chain + seed
-- **Phase 1:** outbound core — คู่ค้า, เอกสาร SO/PO (manual + CSV), ประเภทรถ/ท่า/เวลาทำการ (+direction), site settings, slot RPC v3 + available days, ลิงก์จอง + `/book/[token]`, create drawer, bookings list/detail (ยืนยัน, แก้ทะเบียน, ยกเลิก, audit), DO + print, queue board, display
-- **Phase 2:** inbound (PO link), auto-call + overdue cron, driver link, dock lane view, reschedule, integration API + API keys
-- **Phase 3:** reports, calendar ต่อท่า, dashboard, i18n prune, handover
+- **Phase 1–2 code (done 2026-09-17, ยังไม่ได้ทดสอบกับ Supabase จริง):**
+  - DB: `202609170004_dock_slots` (`get_dock_slots`, `get_available_days`, `create_dock_booking`), `…0005_dock_booking_ops` (`confirm_dock_booking`, `move_dock_booking`, token versions), `…0006_auto_call_cron`
+  - Portal: คิว (list / create / detail / DO print / driver link / plate edit / reschedule), บอร์ดคิว, เอกสาร SO/PO (+CSV import dry-run, booking link + QR), คู่ค้า, ประเภทรถ, ท่า, เวลาทำการ (+direction), ตั้งค่าระบบคิว
+  - Public: `/book/[token]`, `/driver/[token]`, `/display`
+  - Auto-call: event path ใน `PATCH /api/bookings` + `/api/cron/auto-call`
+- **ค้าง (ต้องทำก่อน UAT):**
+  - E2E กับ Supabase จริง/ local stack (`supabase start`) — SQL ทดสอบบน Postgres 16 แล้ว, API/UI ผ่านแค่ typecheck + build
+  - Integration API `POST /api/integration/v1/{sales-orders,purchase-orders}` + หน้า API keys (ตาราง `api_keys`, `generateApiKey()`, `upsertDocument()` พร้อมแล้ว)
+  - Dashboard / Reports / Calendar ยังเป็นของ Queue (ใช้ได้ แต่ยังไม่มี KPI ตามท่า / direction, ยังอ้าง `customers.nickname`)
+  - Dock lane view บนบอร์ดคิว, i18n keys ใหม่ (ตอนนี้ใช้ fallback ไทยในโค้ด), ลบคอลัมน์/ตารางมรดกที่ไม่ใช้
+  - Vault secrets `cron_app_url` + `cron_secret` บน Supabase จริง (ไม่ตั้ง = auto-call ทำงานเฉพาะ event path)
+- **Phase 3:** reports, calendar ต่อท่า, handover
 
 ## AI Skills
 

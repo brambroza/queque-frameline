@@ -50,6 +50,25 @@ npm run create:admin -- gate@fameline.co.th '<password>' 'ป้อมยาม'
 npm run dev          # http://localhost:3000 → /portal
 ```
 
+### Auto-call / overdue sweep (pg_cron)
+
+ตั้ง `CRON_SECRET` ใน env ของแอป แล้วสร้าง Vault secrets บน Supabase (ครั้งเดียว):
+
+```sql
+select vault.create_secret('https://<your-app-domain>', 'cron_app_url');
+select vault.create_secret('<ค่าเดียวกับ CRON_SECRET>', 'cron_secret');
+```
+
+Migration `202609170006_auto_call_cron.sql` ตั้ง job ทุก 1 นาทีเรียก `/api/cron/auto-call` — ถ้ายังไม่มี secrets ระบบยังเรียกคิวอัตโนมัติได้ตอนปิดงานแต่ละคัน แต่จะไม่เปลี่ยนสถานะ “เลยเวลานัด / ไม่มา” เอง
+
+### ทดสอบ migration บน Postgres เปล่า (ไม่ต้องใช้ Docker)
+
+```bash
+createdb fameline_test
+psql fameline_test -f scripts/dev/stub-supabase-auth.sql     # stub auth schema — ห้ามรันกับ Supabase จริง
+DATABASE_URL=postgres:///fameline_test scripts/apply-migrations.sh
+```
+
 ## Local Supabase (optional)
 
 ```bash

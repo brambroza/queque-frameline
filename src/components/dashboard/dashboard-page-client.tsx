@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Alert, Box, Button, Card, CardContent, Skeleton, Stack } from '@mui/material';
 import { PageHeader } from '@/components/shared/page-header';
-import { OnboardingChecklist } from '@/components/dashboard/onboarding-checklist';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { getNowHourInBangkok, getTodayISOInBangkok } from '@/lib/utils/date-format';
@@ -132,7 +131,6 @@ export function DashboardPageClient() {
   return (
     <Stack spacing={2}>
       <PageHeader title={t('title', 'แดชบอร์ด')} description={t('subtitle_manager', 'ภาพรวมคิวสำหรับผู้จัดการ')} />
-      <OnboardingChecklist />
       <DashboardFilterBar value={filter} onChange={handleFilterChange} onRefresh={() => setReloadKey((k) => k + 1)} resolvedFrom={data?.range.from} resolvedTo={data?.range.to} loading={loading} />
 
       {shopRequired ? (
@@ -142,21 +140,6 @@ export function DashboardPageClient() {
       {error ? (
         <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => setReloadKey((k) => k + 1)}>{t('retry', 'ลองใหม่')}</Button>}>
           {error}
-        </Alert>
-      ) : null}
-
-      {data?.shop_meta.demo_mode_enabled ? (
-        <Alert
-          severity="info"
-          action={
-            <Stack direction="row" spacing={1}>
-              <Button size="small" href="/portal/line-settings">{t('demo_connect_line', 'เชื่อม LINE OA')}</Button>
-              <Button size="small" href="/portal/demo-sandbox">{t('demo_manage', 'จัดการ Demo')}</Button>
-              {data.shop_meta.shop_key ? <Button size="small" href={`/display/${encodeURIComponent(data.shop_meta.shop_key)}`}>{t('demo_open_signage', 'เปิด Signage')}</Button> : null}
-            </Stack>
-          }
-        >
-          {t('demo_banner', 'โหมดตัวอย่างเปิดอยู่ ข้อมูลนี้ใช้สำหรับทดลองเท่านั้น')} ({data.shop_meta.demo_business_type ?? 'demo'})
         </Alert>
       ) : null}
 

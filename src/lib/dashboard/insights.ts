@@ -180,7 +180,7 @@ export function buildInsights(input: InsightInput): Insight[] {
     input.kpi.total >= THRESHOLDS.min_bookings_for_cancel &&
     (rate > THRESHOLDS.cancel_rate_pct || rate - prevRate >= THRESHOLDS.cancel_jump_pts)
   ) {
-    out.push({ kind: 'cancel_rate', severity: 'error', rate_pct: rate, prev_rate_pct: prevRate, link: '/portal/line-settings' });
+    out.push({ kind: 'cancel_rate', severity: 'error', rate_pct: rate, prev_rate_pct: prevRate, link: '/portal/bookings' });
   }
 
   return out.slice(0, 5);
