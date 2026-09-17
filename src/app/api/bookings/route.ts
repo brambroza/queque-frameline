@@ -7,6 +7,7 @@ import { normalizeSlotTime } from '@/lib/booking/slot-time';
 import { canTransition, freesDock, isConfirmTransition, transitionDenialMessage, transitionStamps } from '@/lib/booking/status-flow';
 import { actorFromRoles, dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
+import { ensureDriverLink } from '@/lib/booking/driver-link';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 
 /** Columns + joins the portal list, board and drawers render. */
@@ -181,6 +182,9 @@ export async function POST(req: Request) {
     const created = (rows as Array<{ booking_id: string; queue_number: string; resource_id: string; do_number: string | null }> | null)?.[0];
     if (!created) throw new Error('Create booking failed');
 
+    const createSettings = await getSiteSettings(supabase, profile.shop_id);
+    await ensureDriverLink(admin, { id: created.booking_id, shopId: profile.shop_id, bookingDate: payload.booking_date, version: 0 }, createSettings.driver_token_ttl_days);
+
     await logBooking(supabase, {
       companyId: profile.company_id,
       shopId: profile.shop_id,
@@ -209,7 +213,7 @@ export async function PATCH(req: Request) {
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,status,branch_id,resource_id,call_count,do_number')
+      .select('id,queue_number,status,branch_id,resource_id,call_count,do_number,booking_date,driver_token_version')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
@@ -231,6 +235,7 @@ export async function PATCH(req: Request) {
       const row = (confirmed as Array<{ do_number: string | null }> | null)?.[0];
       if (!row) return NextResponse.json({ error: 'คิวนี้ถูกเปลี่ยนสถานะไปแล้ว กรุณารีเฟรช', code: 'stale' }, { status: 409 });
       doNumber = row.do_number;
+      await ensureDriverLink(admin, { id, shopId: profile.shop_id, bookingDate: String(before.booking_date), version: Number(before.driver_token_version ?? 0) }, settings.driver_token_ttl_days);
     } else {
       const stamps = transitionStamps(from, status, {
         now: new Date(),
