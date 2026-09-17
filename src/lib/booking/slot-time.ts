@@ -48,3 +48,52 @@ export function isSlotPast(slot: { date: string; time: string }, now: LocalStamp
   if (slot.date > now.date) return false;
   return normalizeSlotTime(slot.time) < normalizeSlotTime(now.time);
 }
+
+/**
+ * Convert an instant to Bangkok-local `YYYY-MM-DD` + `HH:MM:SS`, matching how
+ * `booking_date` / `start_time` are stored.
+ *
+ * @param at Instant to convert (server clock).
+ */
+export function toBangkokStamp(at: Date): LocalStamp {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}:${get('second')}` };
+}
+
+/** Add days to an ISO date (UTC arithmetic, no DST surprises). */
+export function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+export type SlotRow = { slot_time: string; slot_end: string; capacity: number; booked_count: number; remaining_capacity: number };
+export type SlotView = SlotRow & { is_past: boolean; too_soon: boolean; bookable: boolean };
+
+/**
+ * Decorate RPC slots for a UI: past, inside the minimum lead time, bookable.
+ *
+ * @param date Day the slots belong to.
+ * @param rows Output of `get_dock_slots`.
+ * @param now Server clock.
+ * @param leadHours Minimum notice customers must give (0 for staff).
+ */
+export function decorateSlots(date: string, rows: SlotRow[], now: Date, leadHours: number): SlotView[] {
+  const stamp = toBangkokStamp(now);
+  const earliest = now.getTime() + Math.max(leadHours, 0) * 3_600_000;
+  return rows.map((r) => {
+    const isPast = isSlotPast({ date, time: r.slot_time }, stamp);
+    const startMs = new Date(`${date}T${normalizeSlotTime(r.slot_time)}+07:00`).getTime();
+    const tooSoon = !isPast && startMs < earliest;
+    return { ...r, is_past: isPast, too_soon: tooSoon, bookable: !isPast && !tooSoon && r.remaining_capacity > 0 };
+  });
+}
