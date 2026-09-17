@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-soft: #fcfcfd;
+  --text: #121926;
+  --muted: #697586;
+  --line: #e3e8ef;
+  --brand: #12a862;
+  --brand-soft: #0b8d51;
+  --brand-tint: #e9fbf1;
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-pop: 0 12px 28px rgba(16, 24, 40, 0.1), 0 4px 8px rgba(16, 24, 40, 0.05);
+}
+
+.dark {
+  --bg: #0b0f16;
+  --surface: #141a24;
+  --surface-soft: #0f151d;
+  --text: #e6edf5;
+  --muted: #94a1b2;
+  --line: rgba(255, 255, 255, 0.08);
+  --brand: #2ec37c;
+  --brand-soft: #5dd79c;
+  --brand-tint: rgba(46, 195, 124, 0.12);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 12px 28px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  /* iOS Safari: keep text at authored size when rotating / zooming. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  /* `clip` (not `hidden`) stops stray horizontal overflow on phones without
+     turning body into a scroll container, so the sticky portal AppBar keeps working. */
+  overflow-x: clip;
+}
+
+/* iOS zooms into inputs whose font is below 16px; desktop keeps text-sm. */
+@media (max-width: 599.98px) {
+  .input {
+    font-size: 16px;
+  }
+}
+
+.card {
+  @apply rounded-2xl border;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.input {
+  @apply w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2;
+  background: var(--surface);
+  color: var(--text);
+  --tw-ring-color: color-mix(in srgb, var(--brand) 40%, transparent);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition;
+}
+
+.btn-primary {
+  @apply btn text-white disabled:opacity-60;
+  background-color: var(--brand);
+}
+
+.btn-primary:hover {
+  background-color: var(--brand-soft);
+}
+
+.btn-outline {
+  @apply btn border;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn-outline:hover {
+  background: var(--surface-soft);
+}
+
+.portal-shell {
+  @apply min-h-screen;
+  background: var(--bg);
+}
+
+.portal-sidebar {
+  @apply border-r p-4;
+  background: var(--surface);
+}
+
+.portal-header {
+  @apply sticky top-0 z-20 border-b backdrop-blur;
+  background: color-mix(in srgb, var(--surface) 87%, transparent);
+}
+
+.portal-panel {
+  @apply rounded-2xl border;
+  background: var(--surface);
+}
+
+/* ── Report print sheet (see src/components/reports/use-print-report.ts) ── */
+#report-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body.report-printing {
+    background: #fff !important;
+  }
+
+  body.report-printing > *:not(#report-print-root) {
+    display: none !important;
+  }
+
+  body.report-printing #report-print-root {
+    display: block !important;
+    max-width: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #report-print-root tr {
+    break-inside: avoid;
+  }
+
+  #report-print-root thead {
+    display: table-header-group;
+  }
+
+  /* Report tables scroll horizontally on phones; on paper they must lay out in full. */
+  #report-print-root .report-scroll {
+    overflow: visible !important;
+  }
+}
