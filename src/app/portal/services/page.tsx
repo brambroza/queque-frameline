@@ -1,10 +1,7 @@
-import { PageShell } from '@/components/ui/page-shell';
-import { ServicesCrud } from '@/components/forms/services-crud';
+import { VehicleTypesCrud } from '@/components/forms/vehicle-types-crud';
+import { getPageRoles } from '@/lib/auth/page-roles';
 
-export default function ServicesPage() {
-  return (
-    <PageShell title="Services" description="รองรับ จองตามเวลาที่แน่นอน, เวลายืดหยุ่น, รับจำนวนต่อรอบ, walk-in และ ต้องยืนยันก่อน">
-      <ServicesCrud />
-    </PageShell>
-  );
+export default async function VehicleTypesPage() {
+  const { isAdmin } = await getPageRoles();
+  return <VehicleTypesCrud isAdmin={isAdmin} />;
 }

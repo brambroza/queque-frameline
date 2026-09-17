@@ -21,7 +21,10 @@ function initialFilter(): BookingsFilter {
   const today = getTodayISOInBangkok();
   const base: BookingsFilter = { range: 'today', date: today, status: '', direction: '', resource: '', search: '' };
   if (typeof window === 'undefined') return base;
-  const d = new URLSearchParams(window.location.search).get('date') ?? '';
+  const sp = new URLSearchParams(window.location.search);
+  // Coming from a document: its queues can be on any day.
+  if (sp.get('doc')) return { ...base, range: 'all', date: '' };
+  const d = sp.get('date') ?? '';
   if (!ISO_DATE.test(d)) return base;
   if (d === today) return base;
   return { ...base, range: 'custom', date: d };
@@ -58,6 +61,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
   const [filter, setFilter] = useState<BookingsFilter>(initialFilter);
   const [debouncedSearch, setDebouncedSearch] = useState(filter.search);
+  const [documentId] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('doc') ?? ''));
 
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [resources, setResources] = useState<Dock[]>([]);
@@ -84,8 +88,9 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     if (filter.direction) params.set('direction', filter.direction);
     if (filter.resource) params.set('resource_id', filter.resource);
     if (debouncedSearch) params.set('q', debouncedSearch);
+    if (documentId) params.set('document_id', documentId);
     return params.toString();
-  }, [page, pageSize, queryDate, filter.status, filter.direction, filter.resource, debouncedSearch]);
+  }, [page, pageSize, queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, documentId]);
 
   // Any filter change goes back to page 1.
   useEffect(() => { setPage(1); }, [queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, pageSize]);

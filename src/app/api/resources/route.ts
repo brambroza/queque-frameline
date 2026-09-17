@@ -135,6 +135,7 @@ export async function POST(req: Request) {
       description: parsed.data.description || null,
       active: parsed.data.active,
       service_ids: serviceLink.value,
+      direction: parsed.data.direction ?? null,
       created_by: user.id,
       updated_by: user.id,
     });
@@ -217,6 +218,7 @@ export async function PATCH(req: Request) {
         description: parsed.data.description || null,
         active: parsed.data.active,
         service_ids: serviceLink.value,
+        direction: parsed.data.direction ?? null,
         updated_by: user.id,
       })
       .eq('id', id)

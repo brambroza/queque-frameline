@@ -26,6 +26,8 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
 import { useRouter } from 'next/navigation';
@@ -48,7 +50,8 @@ const groups: NavGroup[] = [
     fallback: 'ภาพรวม',
     items: [
       { labelKey: 'menu.dashboard', fallback: 'แดชบอร์ด', href: '/portal/dashboard', icon: <DashboardRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.bookings', fallback: 'คิวรับ-ส่งสินค้า', href: '/portal/bookings', icon: <EventNoteRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.dock_queues', fallback: 'คิวรับ-ส่งสินค้า', href: '/portal/bookings', icon: <EventNoteRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.documents', fallback: 'เอกสาร SO / PO', href: '/portal/documents', icon: <DescriptionRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.calendar', fallback: 'ปฏิทิน', href: '/portal/calendar', icon: <CalendarMonthRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.queue_board', fallback: 'บอร์ดคิว', href: '/portal/queue-board', icon: <ViewKanbanRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.queue_display', fallback: 'จอแสดงคิว', href: '/portal/queue-display', icon: <TvRoundedIcon fontSize="small" /> },
@@ -56,16 +59,16 @@ const groups: NavGroup[] = [
     ],
   },
   {
-    titleKey: 'menu.group_shop',
+    titleKey: 'menu.group_site',
     fallback: 'จัดการคลัง',
     items: [
       { labelKey: 'menu.branches', fallback: 'สาขา/ประตู', href: '/portal/branches', icon: <StoreRoundedIcon fontSize="small" />, shopWideOnly: true },
-      { labelKey: 'menu.services', fallback: 'ประเภทรถ', href: '/portal/services', icon: <DesignServicesRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.resources', fallback: 'ท่ารับ-ส่งสินค้า', href: '/portal/resources', icon: <TableRestaurantRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.vehicle_types', fallback: 'ประเภทรถ', href: '/portal/services', icon: <DesignServicesRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.docks', fallback: 'ท่ารับ-ส่งสินค้า', href: '/portal/resources', icon: <TableRestaurantRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.working_hours', fallback: 'เวลาทำการ', href: '/portal/working-hours', icon: <ScheduleRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.holidays', fallback: 'วันหยุด', href: '/portal/holidays', icon: <EventBusyRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.staff', fallback: 'พนักงาน', href: '/portal/staff', icon: <GroupRoundedIcon fontSize="small" />, shopWideOnly: true },
-      { labelKey: 'menu.customers', fallback: 'ลูกค้า', href: '/portal/customers', icon: <PeopleRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.partners', fallback: 'คู่ค้า', href: '/portal/partners', icon: <PeopleRoundedIcon fontSize="small" /> },
     ],
   },
   {
@@ -73,7 +76,8 @@ const groups: NavGroup[] = [
     fallback: 'รายงาน & ตั้งค่า',
     items: [
       { labelKey: 'menu.reports', fallback: 'รายงาน', href: '/portal/reports', icon: <InsightsRoundedIcon fontSize="small" /> },
-      { labelKey: 'menu.settings', fallback: 'ตั้งค่าระบบ', href: '/portal/settings', icon: <SettingsRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', href: '/portal/site-settings', icon: <TuneRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.settings', fallback: 'ข้อมูลคลัง', href: '/portal/settings', icon: <SettingsRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.translations', fallback: 'การแปลภาษา', href: '/portal/translations', icon: <TranslateRoundedIcon fontSize="small" />, shopWideOnly: true },
     ],
   },

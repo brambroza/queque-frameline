@@ -15,14 +15,15 @@ export async function GET(req: Request) {
     const q = searchParams.get('q');
     const active = searchParams.get('active');
     const page = toInt(searchParams.get('page'), 1);
-    const pageSize = Math.min(toInt(searchParams.get('page_size'), 20), 100);
+    const pageSize = Math.min(toInt(searchParams.get('page_size'), 20), 200);
 
     let query = supabase
       .from('services')
       .select('*, service_categories(category_name)', { count: 'exact' })
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
-      .order('created_at', { ascending: false });
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
 
     if (q) query = query.ilike('service_name', `%${q}%`);
     if (active === 'true' || active === 'false') query = query.eq('active', active === 'true');
@@ -58,6 +59,9 @@ export async function POST(req: Request) {
       allow_walk_in: parsed.data.allow_walk_in,
       price: parsed.data.price,
       active: parsed.data.active,
+      buffer_minutes: parsed.data.buffer_minutes,
+      direction: parsed.data.direction ?? null,
+      sort_order: parsed.data.sort_order,
       created_by: user.id,
       updated_by: user.id,
     });
@@ -90,6 +94,9 @@ export async function PATCH(req: Request) {
         allow_walk_in: parsed.data.allow_walk_in,
         price: parsed.data.price,
         active: parsed.data.active,
+        buffer_minutes: parsed.data.buffer_minutes,
+        direction: parsed.data.direction ?? null,
+        sort_order: parsed.data.sort_order,
         updated_by: user.id,
       })
       .eq('id', id)

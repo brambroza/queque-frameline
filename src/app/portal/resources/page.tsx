@@ -1,11 +1,7 @@
-import { PageShell } from '@/components/ui/page-shell';
-import { ResourcesCrud } from '@/components/forms/resources-crud';
+import { DocksCrud } from '@/components/forms/docks-crud';
+import { getPageRoles } from '@/lib/auth/page-roles';
 
-export default function ResourcesPage() {
-  return (
-    <PageShell title="Resources" description="จัดการโต๊ะอาหาร ห้องประชุม โซนบุฟเฟ่ต์ เทรนเนอร์ และทรัพยากรบริการ — ผูกกับบริการได้ (ไม่บังคับ) เช่น ครูโยคะ ↔ คลาสโยคะ">
-      <ResourcesCrud />
-    </PageShell>
-  );
+export default async function DocksPage() {
+  const { isAdmin } = await getPageRoles();
+  return <DocksCrud isAdmin={isAdmin} />;
 }
-
