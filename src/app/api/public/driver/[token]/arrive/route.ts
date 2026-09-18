@@ -5,6 +5,8 @@ import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { toBangkokStamp } from '@/lib/booking/slot-time';
 import { CHECKIN_STATUSES, transitionStamps } from '@/lib/booking/status-flow';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
+import { safeNotifyStaffGroup } from '@/lib/line/notify';
+import { effectivePlate } from '@/lib/booking/plate';
 
 /** Driver "มาถึงแล้ว" — only when the site enabled self check-in, only on the appointment day. */
 export async function POST(_req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -28,7 +30,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ token: string
       .eq('id', booking.id)
       .eq('shop_id', booking.shop_id)
       .eq('status', booking.status)
-      .select('id,queue_number,branch_id');
+      .select('id,queue_number,branch_id,plate_number,plate_number_actual,resource_name');
     if (error) throw error;
     if (!updated || updated.length === 0) return NextResponse.json({ error: 'สถานะคิวเปลี่ยนไปแล้ว กรุณารีเฟรช' }, { status: 409 });
 
@@ -39,6 +41,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ token: string
       type: 'driver_checked_in', category: 'bookings', priority: 'medium', title: `รถมาถึงแล้ว ${queue}`, message: `คนขับคิว ${queue} กดมาถึงแล้วจากลิงก์`,
       relatedType: 'booking', relatedId: booking.id, actionUrl: '/portal/queue-board', icon: 'LocalShipping', color: '#6a1b9a',
     });
+    await safeNotifyStaffGroup(admin, { shopId: booking.shop_id, bookingId: booking.id, event: { kind: 'arrived', queueNo: queue, plate: effectivePlate(updated[0]) || '-', dock: (updated[0].resource_name as string | null) ?? null, by: 'driver' } });
     return NextResponse.json({ data: { ok: true } });
   } catch (e) {
     console.error('[public/driver/arrive]', e instanceof Error ? e.message : e);

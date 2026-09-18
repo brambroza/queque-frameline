@@ -8,6 +8,8 @@ import { canTransition, freesDock, isConfirmTransition, transitionDenialMessage,
 import { actorFromRoles, dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
+import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { effectivePlate } from '@/lib/booking/plate';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 
 /** Columns + joins the portal list, board and drawers render. */
@@ -218,7 +220,7 @@ export async function PATCH(req: Request) {
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,status,branch_id,resource_id,call_count,do_number,booking_date,driver_token_version')
+      .select('id,queue_number,status,branch_id,resource_id,resource_name,call_count,do_number,booking_date,start_time,driver_token_version,plate_number,plate_number_actual,customers(full_name)')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
@@ -296,6 +298,24 @@ export async function PATCH(req: Request) {
         metadata: { prev_status: from, next_status: status },
         createdBy: user.id,
       });
+    }
+
+    // LINE side-effects (never throw). Confirm → customer + driver job card; call → driver + customer; close → customer + group.
+    const lineArgs = { shopId: profile.shop_id, bookingId: id };
+    if (isConfirmTransition(from, status)) {
+      await safeNotifyPartner(admin, { ...lineArgs, kind: 'confirmed' });
+      await safeNotifyDriver(admin, { ...lineArgs, kind: 'job' });
+    } else if (status === 'called') {
+      await safeNotifyDriver(admin, { ...lineArgs, kind: 'called' });
+      await safeNotifyPartner(admin, { ...lineArgs, kind: 'called' });
+    } else if (status === 'checked_in' && from !== 'called') {
+      await safeNotifyStaffGroup(admin, { ...lineArgs, event: { kind: 'arrived', queueNo: queueLabel, plate: effectivePlate(before) || '-', dock: (before.resource_name as string | null) ?? null, by: 'staff' } });
+    } else if (status === 'cancelled') {
+      await safeNotifyPartner(admin, { ...lineArgs, kind: 'cancelled' });
+    } else if (status === 'no_show') {
+      await safeNotifyPartner(admin, { ...lineArgs, kind: 'no_show' });
+      const partnerName = ((before as unknown as { customers?: { full_name?: string | null } | null }).customers?.full_name) ?? '-';
+      await safeNotifyStaffGroup(admin, { ...lineArgs, event: { kind: 'no_show', queueNo: queueLabel, partner: partnerName, date: String(before.booking_date), time: String(before.start_time) } });
     }
 
     // A dock was released: let the next waiting vehicle in.

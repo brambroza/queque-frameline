@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, Skeleton, Stack, Tab, Table,
+  Alert, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, Skeleton, Stack, Tab, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 
 type PartnerType = 'customer' | 'supplier';
-type Row = { id: string; partner_type: PartnerType; code: string | null; full_name: string; phone: string | null; email: string | null; address: string | null; note: string | null };
+type Row = { id: string; partner_type: PartnerType; code: string | null; full_name: string; phone: string | null; email: string | null; address: string | null; note: string | null; line_user_id?: string | null; line_users?: { display_name?: string | null } | null };
 type Form = { code: string; full_name: string; phone: string; email: string; address: string; note: string };
 
 const EMPTY: Form = { code: '', full_name: '', phone: '', email: '', address: '', note: '' };
@@ -83,6 +83,15 @@ export function PartnersCrud({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
+  async function unlinkLine(r: Row) {
+    const ok = await confirm({ tone: 'warning', title: 'ยกเลิกการผูก LINE?', description: 'จะไม่ส่งแจ้งเตือนทาง LINE ให้คู่ค้ารายนี้ จนกว่าจะเปิดลิงก์จองผ่าน LINE อีกครั้ง', context: { primary: r.full_name, secondary: r.line_users?.display_name ?? undefined }, confirmLabel: 'ยกเลิกการผูก' });
+    if (!ok) return;
+    const res = await fetch('/api/partners', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: r.id, action: 'unlink_line' }) });
+    if (!res.ok) { push('ยกเลิกไม่สำเร็จ', 'error'); return; }
+    push('ยกเลิกการผูก LINE แล้ว');
+    await load();
+  }
+
   async function remove(r: Row) {
     const ok = await confirm({
       tone: 'error',
@@ -124,7 +133,7 @@ export function PartnersCrud({ isAdmin }: { isAdmin: boolean }) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>รหัส</TableCell><TableCell>ชื่อ</TableCell><TableCell>เบอร์โทร</TableCell><TableCell>อีเมล</TableCell>
+                  <TableCell>รหัส</TableCell><TableCell>ชื่อ</TableCell><TableCell>เบอร์โทร</TableCell><TableCell>อีเมล</TableCell><TableCell>LINE</TableCell>
                   {isAdmin ? <TableCell align="right">จัดการ</TableCell> : null}
                 </TableRow>
               </TableHead>
@@ -135,6 +144,7 @@ export function PartnersCrud({ isAdmin }: { isAdmin: boolean }) {
                     <TableCell><Typography variant="body2" fontWeight={600}>{r.full_name}</Typography></TableCell>
                     <TableCell>{r.phone ?? '-'}</TableCell>
                     <TableCell>{r.email ?? '-'}</TableCell>
+                    <TableCell>{r.line_user_id ? <Chip size="small" color="success" label={r.line_users?.display_name ?? 'ผูกแล้ว'} onDelete={isAdmin ? () => void unlinkLine(r) : undefined} /> : <Typography variant="caption" color="text.disabled">ยังไม่ผูก</Typography>}</TableCell>
                     {isAdmin ? (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Tooltip title="แก้ไข"><IconButton size="small" onClick={() => openEdit(r)} aria-label="แก้ไข"><EditRoundedIcon fontSize="small" /></IconButton></Tooltip>

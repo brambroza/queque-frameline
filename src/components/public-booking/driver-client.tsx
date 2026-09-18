@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
 import { BookingCard } from './booking-card';
+import { LineBanner, type LineMeta } from './line-banner';
+import { useLiffBind } from './use-liff-bind';
 import type { PublicBooking } from './types';
 
 type DriverData = {
@@ -11,6 +13,7 @@ type DriverData = {
   can_self_check_in: boolean;
   early_arrival_minutes: number;
   grace_minutes: number;
+  line?: LineMeta;
 };
 
 const POLL_MS = 10_000;
@@ -22,6 +25,7 @@ export function DriverClient({ token }: { token: string }) {
   const [fatal, setFatal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const lineBind = useLiffBind(data?.line?.liff_id, `${api}/line-link`);
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -83,6 +87,8 @@ export function DriverClient({ token }: { token: string }) {
           <h1 className="text-2xl font-bold text-slate-900">{b.direction === 'outbound' ? 'งานรับสินค้า' : 'งานส่งสินค้า'}</h1>
           <p className="text-sm text-slate-500">{data.site.name}{data.site.address ? ` · ${data.site.address}` : ''}</p>
         </header>
+
+        <LineBanner line={data.line} state={lineBind.state} viaLine={lineBind.viaLine} path={`/driver/${encodeURIComponent(token)}`} who="driver" />
 
         {b.status === 'called' ? (
           <div className="rounded-2xl bg-sky-600 p-5 text-center text-white" role="status">

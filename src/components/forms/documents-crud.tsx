@@ -24,6 +24,7 @@ type DocType = 'so' | 'po';
 type DocRow = {
   id: string; doc_type: DocType; doc_no: string; branch_id: string | null; branches?: { branch_name?: string | null; code?: string | null } | null; partner_name: string | null; partner_code: string | null; doc_date: string | null; due_date: string | null;
   status: 'open' | 'booked' | 'completed' | 'cancelled'; source: string; items: Array<{ name: string; qty: number; uom?: string }>; has_link: boolean; booking_count: number;
+  partner_line_linked?: boolean; partner_line_name?: string | null;
 };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
 type ImportSummary = {
@@ -61,8 +62,9 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
 
   const [linkDoc, setLinkDoc] = useState<DocRow | null>(null);
-  const [link, setLink] = useState<{ url: string; expires_at: string | null } | null>(null);
+  const [link, setLink] = useState<{ url: string; liff_url?: string | null; expires_at: string | null } | null>(null);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [sendingLine, setSendingLine] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' });
@@ -106,7 +108,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     setLinkBusy(true);
     try {
       const res = await fetch(`/api/documents/${doc.id}/booking-link`, { method: regenerate ? 'POST' : 'GET', cache: 'no-store' });
-      const j = (await res.json()) as { data?: { url: string; expires_at: string | null }; error?: string };
+      const j = (await res.json()) as { data?: { url: string; liff_url?: string | null; expires_at: string | null }; error?: string };
       if (!res.ok || !j.data) { push(j.error ?? 'ออกลิงก์ไม่สำเร็จ', 'error'); if (!regenerate) setLinkDoc(null); return; }
       setLink(j.data);
       if (regenerate) push('สร้างลิงก์ใหม่แล้ว ลิงก์เดิมใช้ไม่ได้แล้ว');
@@ -126,6 +128,20 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
       confirmLabel: 'สร้างลิงก์ใหม่',
     });
     if (ok) await openLink(linkDoc, true);
+  }
+
+  async function sendLine() {
+    if (!linkDoc || sendingLine) return;
+    setSendingLine(true);
+    try {
+      const res = await fetch(`/api/documents/${linkDoc.id}/booking-link/send-line`, { method: 'POST' });
+      const j = (await res.json().catch(() => ({}))) as { data?: { to_name?: string | null }; error?: string };
+      if (!res.ok) { push(j.error ?? 'ส่ง LINE ไม่สำเร็จ', 'error'); return; }
+      push(`ส่งลิงก์จองทาง LINE ให้ ${j.data?.to_name ?? 'คู่ค้า'} แล้ว`);
+      void load();
+    } finally {
+      setSendingLine(false);
+    }
   }
 
   async function copy(text: string) {
@@ -297,18 +313,21 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         <DialogContent>
           <Stack spacing={2} alignItems="center" sx={{ pt: 1 }}>
             <Typography variant="body2" color="text.secondary" textAlign="center">{linkDoc ? TYPE_META[linkDoc.doc_type].hint : ''} — ส่งทาง LINE / อีเมล หรือให้สแกน QR</Typography>
+            {linkDoc?.partner_line_linked ? <Chip size="small" color="success" label={`คู่ค้าผูก LINE แล้ว: ${linkDoc.partner_line_name ?? ''}`} /> : <Chip size="small" variant="outlined" label="คู่ค้ายังไม่ได้ผูก LINE — จะผูกเองเมื่อเปิดลิงก์ผ่าน LINE ครั้งแรก" />}
             {link ? (
               <>
-                <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: 1, borderColor: 'divider' }}><QrCode value={link.url} size={220} alt="ลิงก์จองคิว" /></Box>
-                <TextField fullWidth size="small" value={link.url} slotProps={{ input: { readOnly: true } }} />
+                <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: 1, borderColor: 'divider' }}><QrCode value={link.liff_url ?? link.url} size={220} alt="ลิงก์จองคิว" /></Box>
+                {link.liff_url ? <TextField fullWidth size="small" label="ลิงก์สำหรับส่งใน LINE (ผูกบัญชีอัตโนมัติ)" value={link.liff_url} slotProps={{ input: { readOnly: true } }} /> : null}
+                <TextField fullWidth size="small" label={link.liff_url ? 'ลิงก์เว็บ (อีเมล / SMS / ช่องทางอื่น)' : 'ลิงก์จอง'} value={link.url} slotProps={{ input: { readOnly: true } }} />
                 {link.expires_at ? <Typography variant="caption" color="text.secondary">ใช้ได้ถึง {formatDateTimeDMY(link.expires_at)}</Typography> : null}
               </>
             ) : <Skeleton variant="rounded" width={220} height={220} />}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
           <Button color="inherit" disabled={linkBusy || !link} onClick={() => void regenerateLink()}>สร้างลิงก์ใหม่</Button>
-          <Button variant="contained" startIcon={<ContentCopyRoundedIcon />} disabled={!link} onClick={() => link && void copy(link.url)}>คัดลอกลิงก์</Button>
+          {linkDoc?.partner_line_linked ? <Button variant="outlined" color="success" disabled={sendingLine || !link} onClick={() => void sendLine()}>{sendingLine ? 'กำลังส่ง…' : 'ส่งทาง LINE'}</Button> : null}
+          <Button variant="contained" startIcon={<ContentCopyRoundedIcon />} disabled={!link} onClick={() => link && void copy(link.liff_url ?? link.url)}>คัดลอกลิงก์</Button>
         </DialogActions>
       </Dialog>
 

@@ -5,7 +5,7 @@ import { documentUpsertSchema } from '@/lib/integration/schemas';
 import { upsertDocument } from '@/lib/integration/upsert';
 
 const DOC_SELECT =
-  'id,doc_type,doc_no,branch_id,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_hash,booking_token_expires_at,imported_at,updated_at,branches(branch_name,code)';
+  'id,doc_type,doc_no,branch_id,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_hash,booking_token_expires_at,imported_at,updated_at,branches(branch_name,code),customers(line_users(display_name))';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -58,7 +58,13 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({
-      data: (data ?? []).map(({ booking_token_hash, ...d }) => ({ ...d, has_link: Boolean(booking_token_hash), booking_count: counts.get(d.id as string) ?? 0 })),
+      data: (data ?? []).map(({ booking_token_hash, customers, ...d }) => ({
+        ...d,
+        has_link: Boolean(booking_token_hash),
+        booking_count: counts.get(d.id as string) ?? 0,
+        partner_line_name: ((customers as unknown as { line_users?: { display_name?: string | null } | null } | null)?.line_users?.display_name) ?? null,
+        partner_line_linked: Boolean((customers as unknown as { line_users?: unknown } | null)?.line_users),
+      })),
       pagination: { page, page_size: pageSize, total: count ?? 0 },
     });
   } catch (e) {

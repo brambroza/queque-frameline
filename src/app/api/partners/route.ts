@@ -14,7 +14,7 @@ const partnerSchema = z.object({
   note: z.preprocess(blank, z.string().trim().max(500).optional()),
 });
 
-const SELECT = 'id,partner_type,code,full_name,phone,email,address,note,created_at';
+const SELECT = 'id,partner_type,code,full_name,phone,email,address,note,created_at,line_user_id,line_users(display_name)';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -101,6 +101,21 @@ export async function PATCH(req: Request) {
     }
     if (!data || data.length === 0) return NextResponse.json({ error: 'ไม่พบคู่ค้า' }, { status: 404 });
     return NextResponse.json({ data: data[0] });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
+  }
+}
+
+/** Forget the partner's LINE link (they can re-link by opening a booking link in LINE). */
+export async function PUT(req: Request) {
+  try {
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const body = (await req.json()) as { id?: unknown; action?: unknown };
+    const id = z.string().uuid().safeParse(body.id);
+    if (!id.success || body.action !== 'unlink_line') return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
+    const { error } = await supabase.from('customers').update({ line_user_id: null, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);
+    if (error) throw error;
+    return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }

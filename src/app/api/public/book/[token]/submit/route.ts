@@ -9,6 +9,7 @@ import { resolveInitialBookingStatus } from '@/lib/booking/status-flow';
 import { dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
+import { safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
 
 const submitSchema = vehicleDetailsSchema.extend({
   vehicle_type_id: z.string().uuid(),
@@ -117,6 +118,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       icon: 'LocalShipping',
       color: '#ed6c02',
       metadata: { doc_no: doc.doc_no, status },
+    });
+
+    // LINE (never throws): the person who booked, then the warehouse group.
+    const [{ data: vt }] = await Promise.all([admin.from('services').select('service_name').eq('id', p.vehicle_type_id).maybeSingle()]);
+    await safeNotifyPartner(admin, { shopId: doc.shop_id, bookingId: created.booking_id, kind: status === 'pending' ? 'submitted' : 'confirmed' });
+    await safeNotifyStaffGroup(admin, {
+      shopId: doc.shop_id, bookingId: created.booking_id,
+      event: { kind: 'submitted', queueNo: created.queue_number, partner: doc.partner_name ?? '-', docNo: doc.doc_no, date: p.booking_date, time: p.start_time, plate: normalizePlate(p.plate_number), vehicle: (vt?.service_name as string | null) ?? null, pending: status === 'pending' },
     });
 
     return NextResponse.json({ data: { queue_number: created.queue_number, status, do_number: created.do_number } });

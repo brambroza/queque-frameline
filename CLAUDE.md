@@ -20,6 +20,7 @@ Forked from GoAlong **Queue** (LINE queue booking SaaS) @ `035e174` on 2026-09-1
 | Database | Supabase PostgreSQL + RLS (project แยกเฉพาะ site นี้) |
 | Deployment | Vercel (region sin1) |
 | Scheduler | Supabase pg_cron + pg_net → `/api/cron/*` (Bearer `CRON_SECRET`) |
+| LINE (optional) | Messaging API push + LIFF bind ผ่านลิงก์เดิม, กลุ่มทีมคลัง — ดู section LINE |
 | Email (optional) | Nodemailer SMTP |
 
 ---
@@ -225,6 +226,15 @@ import { xxx } from '../../lib/...';  // ผิด
 
 ---
 
+## LINE OA (2026-09-18)
+
+- ตั้งค่าที่ `/portal/line-settings` → ตาราง `line_config` (token/secret/LIFF ID/Login channel ID/OA id/กลุ่ม/switch) env `LINE_*` เป็น fallback (`getLineConfig` ใน `src/lib/line/config.ts`)
+- **Bind ผ่านลิงก์เดิม:** ลิงก์แบบ LINE = `https://liff.line.me/{liff_id}/book/{token}?via=line` (`liffUrl`) · LIFF endpoint = root `/` → `src/app/page.tsx` เห็น `?liff.state` แล้ว render `LiffGate` ให้ SDK redirect ไป path → หน้า `/book`,`/driver` เห็น `?via=line` → `useLiffBind` (`src/components/public-booking/use-liff-bind.ts`) init/login/getIDToken → `POST …/line-link` → `bindLineUser` (`src/lib/line/bind.ts`) verify ID token กับ Login channel → upsert `line_users` → เขียน `customers.line_user_id` + `bookings.line_user_id` (ลูกค้า) หรือ `bookings.driver_line_user_id` (คนขับ)
+- **Push:** `src/lib/line/notify.ts` — `safeNotifyPartner` (submitted/confirmed/called/rescheduled/cancelled/no_show), `safeNotifyDriver` (job/called), `safeNotifyStaffGroup` (submitted/customer_cancelled/arrived/plate_mismatch/no_show/late/auto_called) — ไม่ throw, บันทึก `booking_logs` action `line_push`, stamp `bookings.last_line_notify_at` Flex ใน `messages.ts` (pure + vitest)
+- **Webhook** `POST /api/line/webhook`: ตรวจลายเซ็น, `follow` → welcome + upsert, `join` → วิธีลงทะเบียน, ข้อความ `ลงทะเบียนกลุ่ม` ในกลุ่ม → เก็บ `staff_group_id`, ข้อความ 1:1 → help ทุก event ลง `line_events` ยังไม่ตั้งค่า = ตอบ 200 เปล่า (ให้ปุ่ม Verify ผ่าน)
+- **Hard limits:** ห้าม log token/secret, ห้ามเชื่อ `line_user_id` จาก request (ต้องมาจาก ID token เท่านั้น), push ทุกจุดต้องผ่าน `safeNotify*`
+- ค่าใช้จ่าย: แผนฟรี 200 ข้อความ/เดือน (push + กลุ่ม) — reply ไม่นับ
+
 ## Notification System
 
 `safeCreateNotification(supabase, {...})` (`src/lib/notifications/createNotification.ts`) = notification center ของ **staff/admin** เท่านั้น ไม่ throw
@@ -284,6 +294,7 @@ Quality gate ก่อน commit: `npm run typecheck && npm run lint && npm run 
   - Portal: คิว (list / create / detail / DO print / driver link / plate edit / reschedule), บอร์ดคิว, เอกสาร SO/PO (+CSV import dry-run, booking link + QR), คู่ค้า, ประเภทรถ, ท่า, เวลาทำการ (+direction), ตั้งค่าระบบคิว
   - Public: `/book/[token]`, `/driver/[token]`, `/display`
   - Auto-call: event path ใน `PATCH /api/bookings` + `/api/cron/auto-call`
+- **LINE (โค้ดเสร็จ 2026-09-18, ยังไม่ได้ทดสอบกับ OA จริง — Fameline ยังไม่มี OA):** ดู section LINE OA และขั้นตอนตั้งค่าใน README
 - **ค้าง (ต้องทำก่อน UAT):**
   - E2E กับ Supabase จริง/ local stack (`supabase start`) — SQL ทดสอบบน Postgres 16 แล้ว, API/UI ผ่านแค่ typecheck + build
   - Integration API `POST /api/integration/v1/{sales-orders,purchase-orders}` + หน้า API keys (ตาราง `api_keys`, `generateApiKey()`, `upsertDocument()` พร้อมแล้ว)

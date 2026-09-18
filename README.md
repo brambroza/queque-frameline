@@ -69,6 +69,18 @@ psql fameline_test -f scripts/dev/stub-supabase-auth.sql     # stub auth schema 
 DATABASE_URL=postgres:///fameline_test scripts/apply-migrations.sh
 ```
 
+## LINE OA (optional)
+
+ต้องมี URL https จริง (Vercel) ก่อน เพราะ LINE เรียก webhook และเปิด LIFF ไม่ได้บน localhost
+
+1. สร้าง LINE Official Account ที่ manager.line.biz → จด Basic ID (@xxxx) → Settings → Messaging API → เปิดใช้งาน
+2. developers.line.biz → Messaging API channel → ออก **Channel access token (long-lived)**, จด **Channel secret**, Webhook URL = `https://<โดเมน>/api/line/webhook` → Verify → เปิด Use webhook, เปิด Allow bot to join group chats · ใน OA Manager ปิด Auto-reply และ Greeting message
+3. สร้าง **LINE Login channel** ใน Provider เดียวกัน → แท็บ LIFF → Add: Endpoint `https://<โดเมน>/`, Scope `profile openid chat_message.write`, Size Full, Bot link feature **Aggressive** → จด **LIFF ID** และ **Channel ID** ของ Login channel
+4. ใส่ค่าทั้งหมดที่ `/portal/line-settings` → กด "ทดสอบการเชื่อมต่อ"
+5. เชิญ OA เข้ากลุ่ม LINE ของทีมคลัง แล้วพิมพ์ `ลงทะเบียนกลุ่ม`
+
+หลังจากนี้ ลิงก์จอง/ลิงก์คนขับใน portal จะมีแบบ "ลิงก์สำหรับส่งใน LINE" — ผู้ที่เปิดผ่าน LINE จะถูกผูกบัญชีอัตโนมัติและได้รับแจ้งเตือน แผนฟรีส่งได้ 200 ข้อความ/เดือน
+
 ## Local Supabase (optional)
 
 ```bash

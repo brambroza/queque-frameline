@@ -10,6 +10,8 @@ import { transitionStamps } from '@/lib/booking/status-flow';
 import { getSiteSettings, logBooking, type SiteSettings } from '@/lib/booking/server';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
+import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { effectivePlate } from '@/lib/booking/plate';
 
 export type AutoCallResult = { called: Array<{ bookingId: string; dockId: string; queueNumber: string }> };
 
@@ -32,14 +34,14 @@ export async function runAutoCall(
   const [{ data: dockRows }, { data: liveRows }] = await Promise.all([
     admin
       .from('booking_resources')
-      .select('id,direction,service_ids')
+      .select('id,resource_name,direction,service_ids')
       .eq('shop_id', shop.shopId)
       .eq('resource_type', 'dock')
       .eq('active', true)
       .eq('is_deleted', false),
     admin
       .from('bookings')
-      .select('id,queue_number,status,resource_id,service_id,direction,booking_date,start_time,checked_in_at,call_count,branch_id')
+      .select('id,queue_number,status,resource_id,resource_name,service_id,direction,booking_date,start_time,checked_in_at,call_count,branch_id,plate_number,plate_number_actual')
       .eq('shop_id', shop.shopId)
       .eq('booking_date', today)
       .eq('is_deleted', false)
@@ -48,8 +50,9 @@ export async function runAutoCall(
 
   const live = liveRows ?? [];
   const busy = new Set(live.filter((b) => b.status !== 'checked_in' && b.resource_id).map((b) => b.resource_id as string));
-  const docks: DockState[] = (dockRows ?? []).map((d) => ({
+  const docks: Array<DockState & { name: string | null }> = (dockRows ?? []).map((d) => ({
     id: d.id as string,
+    name: (d.resource_name as string | null) ?? null,
     direction: (d.direction as BookingDirection | null) ?? null,
     service_ids: (d.service_ids as string[] | null) ?? null,
     busy: busy.has(d.id as string),
@@ -80,7 +83,8 @@ export async function runAutoCall(
       auto: true,
     });
     const update: Record<string, unknown> = { status: 'called', ...stamps };
-    if (pick.assignDock) update.resource_id = pick.dockId;
+    const dock = docks.find((d) => d.id === pick.dockId);
+    if (pick.assignDock) { update.resource_id = pick.dockId; update.resource_name = dock?.name ?? null; }
 
     const { data: updated } = await admin
       .from('bookings')
@@ -119,6 +123,9 @@ export async function runAutoCall(
       color: '#1565c0',
       metadata: { auto: true, dock_id: pick.dockId },
     });
+    await safeNotifyDriver(admin, { shopId: shop.shopId, bookingId: pick.bookingId, kind: 'called' });
+    await safeNotifyPartner(admin, { shopId: shop.shopId, bookingId: pick.bookingId, kind: 'called' });
+    await safeNotifyStaffGroup(admin, { shopId: shop.shopId, bookingId: pick.bookingId, event: { kind: 'auto_called', queueNo: queueNumber, plate: effectivePlate(row) || '-', dock: dock?.name ?? (row.resource_name as string | null) ?? null } });
   }
   return { called };
 }

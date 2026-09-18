@@ -59,7 +59,8 @@ export function BookingEditDrawer({
   const [logs, setLogs] = useState<LogRow[] | null>(null);
   const [logsError, setLogsError] = useState(false);
   const [items, setItems] = useState<DocItems>([]);
-  const [link, setLink] = useState<{ url: string; expires_at: string } | null>(null);
+  const [link, setLink] = useState<{ url: string; liff_url?: string | null; expires_at: string } | null>(null);
+  const [sendingLine, setSendingLine] = useState(false);
   const [linkLoading, setLinkLoading] = useState(false);
   const [plateOpen, setPlateOpen] = useState(false);
   const [plateDraft, setPlateDraft] = useState('');
@@ -89,7 +90,7 @@ export function BookingEditDrawer({
     setLinkLoading(true);
     try {
       const res = await fetch(`/api/bookings/${id}/driver-link`, { method: regenerate ? 'POST' : 'GET', cache: 'no-store' });
-      const j = (await res.json()) as { data?: { url: string; expires_at: string }; error?: string };
+      const j = (await res.json()) as { data?: { url: string; liff_url?: string | null; expires_at: string }; error?: string };
       if (!res.ok || !j.data) { push(j.error ?? 'ออกลิงก์คนขับไม่สำเร็จ', 'error'); return; }
       setLink(j.data);
       if (regenerate) push('สร้างลิงก์ใหม่แล้ว ลิงก์เดิมใช้ไม่ได้แล้ว');
@@ -172,7 +173,21 @@ export function BookingEditDrawer({
 
   async function copyLink() {
     if (!link) return;
-    try { await navigator.clipboard.writeText(link.url); push('คัดลอกลิงก์แล้ว'); } catch { push('คัดลอกไม่สำเร็จ', 'error'); }
+    try { await navigator.clipboard.writeText(link.liff_url ?? link.url); push('คัดลอกลิงก์แล้ว'); } catch { push('คัดลอกไม่สำเร็จ', 'error'); }
+  }
+
+  async function sendLine() {
+    if (!b || sendingLine) return;
+    setSendingLine(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/driver-link/send-line`, { method: 'POST' });
+      const j = (await res.json().catch(() => ({}))) as { data?: { target?: 'driver' | 'partner' }; error?: string };
+      if (!res.ok) { push(j.error ?? 'ส่ง LINE ไม่สำเร็จ', 'error'); return; }
+      push(j.data?.target === 'driver' ? 'ส่งใบงานให้คนขับทาง LINE แล้ว' : 'ส่งให้ลูกค้าทาง LINE แล้ว (ให้ลูกค้าส่งต่อคนขับ)');
+      setLogs(null);
+    } finally {
+      setSendingLine(false);
+    }
   }
 
   const next = b ? (NEXT_STATUSES[b.status] ?? []).filter((o) => !o.adminOnly || isAdmin) : [];
@@ -312,11 +327,13 @@ export function BookingEditDrawer({
                 ) : link ? (
                   <>
                     <Typography variant="body2" color="text.secondary">ส่งลิงก์หรือให้คนขับสแกน QR เพื่อดู DO และท่าที่ต้องเข้า (ไม่ต้องล็อกอิน)</Typography>
-                    <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: 1, borderColor: 'divider' }}><QrCode value={link.url} size={200} alt="ลิงก์คนขับ" /></Box>
-                    <TextField fullWidth size="small" value={link.url} slotProps={{ input: { readOnly: true } }} />
+                    <Box sx={{ p: 1.5, bgcolor: '#fff', borderRadius: 2, border: 1, borderColor: 'divider' }}><QrCode value={link.liff_url ?? link.url} size={200} alt="ลิงก์คนขับ" /></Box>
+                    {link.liff_url ? <TextField fullWidth size="small" label="ลิงก์สำหรับส่งใน LINE" value={link.liff_url} slotProps={{ input: { readOnly: true } }} /> : null}
+                    <TextField fullWidth size="small" label={link.liff_url ? 'ลิงก์เว็บ' : 'ลิงก์คนขับ'} value={link.url} slotProps={{ input: { readOnly: true } }} />
                     <Typography variant="caption" color="text.secondary">ใช้ได้ถึง {formatDateTimeDMY(link.expires_at)}</Typography>
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       <Button variant="contained" startIcon={<ContentCopyRoundedIcon />} onClick={() => void copyLink()}>คัดลอกลิงก์</Button>
+                      {link.liff_url ? <Button variant="outlined" color="success" disabled={sendingLine} onClick={() => void sendLine()}>{sendingLine ? 'กำลังส่ง…' : 'ส่งทาง LINE'}</Button> : null}
                       <Button color="inherit" disabled={linkLoading} onClick={() => void loadLink(true)}>สร้างลิงก์ใหม่</Button>
                     </Stack>
                   </>

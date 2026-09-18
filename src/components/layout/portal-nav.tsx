@@ -28,6 +28,7 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
 import { useRouter } from 'next/navigation';
@@ -77,6 +78,7 @@ const groups: NavGroup[] = [
     items: [
       { labelKey: 'menu.reports', fallback: 'รายงาน', href: '/portal/reports', icon: <InsightsRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', href: '/portal/site-settings', icon: <TuneRoundedIcon fontSize="small" /> },
+      { labelKey: 'menu.line_settings', fallback: 'เชื่อมต่อ LINE', href: '/portal/line-settings', icon: <ChatRoundedIcon fontSize="small" />, shopWideOnly: true },
       { labelKey: 'menu.settings', fallback: 'ข้อมูลคลัง', href: '/portal/settings', icon: <SettingsRoundedIcon fontSize="small" /> },
       { labelKey: 'menu.translations', fallback: 'การแปลภาษา', href: '/portal/translations', icon: <TranslateRoundedIcon fontSize="small" />, shopWideOnly: true },
     ],

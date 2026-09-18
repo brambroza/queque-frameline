@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { rescheduleSchema } from '@/lib/booking/schemas';
 import { normalizeSlotTime } from '@/lib/booking/slot-time';
 import { dockErrorResponse, logBooking } from '@/lib/booking/server';
+import { safeNotifyPartner } from '@/lib/line/notify';
 
 /** Move a pending / confirmed / late queue to another date, time or dock (admin). */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -49,6 +50,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       actorId: user.id,
     });
 
+    await safeNotifyPartner(createAdminClient(), { shopId: profile.shop_id, bookingId: id, kind: 'rescheduled', prev: { date: String(before.booking_date), time: String(before.start_time) } });
     return NextResponse.json({ data: { ok: true, queue_number: moved?.queue_number ?? before.queue_number } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

@@ -4,6 +4,8 @@ import { plateChangeSchema } from '@/lib/booking/schemas';
 import { normalizePlate, platesMatch } from '@/lib/booking/plate';
 import { actorFromRoles, logBooking } from '@/lib/booking/server';
 import { isTerminalStatus } from '@/lib/booking/status-flow';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { safeNotifyStaffGroup } from '@/lib/line/notify';
 
 /**
  * Gate correction: the vehicle that arrived carries a different plate than the
@@ -54,6 +56,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       actorId: user.id,
     });
 
+    if (actual) {
+      await safeNotifyStaffGroup(createAdminClient(), { shopId: profile.shop_id, bookingId: id, event: { kind: 'plate_mismatch', queueNo: String(before.queue_number ?? id), booked: String(before.plate_number ?? '-'), actual } });
+    }
     return NextResponse.json({ data: { ok: true, plate_number_actual: actual } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

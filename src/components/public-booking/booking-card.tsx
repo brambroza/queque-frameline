@@ -4,7 +4,7 @@ import { QrCode } from '@/components/ui/qr-code';
 import { PUBLIC_STATUS, longThaiDate, type PublicBooking } from './types';
 
 /** One queue as the customer / driver sees it: status, time, dock, plate, DO. */
-export function BookingCard({ b, showDriverLink, footer }: { b: PublicBooking; showDriverLink?: boolean; footer?: React.ReactNode }) {
+export function BookingCard({ b, showDriverLink, footer, onShareDriver }: { b: PublicBooking; showDriverLink?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. */ onShareDriver?: (b: PublicBooking) => void }) {
   const st = PUBLIC_STATUS[b.status] ?? { label: b.status, tone: 'bg-slate-200 text-slate-700', hint: '' };
   const plate = b.plate_number_actual || b.plate_number || '-';
   return (
@@ -33,13 +33,18 @@ export function BookingCard({ b, showDriverLink, footer }: { b: PublicBooking; s
           <div className="min-w-0 text-sm">
             <p className="font-semibold text-slate-900">ส่งให้คนขับ</p>
             <p className="text-slate-600">คนขับสแกนหรือเปิดลิงก์เพื่อดู DO และท่าที่ต้องเข้า</p>
-            <button
-              type="button"
-              className="mt-2 min-h-[40px] rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 active:bg-slate-100"
-              onClick={() => { void navigator.clipboard?.writeText(b.driver_url ?? ''); }}
-            >
-              คัดลอกลิงก์คนขับ
-            </button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onShareDriver ? (
+                <button type="button" className="min-h-[40px] rounded-lg bg-[#06C755] px-3 text-sm font-semibold text-white active:opacity-90" onClick={() => onShareDriver(b)}>ส่งให้คนขับทาง LINE</button>
+              ) : null}
+              <button
+                type="button"
+                className="min-h-[40px] rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 active:bg-slate-100"
+                onClick={() => { void navigator.clipboard?.writeText(b.driver_url ?? ''); }}
+              >
+                คัดลอกลิงก์คนขับ
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

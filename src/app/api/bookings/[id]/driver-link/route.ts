@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { actorFromRoles, getSiteSettings, logBooking } from '@/lib/booking/server';
 import { driverLinkExpiry, ensureDriverLink } from '@/lib/booking/driver-link';
+import { getLineConfig, liffUrl } from '@/lib/line/config';
+import { deriveLinkToken } from '@/lib/tokens';
 
 /**
  * GET  = current driver link (issued on first use).
@@ -38,7 +40,8 @@ async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: bool
       actorId: user.id,
     });
   }
-  return NextResponse.json({ data: { url, expires_at: expiresAt } });
+  const line = await getLineConfig(supabase, profile.shop_id);
+  return NextResponse.json({ data: { url, liff_url: liffUrl(line, `/driver/${deriveLinkToken('driver', id, version)}`), expires_at: expiresAt } });
 }
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {

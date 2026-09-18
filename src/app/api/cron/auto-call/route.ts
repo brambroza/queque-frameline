@@ -5,6 +5,7 @@ import { computeOverdueMoves } from '@/lib/booking/overdue';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { addDaysIso, toBangkokStamp } from '@/lib/booking/slot-time';
+import { safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
     // Yesterday is included so a late-evening appointment still gets closed after midnight.
     const { data: rows, error } = await admin
       .from('bookings')
-      .select('id,queue_number,status,grace_deadline,called_timeout_at,resource_id')
+      .select('id,queue_number,status,grace_deadline,called_timeout_at,resource_id,booking_date,start_time,customers(full_name)')
       .eq('shop_id', site.shopId)
       .eq('is_deleted', false)
       .gte('booking_date', addDaysIso(today, -1))
@@ -61,6 +62,14 @@ export async function GET(req: Request) {
         companyId: site.companyId, shopId: site.shopId, bookingId: m.id, action: 'status_change',
         description: `${row?.queue_number ?? m.id}: ${m.from} → ${m.to} (${m.reason})`, from: { status: m.from }, to: { status: m.to, reason: m.reason }, actorKind: 'system',
       });
+      const partner = ((row as unknown as { customers?: { full_name?: string | null } | null } | undefined)?.customers?.full_name) ?? '-';
+      const queueNo = String(row?.queue_number ?? m.id);
+      if (m.to === 'no_show') {
+        await safeNotifyPartner(admin, { shopId: site.shopId, bookingId: m.id, kind: 'no_show' });
+        await safeNotifyStaffGroup(admin, { shopId: site.shopId, bookingId: m.id, event: { kind: 'no_show', queueNo, partner, date: String(row?.booking_date ?? today), time: String(row?.start_time ?? '') } });
+      } else if (m.to === 'late') {
+        await safeNotifyStaffGroup(admin, { shopId: site.shopId, bookingId: m.id, event: { kind: 'late', queueNo, partner, time: String(row?.start_time ?? '') } });
+      }
     }
 
     const { called } = await runAutoCall(admin, site, { settings, now });

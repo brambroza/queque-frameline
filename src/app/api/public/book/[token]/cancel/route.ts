@@ -5,6 +5,7 @@ import { resolveBookingToken } from '@/lib/public/resolve';
 import { canTransition, transitionDenialMessage } from '@/lib/booking/status-flow';
 import { logBooking } from '@/lib/booking/server';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
+import { safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
 
 const schema = z.object({ booking_id: z.string().uuid(), reason: z.string().trim().max(300).optional() });
 
@@ -22,7 +23,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     // The booking must belong to the document this token opens.
     const { data: booking } = await admin
       .from('bookings')
-      .select('id,queue_number,status,branch_id')
+      .select('id,queue_number,status,branch_id,booking_date,start_time')
       .eq('id', parsed.data.booking_id)
       .eq('shop_id', doc.shop_id)
       .eq('document_id', doc.id)
@@ -54,6 +55,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       title: `ลูกค้ายกเลิกคิว ${booking.queue_number}`, message: `${doc.partner_name ?? '-'} · ${doc.doc_no}`,
       relatedType: 'booking', relatedId: booking.id as string, actionUrl: '/portal/bookings', icon: 'Cancel', color: '#c62828',
     });
+    await safeNotifyPartner(admin, { shopId: doc.shop_id, bookingId: booking.id as string, kind: 'cancelled', byCustomer: true });
+    await safeNotifyStaffGroup(admin, { shopId: doc.shop_id, bookingId: booking.id as string, event: { kind: 'customer_cancelled', queueNo: String(booking.queue_number), partner: doc.partner_name ?? '-', date: String(booking.booking_date), time: String(booking.start_time) } });
     return NextResponse.json({ data: { ok: true } });
   } catch (e) {
     console.error('[public/book/cancel]', e instanceof Error ? e.message : e);

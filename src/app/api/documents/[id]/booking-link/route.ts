@@ -3,6 +3,7 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { getSiteSettings } from '@/lib/booking/server';
 import { deriveLinkToken, expiryFromNow, hashToken, tokenState } from '@/lib/tokens';
 import { bookingUrl } from '@/lib/links';
+import { getLineConfig, liffUrl } from '@/lib/line/config';
 
 /**
  * GET  = the document's self-booking link (issued on first use, re-issued when expired).
@@ -41,7 +42,8 @@ async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: bool
       .eq('shop_id', profile.shop_id);
     if (error) throw error;
   }
-  return NextResponse.json({ data: { url: bookingUrl(token), expires_at: expiresAt, doc_no: doc.doc_no } });
+  const line = await getLineConfig(supabase, profile.shop_id);
+  return NextResponse.json({ data: { url: bookingUrl(token), liff_url: liffUrl(line, `/book/${token}`), expires_at: expiresAt, doc_no: doc.doc_no } });
 }
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {

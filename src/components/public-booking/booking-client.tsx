@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isPlausiblePlate } from '@/lib/booking/plate';
 import { BookingCard } from './booking-card';
+import { LineBanner, type LineMeta } from './line-banner';
+import { useLiffBind } from './use-liff-bind';
 import { longThaiDate, shortThaiDate, type PublicBooking, type PublicItem } from './types';
 
 type Meta = {
@@ -12,6 +14,7 @@ type Meta = {
   open: boolean;
   vehicle_types: Array<{ id: string; service_name: string; duration_minutes: number }>;
   rules: { lead_hours: number; horizon_days: number; require_admin_confirm: boolean; grace_minutes: number; early_arrival_minutes: number };
+  line?: LineMeta;
   bookings: PublicBooking[];
 };
 type Day = { day: string; open_slots: number };
@@ -45,6 +48,7 @@ export function BookingClient({ token }: { token: string }) {
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lineBind = useLiffBind(meta?.line?.liff_id, `${api}/line-link`);
 
   const loadMeta = useCallback(async (silent = false) => {
     try {
@@ -134,6 +138,15 @@ export function BookingClient({ token }: { token: string }) {
     }
   }
 
+  /** Inside LINE: let the customer pick the driver's chat and drop the job card there. */
+  function shareDriver(b: PublicBooking) {
+    const liff = lineBind.liff;
+    if (!liff?.shareTargetPicker || !b.driver_url || !meta) return;
+    const liffDriverUrl = meta.line?.liff_id ? `https://liff.line.me/${meta.line.liff_id}${new URL(b.driver_url).pathname}?via=line` : b.driver_url;
+    const text = `งาน${b.direction === 'outbound' ? 'รับสินค้า' : 'ส่งสินค้า'} ${meta.site.name}\nคิว ${b.queue_number} · ${longThaiDate(b.booking_date)} ${b.start_time.slice(0, 5)} น.\nทะเบียน ${b.plate_number ?? '-'}${b.resource_name ? ` · ${b.resource_name}` : ''}${b.do_number ? ` · ${b.do_number}` : ''}\nเปิดลิงก์นี้ใน LINE เพื่อดู DO และรับแจ้งเมื่อถึงคิว:\n${liffDriverUrl}`;
+    liff.shareTargetPicker([{ type: 'text', text }]).catch(() => undefined);
+  }
+
   async function cancel(b: PublicBooking) {
     if (busy) return;
     // Tailwind page without the MUI confirm provider — native confirm is deliberate here.
@@ -182,13 +195,15 @@ export function BookingClient({ token }: { token: string }) {
         ) : null}
       </section>
 
+      <LineBanner line={meta.line} state={lineBind.state} viaLine={lineBind.viaLine} path={`/book/${encodeURIComponent(token)}`} who="customer" />
+
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</div> : null}
 
       {step === 'status' ? (
         <>
           {meta.bookings.length === 0 ? <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">ยังไม่มีคิวสำหรับเอกสารนี้</p> : null}
           {meta.bookings.map((b) => (
-            <BookingCard key={b.id} b={b} showDriverLink
+            <BookingCard key={b.id} b={b} showDriverLink onShareDriver={lineBind.liff?.shareTargetPicker && lineBind.state.phase === 'bound' ? shareDriver : undefined}
               footer={b.cancellable ? <button type="button" disabled={busy} onClick={() => void cancel(b)} className="mt-4 min-h-[44px] w-full rounded-xl border border-red-200 text-sm font-medium text-red-700 active:bg-red-50">ยกเลิกคิวนี้</button> : null} />
           ))}
           {meta.open ? (
