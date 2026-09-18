@@ -1,5 +1,6 @@
 'use client';
 
+import { stickyBelowAppBar } from '@/components/layout/sticky-offset';
 import { Card, CardContent, IconButton, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useTranslation } from '@/lib/i18n/useTranslation';
@@ -50,7 +51,7 @@ export function ReportFilterBar({
   const label = resolvedFrom && resolvedTo ? reportRangeLabel(t, value.preset, resolvedFrom, resolvedTo) : '';
 
   return (
-    <Card sx={{ position: 'sticky', top: 8, zIndex: 5 }}>
+    <Card sx={{ position: 'sticky', top: stickyBelowAppBar(), zIndex: 5 }}>
       <CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 } }}>
         <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
           <ToggleButtonGroup

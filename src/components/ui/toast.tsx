@@ -26,9 +26,24 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed right-4 top-4 z-50 space-y-2">
+      {/*
+        Above every MUI layer (appBar 1100, drawer 1200, modal 1300, snackbar
+        1400, tooltip 1500) so a toast fired from a drawer or dialog, or while
+        the sticky app bar is on screen, is never hidden behind them. The
+        container ignores pointer events so it never blocks the app bar buttons
+        underneath; each toast opts back in.
+      */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="pointer-events-none fixed right-4 space-y-2"
+        style={{ zIndex: 1600, top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+      >
         {toasts.map((t) => (
-          <div key={t.id} className={`rounded-lg px-4 py-2 text-sm text-white shadow ${t.type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+          <div
+            key={t.id}
+            className={`pointer-events-auto rounded-lg px-4 py-2 text-sm text-white shadow-lg ${t.type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'}`}
+          >
             {t.message}
           </div>
         ))}

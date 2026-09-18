@@ -255,8 +255,8 @@ export function SimpleCrud({
 
       {drawerOpen ? (
         <>
-          <button className="fixed inset-0 z-40 bg-slate-900/30" onClick={() => setDrawerOpen(false)} aria-label="Close drawer" />
-          <aside className="fixed right-0 top-0 z-50 h-dvh w-full overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:w-[60%]">
+          <button className="fixed inset-0 z-[1200] bg-slate-900/30" onClick={() => setDrawerOpen(false)} aria-label="Close drawer" />
+          <aside className="fixed right-0 top-0 z-[1201] h-dvh w-full overflow-y-auto bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl sm:w-[60%]">
             <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3">
               <h4 className="text-lg font-semibold">{editingId ? `แก้ไข${title}` : `เพิ่ม${title}`}</h4>
               <button className="btn-outline" onClick={() => setDrawerOpen(false)}>Close</button>

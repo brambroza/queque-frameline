@@ -1,5 +1,6 @@
 'use client';
 
+import { stickyBelowAppBar } from '@/components/layout/sticky-offset';
 import {
   Card,
   CardContent,
@@ -79,7 +80,7 @@ export function BookingsFilterBar({
 
   return (
     // Sticky only from sm up — on phones the stacked filters would pin most of the screen.
-    <Card sx={{ position: { xs: 'static', sm: 'sticky' }, top: 8, zIndex: 5 }}>
+    <Card sx={{ position: { xs: 'static', sm: 'sticky' }, top: stickyBelowAppBar(), zIndex: 5 }}>
       <CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 } }}>
         <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
           <ToggleButtonGroup

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   AppBar,
@@ -33,6 +33,7 @@ import {
   useSidebarCollapse,
 } from '@/components/layout/sidebar-collapse-context';
 import { useI18n } from '@/components/i18n/i18n-provider';
+import { PORTAL_APPBAR_HEIGHT_VAR } from '@/components/layout/sticky-offset';
 
 /** Shared width/margin transition for the desktop sidebar and app bar. */
 const sidebarTransition = (theme: Theme) =>
@@ -207,6 +208,23 @@ function PortalFrameInner({
   const crumbs = useMemo(() => titleFromPath(pathname), [pathname]);
   const { t } = useI18n();
   const { collapsed, toggle } = useSidebarCollapse();
+  const appBarRef = useRef<HTMLDivElement | null>(null);
+
+  // Publish the live app bar height so sticky cards in pages can pin below it
+  // (see `stickyBelowAppBar`). The bar grows on phones when the title wraps.
+  useLayoutEffect(() => {
+    const el = appBarRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const apply = () => root.style.setProperty(PORTAL_APPBAR_HEIGHT_VAR, `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty(PORTAL_APPBAR_HEIGHT_VAR);
+    };
+  }, []);
 
   const desktopWidth = collapsed ? SIDEBAR_MINI_WIDTH : SIDEBAR_WIDTH;
   // Inline fallbacks: the DB dictionary replaces fallback.ts wholesale, so a
@@ -274,6 +292,7 @@ function PortalFrameInner({
       */}
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <AppBar
+          ref={appBarRef}
           position="sticky"
           color="inherit"
           elevation={0}
