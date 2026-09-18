@@ -22,7 +22,6 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { PortalNav } from '@/components/layout/portal-nav';
 import { LanguageSwitch } from '@/components/layout/language-switch';
-import { ColorModeToggle } from '@/components/theme/color-mode-toggle';
 import { NotificationsMenu } from '@/components/layout/notifications-menu';
 import { TopbarUserMenu } from '@/components/layout/topbar-user-menu';
 import { BranchScopeProvider } from '@/components/layout/branch-scope-provider';
@@ -325,7 +324,6 @@ function PortalFrameInner({
               <BranchSwitch />
               {/* Hidden on phones — the same toggles live in the profile drawer (TopbarUserMenu). */}
               <Box sx={{ display: { xs: 'none', sm: 'contents' } }}>
-                <ColorModeToggle />
                 <LanguageSwitch />
               </Box>
               <NotificationsMenu />

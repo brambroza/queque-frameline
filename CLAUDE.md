@@ -15,7 +15,7 @@ Forked from GoAlong **Queue** (LINE queue booking SaaS) @ `035e174` on 2026-09-1
 | Layer | Technology |
 |---|---|
 | Framework | Next.js 15 App Router + TypeScript |
-| UI | MUI v7 (portal) · Tailwind CSS (public booking / driver pages) |
+| UI | MUI v7 (portal, **light theme เท่านั้น**) · Tailwind CSS (public booking / driver pages) |
 | Auth | Supabase Auth (portal users only; customers/drivers ใช้ token link) |
 | Database | Supabase PostgreSQL + RLS (project แยกเฉพาะ site นี้) |
 | Deployment | Vercel (region sin1) |
@@ -51,7 +51,8 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 
 - `requireAuthContext({ roles: ['admin'] })` สำหรับงานตั้งค่า/ยืนยัน · `['admin', 'staff']` สำหรับงานหน้างาน
 - ทั้งสอง role เห็นทั้ง site (`SHOP_WIDE_ROLES` ใน `src/lib/auth/branch-scope.ts`, `is_branch_bound()` คืน false)
-- สร้าง user: `node scripts/create-admin.mjs <email> <password> "ชื่อ" admin|staff`
+- สร้าง admin คนแรก: `node scripts/create-admin.mjs <email> <password> "ชื่อ" admin` · คนอื่น ๆ เชิญทางอีเมลจาก `/portal/staff` (`inviteUserByEmail` → ลิงก์ไป `/auth/callback` → `/set-password`); ไม่มีหน้าสมัครเอง
+- Supabase Auth → URL Configuration ต้องมี redirect URL `<APP_URL>/auth/callback` (ทั้ง localhost และ production) ไม่งั้นลิงก์เชิญเด้งไป Site URL แทน
 
 ---
 

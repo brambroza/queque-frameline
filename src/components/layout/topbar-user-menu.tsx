@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Box, Drawer } from '@mui/material';
 import { useToast } from '@/components/ui/toast';
-import { ColorModeToggle } from '@/components/theme/color-mode-toggle';
 import { LanguageSwitch } from '@/components/layout/language-switch';
 
 type Props = {
@@ -113,7 +112,6 @@ export function TopbarUserMenu({ initialName, email, appVersion }: Props) {
           >
             <span className="text-sm text-muted">การแสดงผล / ภาษา</span>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <ColorModeToggle />
               <LanguageSwitch />
             </Box>
           </Box>

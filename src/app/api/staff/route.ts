@@ -55,7 +55,12 @@ async function provisionStaffUser(input: {
     .single();
   if (roleError || !roleRow) throw new Error(`Role ${input.role} not found in seed data`);
 
-  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(input.email);
+  // The email link lands on /auth/callback, which turns the code into a session and opens /set-password.
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(input.email, {
+    data: { full_name: input.displayName },
+    redirectTo: appUrl ? `${appUrl}/auth/callback?next=/set-password` : undefined,
+  });
   let userId = invited?.user?.id ?? null;
 
   if (!userId) {

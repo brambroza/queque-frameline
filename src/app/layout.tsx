@@ -5,7 +5,7 @@ import { ToastProvider } from '@/components/ui/toast';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { I18nProvider } from '@/components/i18n/i18n-provider';
 import { MuiAppProvider } from '@/components/theme/mui-provider';
-import { darkSurface, lightSurface } from '@/theme/tokens';
+import { lightSurface } from '@/theme/tokens';
 
 const kanit = Kanit({
   subsets: ['latin', 'thai'],
@@ -42,21 +42,12 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: lightSurface.bg },
-    { media: '(prefers-color-scheme: dark)', color: darkSurface.bg },
-  ],
+  themeColor: lightSurface.bg,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // กัน FOUC: ตั้งค่าโหมดสีก่อน hydrate (อ่าน localStorage / system preference)
-  const colorModeScript = `(function(){try{var m=localStorage.getItem('qb-color-mode');if(!m){m=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var r=document.documentElement;if(m==='dark'){r.classList.add('dark');}r.style.colorScheme=m;r.dataset.theme=m;}catch(e){}})();`;
-
   return (
-    <html lang="th" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: colorModeScript }} />
-      </head>
+    <html lang="th" suppressHydrationWarning style={{ colorScheme: 'light' }}>
       <body className={kanit.variable}>
         <I18nProvider>
           <MuiAppProvider>
