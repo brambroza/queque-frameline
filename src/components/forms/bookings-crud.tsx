@@ -6,6 +6,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/components/ui/toast';
 import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { BookingsFilterBar, dateForRange, type BookingsFilter } from '@/components/bookings/bookings-filter-bar';
 import { BookingsTable } from '@/components/bookings/bookings-table';
@@ -49,6 +50,8 @@ async function patchBooking(body: Record<string, unknown>): Promise<PatchResult>
 export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useTranslation('bookings');
   const { push } = useToast();
+  // Topbar branch selection narrows the list; the API enforces the caller's own scope.
+  const { branches, branchId, withBranch } = useBranchScope();
 
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -82,7 +85,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
   const queryDate = filter.range === 'custom' ? filter.date : dateForRange(filter.range, filter.date);
   const queryString = useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    const params = withBranch(new URLSearchParams({ page: String(page), page_size: String(pageSize) }));
     if (queryDate) params.set('date', queryDate);
     if (filter.status) params.set('status', filter.status);
     if (filter.direction) params.set('direction', filter.direction);
@@ -90,10 +93,10 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     if (debouncedSearch) params.set('q', debouncedSearch);
     if (documentId) params.set('document_id', documentId);
     return params.toString();
-  }, [page, pageSize, queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, documentId]);
+  }, [withBranch, page, pageSize, queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, documentId]);
 
   // Any filter change goes back to page 1.
-  useEffect(() => { setPage(1); }, [queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, pageSize]);
+  useEffect(() => { setPage(1); }, [queryDate, filter.status, filter.direction, filter.resource, debouncedSearch, pageSize, branchId]);
 
   useEffect(() => {
     if (filter.range === 'custom' && !ISO_DATE.test(filter.date)) return;
@@ -143,6 +146,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
   const resourceLabel = t('dock', 'ท่า');
   const activeResources = resources.filter((r) => r.active !== false);
+  const scopedResources = branchId ? activeResources.filter((r) => !r.branch_id || r.branch_id === branchId) : activeResources;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -230,7 +234,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         value={filter}
         onChange={setFilter}
         onRefresh={reload}
-        resources={resources}
+        resources={scopedResources}
         resourceLabel={resourceLabel}
         total={total}
         loading={loading}
@@ -260,6 +264,8 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       <BookingCreateDrawer
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        branches={branches}
+        defaultBranchId={branchId}
         vehicleTypes={vehicleTypes}
         docks={activeResources}
         creating={creating}

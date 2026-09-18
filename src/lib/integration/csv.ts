@@ -22,6 +22,7 @@ const ALIASES: Record<string, string[]> = {
   doc_date: ['doc_date', 'date', 'order_date', 'วันที่เอกสาร', 'วันที่'],
   due_date: ['due_date', 'delivery_date', 'ship_date', 'วันที่ส่ง', 'วันที่กำหนดส่ง', 'กำหนดส่ง'],
   remark: ['remark', 'note', 'remarks', 'หมายเหตุ'],
+  branch: ['branch', 'branch_code', 'warehouse', 'site', 'สาขา', 'คลัง', 'รหัสสาขา', 'รหัสคลัง'],
   sku: ['sku', 'item_code', 'product_code', 'รหัสสินค้า'],
   item_name: ['item_name', 'product_name', 'item', 'product', 'description', 'ชื่อสินค้า', 'สินค้า', 'รายการ'],
   qty: ['qty', 'quantity', 'จำนวน'],
@@ -102,6 +103,7 @@ export function parseDocumentsCsv(text: string): CsvParseResult {
       doc_date: normalizeCsvDate(get(head, 'doc_date')),
       due_date: normalizeCsvDate(get(head, 'due_date')),
       remark: get(head, 'remark'),
+      branch: get(head, 'branch'),
       items,
     };
     const result = documentUpsertSchema.safeParse(candidate);

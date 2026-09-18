@@ -30,6 +30,8 @@ export const documentUpsertSchema = z.object({
   items: z.array(documentItemSchema).max(500).default([]),
   remark: optText(500),
   status: z.enum(['open', 'cancelled']).optional(),
+  /** Branch code or name (branches.code / branch_name); resolved to branch_id by the importer. */
+  branch: optText(80),
 });
 
 export type DocumentUpsert = z.infer<typeof documentUpsertSchema>;

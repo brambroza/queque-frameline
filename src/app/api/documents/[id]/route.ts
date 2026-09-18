@@ -12,7 +12,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     const { id } = await ctx.params;
     const { data: doc, error } = await supabase
       .from('external_documents')
-      .select('id,doc_type,doc_no,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_expires_at,imported_at,updated_at,customers(full_name,phone,email,code)')
+      .select('id,doc_type,doc_no,branch_id,branches(branch_name,code),partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_expires_at,imported_at,updated_at,customers(full_name,phone,email,code)')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)

@@ -23,10 +23,12 @@ export function shortThaiDay(iso: string): string {
  * full and past ones disabled.
  */
 export function DockSlotPicker({
-  direction, serviceId, dockId, excludeBookingId, date, time, onChange,
+  direction, serviceId, branchId, dockId, excludeBookingId, date, time, onChange,
 }: {
   direction: BookingDirection;
   serviceId: string;
+  /** Branch whose docks and hours apply; empty = site default. */
+  branchId?: string;
   /** Restrict to one dock; empty = any eligible dock. */
   dockId?: string;
   /** Reschedule: ignore this booking's own slot. */
@@ -46,11 +48,13 @@ export function DockSlotPicker({
     const ctl = new AbortController();
     setDays(null);
     setDaysError(false);
-    fetch(`/api/available-days?${new URLSearchParams({ direction, service_id: serviceId })}`, { cache: 'no-store', signal: ctl.signal })
+    const dq = new URLSearchParams({ direction, service_id: serviceId });
+    if (branchId) dq.set('branch_id', branchId);
+    fetch(`/api/available-days?${dq}`, { cache: 'no-store', signal: ctl.signal })
       .then(async (r) => { const j = (await r.json()) as { data?: DayOption[] }; if (!r.ok) throw new Error(); setDays(j.data ?? []); })
       .catch(() => { if (!ctl.signal.aborted) setDaysError(true); });
     return () => ctl.abort();
-  }, [direction, serviceId, reload]);
+  }, [direction, serviceId, branchId, reload]);
 
   useEffect(() => {
     if (!serviceId || !date) { setSlots(null); return; }
@@ -58,13 +62,14 @@ export function DockSlotPicker({
     setSlots(null);
     setSlotsError(false);
     const qs = new URLSearchParams({ direction, service_id: serviceId, date });
+    if (branchId) qs.set('branch_id', branchId);
     if (dockId) qs.set('resource_id', dockId);
     if (excludeBookingId) qs.set('exclude_booking_id', excludeBookingId);
     fetch(`/api/available-slots?${qs}`, { cache: 'no-store', signal: ctl.signal })
       .then(async (r) => { const j = (await r.json()) as { data?: SlotOption[] }; if (!r.ok) throw new Error(); setSlots(j.data ?? []); })
       .catch(() => { if (!ctl.signal.aborted) setSlotsError(true); });
     return () => ctl.abort();
-  }, [direction, serviceId, dockId, excludeBookingId, date, reload]);
+  }, [direction, serviceId, branchId, dockId, excludeBookingId, date, reload]);
 
   if (!serviceId) return <Alert severity="info">เลือกประเภทรถก่อน เพื่อดูวันและเวลาที่ว่าง</Alert>;
 

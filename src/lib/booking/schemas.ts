@@ -9,6 +9,8 @@ export const nullableDirectionSchema = z.preprocess(
 );
 
 export const branchSchema = z.object({
+  /** Short code used by CSV / ERP imports to name the branch (e.g. HQ, BKK2). */
+  code: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().max(20).regex(/^[A-Za-z0-9_-]+$/).nullable().optional()),
   branch_name: z.string().min(2),
   address: z.string().optional().default(''),
   phone: z.string().optional().default(''),

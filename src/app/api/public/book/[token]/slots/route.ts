@@ -22,7 +22,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     const settings = await getSiteSettings(admin, doc.shop_id);
     const { data, error } = await admin.rpc('get_dock_slots', {
       p_shop_id: doc.shop_id,
-      p_branch_id: await resolveDefaultBranchId(admin, doc.shop_id),
+      p_branch_id: (doc.branch_id ?? (await resolveDefaultBranchId(admin, doc.shop_id))),
       p_direction: doc.doc_type === 'so' ? 'outbound' : 'inbound',
       p_service_id: serviceId.data,
       p_date: date.data,

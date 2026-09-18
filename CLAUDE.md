@@ -67,6 +67,7 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 
 - Public routes (`/api/public/*`) ใช้ `createAdminClient()` ได้ **แต่ต้อง resolve token → row ก่อน** แล้ว scope ทุก query ด้วย `shop_id` ของ row นั้น
 - ห้ามเพิ่ม shop ที่สอง โดยไม่ผ่าน design review
+- **หลายสาขาอยู่ใต้ shop เดียว** (`branches`, 2026-09-18): ท่า เวลาทำการ วันหยุด และเอกสาร SO/PO ผูกกับ `branch_id`; topbar `BranchSwitch` (`useBranchScope`) กรองรายการ/บอร์ด/ท่า/เอกสาร และเป็นค่าเริ่มต้นตอนสร้าง; คิวรับ `branch_id` จากเอกสารก่อน ไม่มีค่อยใช้ที่เลือก แล้วค่อย fallback สาขาแรก (`resolveDefaultBranchId`); ลิงก์จองของลูกค้าใช้สาขาของเอกสารเสมอ; `branches.code` ใช้ระบุสาขาใน CSV/ERP (คอลัมน์ `branch`)
 
 ---
 
@@ -77,9 +78,10 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 | `services` | **ประเภทรถ** (4 ล้อ / 6 ล้อ / 10 ล้อ / เทรลเลอร์) | `duration_minutes` (เวลาที่ท่า), `buffer_minutes` (เผื่อ turnaround), `direction` (null = ทั้งสองขา), `sort_order` |
 | `booking_resources` | **ท่า / dock** (`resource_type = 'dock'`) | `direction`, `service_ids` (ประเภทรถที่เข้าท่านี้ได้; null = ทุกประเภท), `capacity` (=1) |
 | `working_hours` | เวลาเปิดท่า ต่อวันในสัปดาห์ | `direction` (null = ทั้งสองขา), `slot_interval_minutes`, `break_*` |
-| `holidays` | วันหยุดคลัง | — |
+| `holidays` | วันหยุดคลัง (ต่อสาขา) | — |
+| `branches` | **สาขา / คลัง** | `code` (รหัสสำหรับ CSV/ERP), `branch_name`, `address`, `phone` |
 | `customers` | **คู่ค้า** | `partner_type` customer\|supplier, `code` (รหัส ERP), `email`, `address` |
-| `external_documents` | **SO / PO** | `doc_type` so\|po, `doc_no`, `partner_id`, `items jsonb`, `status`, `source` api\|csv\|manual, `booking_token_hash`, `raw` |
+| `external_documents` | **SO / PO** | `doc_type` so\|po, `doc_no`, `branch_id` (สาขาที่รับ-ส่ง), `partner_id`, `items jsonb`, `status`, `source` api\|csv\|manual, `booking_token_hash`, `raw` |
 | `bookings` | **คิว** | `direction`, `document_id`, `service_id` (ประเภทรถ), `resource_id` (ท่า), `plate_number`, `plate_number_actual`, `driver_*`, `receiver_*`, `booking_source`, `confirmed_*`, `arrived_at`, `grace_deadline`, `called_*`, `serving_started_at`, `completed_at`, `auto_called`, `driver_token_hash`, `do_number`, `do_issued_*` |
 | `booking_logs` | **audit log** ของคิว | `action`, `from_value`, `to_value`, `actor_kind` admin\|staff\|customer\|driver\|system |
 | `site_settings` | ตั้งค่าของ site (1 แถว) | `grace_minutes`, `early_arrival_minutes`, `auto_call_mode`, `called_timeout_minutes`, `auto_no_show_after_grace`, `booking_token_ttl_days`, `driver_token_ttl_days`, `booking_lead_min_hours`, `booking_horizon_days`, `require_admin_confirm`, `driver_self_checkin`, `do_number_format`, `auto_call_last_run_at` |

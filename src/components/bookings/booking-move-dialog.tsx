@@ -15,6 +15,7 @@ function docksFor(b: BookingRow, docks: Dock[]): Dock[] {
     (d) =>
       d.active !== false &&
       d.resource_type === 'dock' &&
+      (!d.branch_id || !b.branch_id || d.branch_id === b.branch_id) &&
       (!d.direction || d.direction === b.direction) &&
       (!d.service_ids || d.service_ids.length === 0 || (b.service_id ? d.service_ids.includes(b.service_id) : true)),
   );
@@ -62,6 +63,7 @@ export function BookingMoveDialog({
                 <DockSlotPicker
                   direction={b.direction}
                   serviceId={b.service_id}
+                  branchId={b.branch_id || undefined}
                   dockId={draft.resourceId || undefined}
                   excludeBookingId={b.id}
                   date={draft.date}

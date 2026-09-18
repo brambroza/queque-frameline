@@ -7,6 +7,7 @@ import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { useToast } from '@/components/ui/toast';
+import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
@@ -30,6 +31,7 @@ function minutesSince(iso: string | null): number | null {
 export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
+  const { branchQuery } = useBranchScope();
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [date, setDate] = useState(getTodayISOInBangkok());
   const [direction, setDirection] = useState<'all' | 'outbound' | 'inbound'>('all');
@@ -43,7 +45,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`/api/bookings?date=${dateRef.current}&page_size=200`, { cache: 'no-store' });
+      const res = await fetch(`/api/bookings?date=${dateRef.current}&page_size=200${branchQuery ? `&${branchQuery}` : ''}`, { cache: 'no-store' });
       const json = (await res.json()) as { data?: BookingRow[]; error?: string };
       if (!res.ok) throw new Error(json.error ?? 'โหลดคิวไม่สำเร็จ');
       setRows(json.data ?? []);
@@ -54,7 +56,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [branchQuery]);
 
   const loadSite = useCallback(async () => {
     try {
@@ -173,7 +175,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                       </Stack>
                       <Typography variant="caption" color="text.secondary" display="block" noWrap>{customerName(r)}</Typography>
                       <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                        {r.services?.service_name ?? '-'} · {r.resource_name ?? 'ยังไม่ระบุท่า'}{r.external_documents ? ` · ${r.external_documents.doc_no}` : ''}
+                        {r.services?.service_name ?? '-'} · {r.resource_name ?? 'ยังไม่ระบุท่า'}{r.branches?.branch_name ? ` · ${r.branches.branch_name}` : ''}{r.external_documents ? ` · ${r.external_documents.doc_no}` : ''}
                       </Typography>
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                         {r.status === 'late' ? <Chip size="small" color="warning" label="เลยเวลานัด" /> : null}

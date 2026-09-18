@@ -5,14 +5,14 @@ import { documentUpsertSchema } from '@/lib/integration/schemas';
 import { upsertDocument } from '@/lib/integration/upsert';
 
 const DOC_SELECT =
-  'id,doc_type,doc_no,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_hash,booking_token_expires_at,imported_at,updated_at';
+  'id,doc_type,doc_no,branch_id,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_hash,booking_token_expires_at,imported_at,updated_at,branches(branch_name,code)';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-const createSchema = documentUpsertSchema.extend({ doc_type: z.enum(['so', 'po']) });
+const createSchema = documentUpsertSchema.extend({ doc_type: z.enum(['so', 'po']), branch_id: z.string().uuid().optional().nullable() });
 
 /** SO / PO list. `q` matches doc no or partner; `bookable=1` = open/booked only (create-queue picker). */
 export async function GET(req: Request) {
@@ -34,6 +34,8 @@ export async function GET(req: Request) {
     const status = sp.get('status');
     const q = (sp.get('q') ?? '').replace(/[,()%*\\]/g, ' ').trim().slice(0, 60);
     if (docType === 'so' || docType === 'po') query = query.eq('doc_type', docType);
+    const branchId = sp.get('branch_id');
+    if (branchId) query = query.eq('branch_id', branchId);
     if (status) query = query.eq('status', status);
     if (sp.get('bookable') === '1') query = query.in('status', ['open', 'booked']);
     if (q) query = query.or(`doc_no.ilike.%${q}%,partner_name.ilike.%${q}%,partner_code.ilike.%${q}%`);
@@ -73,8 +75,12 @@ export async function POST(req: Request) {
       const fields = Array.from(new Set(parsed.error.issues.map((i) => i.path.join('.'))));
       return NextResponse.json({ error: `ข้อมูลไม่ถูกต้อง: ${fields.join(', ')}` }, { status: 400 });
     }
-    const { doc_type: docType, ...doc } = parsed.data;
-    const outcome = await upsertDocument(supabase, { shopId: profile.shop_id, companyId: profile.company_id }, docType, 'manual', doc, user.id);
+    const { doc_type: docType, branch_id: branchId, ...doc } = parsed.data;
+    if (branchId) {
+      const { data: branch } = await supabase.from('branches').select('id').eq('id', branchId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
+      if (!branch) return NextResponse.json({ error: 'ไม่พบสาขาที่เลือก' }, { status: 400 });
+    }
+    const outcome = await upsertDocument(supabase, { shopId: profile.shop_id, companyId: profile.company_id }, docType, 'manual', doc, user.id, { branchId });
     if (!outcome.ok) return NextResponse.json({ error: outcome.message, code: outcome.code }, { status: outcome.code === 'has_live_bookings' ? 409 : 400 });
     return NextResponse.json({ data: outcome });
   } catch (e) {

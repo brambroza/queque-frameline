@@ -20,7 +20,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     const settings = await getSiteSettings(admin, doc.shop_id);
     const today = toBangkokStamp(now).date;
     const horizonEnd = addDaysIso(today, settings.booking_horizon_days);
-    const branchId = await resolveDefaultBranchId(admin, doc.shop_id);
+    const branchId = (doc.branch_id ?? (await resolveDefaultBranchId(admin, doc.shop_id)));
 
     // get_available_days caps at 62 days per call; walk the horizon in windows.
     const days: Array<{ day: string; open_slots: number }> = [];

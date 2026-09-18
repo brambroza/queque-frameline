@@ -10,7 +10,7 @@ import { LIVE_STATUSES } from '@/lib/booking/status-flow';
 
 export type UpsertOutcome =
   | { ok: true; id: string; doc_no: string; created: boolean }
-  | { ok: false; doc_no: string; code: 'has_live_bookings' | 'db_error'; message: string };
+  | { ok: false; doc_no: string; code: 'has_live_bookings' | 'unknown_branch' | 'db_error'; message: string };
 
 type Site = { shopId: string; companyId: string };
 
@@ -71,9 +71,19 @@ export async function upsertDocument(
   source: DocumentSource,
   doc: DocumentUpsert,
   actorId: string | null,
-  opts: { raw?: unknown; forceCancel?: boolean } = {},
+  opts: { raw?: unknown; forceCancel?: boolean; branchId?: string | null } = {},
 ): Promise<UpsertOutcome> {
   try {
+    // Branch: explicit id (portal form) wins, else the code / name carried by the payload (CSV, ERP).
+    let branchId = opts.branchId ?? null;
+    if (!branchId && doc.branch) {
+      const { data: branches } = await client.from('branches').select('id,code,branch_name').eq('shop_id', site.shopId).eq('is_deleted', false);
+      const key = doc.branch.trim().toLowerCase();
+      const hit = (branches ?? []).find((b) => String(b.code ?? '').toLowerCase() === key || String(b.branch_name ?? '').toLowerCase() === key);
+      if (!hit) return { ok: false, doc_no: doc.doc_no, code: 'unknown_branch', message: `ไม่พบสาขา "${doc.branch}"` };
+      branchId = hit.id as string;
+    }
+
     const partnerId = await upsertPartner(client, site, docType === 'so' ? 'customer' : 'supplier', doc.partner, actorId);
 
     const { data: existing } = await client
@@ -92,6 +102,7 @@ export async function upsertDocument(
       due_date: doc.due_date ?? null,
       items: doc.items,
       total_qty: totalQty(doc.items),
+      ...(branchId ? { branch_id: branchId } : {}),
       remark: doc.remark ?? null,
       source,
       raw: opts.raw ?? doc,

@@ -13,12 +13,13 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DIRECTION_LABEL } from './vehicle-types-crud';
+import { useBranchScope } from '@/components/layout/branch-scope-provider';
 
-type Dock = { id: string; resource_type: string; resource_code: string | null; resource_name: string; direction: 'inbound' | 'outbound' | null; service_ids: string[] | null; active: boolean; description: string | null };
+type Dock = { id: string; resource_type: string; resource_code: string | null; resource_name: string; branch_id: string | null; direction: 'inbound' | 'outbound' | null; service_ids: string[] | null; active: boolean; description: string | null; branches?: { branch_name?: string | null } | null };
 type Vehicle = { id: string; service_name: string };
-type Form = { resource_code: string; resource_name: string; direction: '' | 'inbound' | 'outbound'; service_ids: string[]; description: string; active: boolean };
+type Form = { branch_id: string; resource_code: string; resource_name: string; direction: '' | 'inbound' | 'outbound'; service_ids: string[]; description: string; active: boolean };
 
-const EMPTY: Form = { resource_code: '', resource_name: '', direction: '', service_ids: [], description: '', active: true };
+const EMPTY: Form = { branch_id: '', resource_code: '', resource_name: '', direction: '', service_ids: [], description: '', active: true };
 
 /**
  * Docks (stored in `booking_resources`, type `dock`). The number of docks that
@@ -27,6 +28,8 @@ const EMPTY: Form = { resource_code: '', resource_name: '', direction: '', servi
 export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
+  // Topbar branch: narrows the list and pre-fills new docks.
+  const { branches, branchId: scopedBranch, branchQuery } = useBranchScope();
   const [rows, setRows] = useState<Dock[] | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +41,7 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [rRes, vRes] = await Promise.all([fetch('/api/resources?page_size=500', { cache: 'no-store' }), fetch('/api/services?page_size=200', { cache: 'no-store' })]);
+      const [rRes, vRes] = await Promise.all([fetch(`/api/resources?page_size=500${branchQuery ? `&${branchQuery}` : ''}`, { cache: 'no-store' }), fetch('/api/services?page_size=200', { cache: 'no-store' })]);
       const [r, v] = (await Promise.all([rRes.json(), vRes.json()])) as [{ data?: Dock[]; error?: string }, { data?: Vehicle[] }];
       if (!rRes.ok) throw new Error(r.error ?? 'โหลดท่าไม่สำเร็จ');
       setRows((r.data ?? []).filter((d) => d.resource_type === 'dock'));
@@ -47,18 +50,18 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
       setError(e instanceof Error ? e.message : 'โหลดท่าไม่สำเร็จ');
       setRows((prev) => prev ?? []);
     }
-  }, []);
+  }, [branchQuery]);
 
   useEffect(() => { void load(); }, [load]);
 
-  function openCreate() { setEditingId(null); setForm(EMPTY); setOpen(true); }
+  function openCreate() { setEditingId(null); setForm({ ...EMPTY, branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : '') }); setOpen(true); }
   function openEdit(d: Dock) {
     setEditingId(d.id);
-    setForm({ resource_code: d.resource_code ?? '', resource_name: d.resource_name, direction: d.direction ?? '', service_ids: d.service_ids ?? [], description: d.description ?? '', active: d.active });
+    setForm({ branch_id: d.branch_id ?? '', resource_code: d.resource_code ?? '', resource_name: d.resource_name, direction: d.direction ?? '', service_ids: d.service_ids ?? [], description: d.description ?? '', active: d.active });
     setOpen(true);
   }
 
-  const valid = form.resource_name.trim().length >= 1;
+  const valid = form.resource_name.trim().length >= 1 && Boolean(form.branch_id);
 
   async function save() {
     if (!valid || saving) return;
@@ -70,6 +73,7 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
         body: JSON.stringify({
           id: editingId ?? undefined,
           resource_type: 'dock',
+          branch_id: form.branch_id,
           resource_code: form.resource_code.trim() || null,
           resource_name: form.resource_name.trim(),
           capacity: 1,
@@ -112,7 +116,7 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
     <Stack spacing={2}>
       <PageHeader
         title="ท่ารับ-ส่งสินค้า"
-        description="จำนวนท่าที่รองรับประเภทคิวและประเภทรถ คือจำนวนรถที่รับได้พร้อมกันในแต่ละช่วงเวลา"
+        description="ท่าผูกกับสาขา — ลูกค้าของสาขาไหนจะเห็นเฉพาะท่าและเวลาทำการของสาขานั้น จำนวนท่าที่รองรับประเภทรถคือจำนวนรถที่รับได้พร้อมกัน"
         action={isAdmin ? <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>เพิ่มท่า</Button> : undefined}
       />
       {error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void load()}>ลองใหม่</Button>}>{error}</Alert> : null}
@@ -128,6 +132,7 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
                 <TableRow>
                   <TableCell>รหัส</TableCell>
                   <TableCell>ชื่อท่า</TableCell>
+                  <TableCell>สาขา</TableCell>
                   <TableCell>ใช้กับ</TableCell>
                   <TableCell>ประเภทรถที่เข้าได้</TableCell>
                   <TableCell>สถานะ</TableCell>
@@ -139,6 +144,7 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
                   <TableRow key={d.id} hover>
                     <TableCell>{d.resource_code ?? '-'}</TableCell>
                     <TableCell><Typography variant="body2" fontWeight={600}>{d.resource_name}</Typography></TableCell>
+                    <TableCell>{d.branches?.branch_name ?? <Typography variant="caption" color="warning.main">ยังไม่ระบุ</Typography>}</TableCell>
                     <TableCell>{DIRECTION_LABEL[d.direction ?? '']}</TableCell>
                     <TableCell>
                       {!d.service_ids || d.service_ids.length === 0 ? 'ทุกประเภท' : (
@@ -164,6 +170,9 @@ export function DocksCrud({ isAdmin }: { isAdmin: boolean }) {
         <DialogTitle>{editingId ? 'แก้ไขท่า' : 'เพิ่มท่า'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField select required size="small" label="สาขา / คลัง" value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))} helperText={branches.length === 0 ? 'ยังไม่มีสาขา — เพิ่มที่เมนู สาขา/ประตู ก่อน' : undefined}>
+              {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
+            </TextField>
             <Stack direction="row" spacing={2}>
               <TextField size="small" label="รหัส" value={form.resource_code} onChange={(e) => setForm((p) => ({ ...p, resource_code: e.target.value }))} placeholder="D1" sx={{ width: 120 }} />
               <TextField autoFocus required fullWidth size="small" label="ชื่อท่า" value={form.resource_name} onChange={(e) => setForm((p) => ({ ...p, resource_name: e.target.value }))} placeholder="ท่า 1" helperText="ชื่อนี้แสดงบนจอเรียกคิวและ DO" />

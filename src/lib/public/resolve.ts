@@ -13,7 +13,7 @@ export type TokenFailure = { ok: false; status: 404 | 410; error: string };
 export type ResolvedDocument = {
   ok: true;
   doc: {
-    id: string; company_id: string; shop_id: string; doc_type: 'so' | 'po'; doc_no: string; status: string;
+    id: string; company_id: string; shop_id: string; branch_id: string | null; doc_type: 'so' | 'po'; doc_no: string; status: string;
     partner_id: string | null; partner_name: string | null; due_date: string | null; remark: string | null;
     items: Array<{ sku?: string | null; name: string; qty: number; uom?: string | null }>;
   };
@@ -27,7 +27,7 @@ export async function resolveBookingToken(admin: SupabaseClient, token: string, 
   if (!isWellFormedToken(token)) return NOT_FOUND;
   const { data } = await admin
     .from('external_documents')
-    .select('id,company_id,shop_id,doc_type,doc_no,status,partner_id,partner_name,due_date,remark,items,booking_token_expires_at')
+    .select('id,company_id,shop_id,branch_id,doc_type,doc_no,status,partner_id,partner_name,due_date,remark,items,booking_token_expires_at')
     .eq('booking_token_hash', hashToken(token))
     .eq('is_deleted', false)
     .maybeSingle();

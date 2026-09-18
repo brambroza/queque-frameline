@@ -18,10 +18,11 @@ import { TablePaginationControls } from '@/components/ui/table-pagination-contro
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
+import { useBranchScope } from '@/components/layout/branch-scope-provider';
 
 type DocType = 'so' | 'po';
 type DocRow = {
-  id: string; doc_type: DocType; doc_no: string; partner_name: string | null; partner_code: string | null; doc_date: string | null; due_date: string | null;
+  id: string; doc_type: DocType; doc_no: string; branch_id: string | null; branches?: { branch_name?: string | null; code?: string | null } | null; partner_name: string | null; partner_code: string | null; doc_date: string | null; due_date: string | null;
   status: 'open' | 'booked' | 'completed' | 'cancelled'; source: string; items: Array<{ name: string; qty: number; uom?: string }>; has_link: boolean; booking_count: number;
 };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
@@ -29,7 +30,7 @@ type ImportSummary = {
   rows: number; documents: number; created: number; updated: number; truncated: boolean;
   errors: Array<{ line: number; doc_no: string | null; message: string }>;
   failed: Array<{ doc_no: string; message: string }>;
-  preview: Array<{ doc_no: string; partner: string; items: number; due_date: string | null }>;
+  preview: Array<{ doc_no: string; partner: string; items: number; due_date: string | null; branch?: string | null }>;
 };
 
 const STATUS: Record<DocRow['status'], { label: string; color: 'default' | 'primary' | 'success' | 'error' }> = {
@@ -48,6 +49,7 @@ const EMPTY_ITEM: ItemDraft = { sku: '', name: '', qty: '1', uom: '' };
 export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
+  const { branches, branchId: scopedBranch, branchQuery } = useBranchScope();
   const [docType, setDocType] = useState<DocType>('so');
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<DocRow[] | null>(null);
@@ -63,7 +65,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [linkBusy, setLinkBusy] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState({ doc_no: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' });
+  const [form, setForm] = useState({ doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' });
+  const [importBranch, setImportBranch] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
   const [saving, setSaving] = useState(false);
 
@@ -83,7 +86,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     try {
       const qs = new URLSearchParams({ doc_type: docType, page: String(page), page_size: String(pageSize), q });
       if (status) qs.set('status', status);
-      const res = await fetch(`/api/documents?${qs}`, { cache: 'no-store' });
+      const res = await fetch(`/api/documents?${qs}${branchQuery ? `&${branchQuery}` : ''}`, { cache: 'no-store' });
       const j = (await res.json()) as { data?: DocRow[]; pagination?: { total: number }; error?: string };
       if (!res.ok) throw new Error(j.error ?? 'โหลดเอกสารไม่สำเร็จ');
       setRows(j.data ?? []);
@@ -92,7 +95,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
       setError(e instanceof Error ? e.message : 'โหลดเอกสารไม่สำเร็จ');
       setRows((prev) => prev ?? []);
     }
-  }, [docType, status, page, pageSize, q]);
+  }, [docType, status, page, pageSize, q, branchQuery]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -160,7 +163,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   }
 
   // ── manual create ──────────────────────────────────────────────────────────
-  const formValid = form.doc_no.trim() && form.partner_name.trim();
+  const needBranch = branches.length > 1;
+  const formValid = form.doc_no.trim() && form.partner_name.trim() && (!needBranch || form.branch_id);
   async function saveDoc() {
     if (!formValid || saving) return;
     setSaving(true);
@@ -171,6 +175,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         body: JSON.stringify({
           doc_type: docType,
           doc_no: form.doc_no,
+          branch_id: form.branch_id || null,
           partner: { code: form.partner_code, name: form.partner_name, phone: form.partner_phone },
           due_date: form.due_date,
           remark: form.remark,
@@ -194,7 +199,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     setImporting(true);
     setImportError(null);
     try {
-      const res = await fetch('/api/documents/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc_type: docType, csv: text, dry_run: dryRun }) });
+      const res = await fetch('/api/documents/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc_type: docType, csv: text, dry_run: dryRun, branch_id: importBranch || null }) });
       const j = (await res.json().catch(() => ({}))) as { data?: ImportSummary; error?: string };
       if (!res.ok || !j.data) { setImportError(j.error ?? 'อ่านไฟล์ไม่สำเร็จ'); setSummary(null); return; }
       setSummary(j.data);
@@ -223,8 +228,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         description="นำเข้าหรือเพิ่มเอกสาร แล้วส่งลิงก์ / QR ให้คู่ค้าจองคิวเอง"
         action={isAdmin ? (
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportOpen(true); }}>นำเข้า CSV</Button>
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' }); setItems([{ ...EMPTY_ITEM }]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
+            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportBranch(scopedBranch || (branches.length === 1 ? branches[0].id : '')); setImportOpen(true); }}>นำเข้า CSV</Button>
+            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' }); setItems([{ ...EMPTY_ITEM }]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
           </Stack>
         ) : undefined}
       />
@@ -253,7 +258,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell>
+                  <TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell>
                   <TableCell align="right">คิว</TableCell><TableCell>สถานะ</TableCell><TableCell align="right">จัดการ</TableCell>
                 </TableRow>
               </TableHead>
@@ -264,6 +269,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                     <TableRow key={d.id} hover>
                       <TableCell><Typography variant="body2" fontWeight={700}>{d.doc_no}</Typography><Typography variant="caption" color="text.secondary">{d.source}</Typography></TableCell>
                       <TableCell sx={{ maxWidth: 260 }}><Typography variant="body2" noWrap>{d.partner_name ?? '-'}</Typography><Typography variant="caption" color="text.secondary">{d.partner_code ?? ''}</Typography></TableCell>
+                      <TableCell>{d.branches?.branch_name ?? <Typography variant="caption" color="text.disabled">ค่าเริ่มต้น</Typography>}</TableCell>
                       <TableCell>{d.due_date ? formatDateDMY(d.due_date) : '-'}</TableCell>
                       <TableCell align="right">{d.items?.length ?? 0}</TableCell>
                       <TableCell align="right">{d.booking_count > 0 ? <Button size="small" href={`/portal/bookings?doc=${d.id}`}>{d.booking_count}</Button> : 0}</TableCell>
@@ -311,6 +317,9 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         <DialogTitle>เพิ่ม {meta.label}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField select required={needBranch} size="small" label="สาขา / คลังที่รับ-ส่งสินค้า" value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))} helperText="ลูกค้าจะเห็นเฉพาะท่าและเวลาทำการของสาขานี้">
+              {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}{b.active === false ? ' (ปิด)' : ''}</MenuItem>)}
+            </TextField>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField autoFocus required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} helperText="เลขที่ซ้ำ = อัปเดตเอกสารเดิม" />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
@@ -346,8 +355,12 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Alert severity="info">
-              1 บรรทัด = 1 รายการสินค้า, บรรทัดที่เลขที่เอกสารเดียวกันรวมเป็นเอกสารเดียว. คอลัมน์ที่ต้องมี: <b>doc_no</b>, <b>partner_name</b> (รองรับหัวคอลัมน์ไทย เช่น เลขที่เอกสาร, ชื่อลูกค้า). ไม่บังคับ: partner_code, phone, due_date, sku, item_name, qty, uom, remark. บันทึกไฟล์เป็น CSV UTF-8
+              1 บรรทัด = 1 รายการสินค้า, บรรทัดที่เลขที่เอกสารเดียวกันรวมเป็นเอกสารเดียว. คอลัมน์ที่ต้องมี: <b>doc_no</b>, <b>partner_name</b> (รองรับหัวคอลัมน์ไทย เช่น เลขที่เอกสาร, ชื่อลูกค้า). ไม่บังคับ: <b>branch</b> (รหัสหรือชื่อสาขา), partner_code, phone, due_date, sku, item_name, qty, uom, remark. บันทึกไฟล์เป็น CSV UTF-8
             </Alert>
+            <TextField select size="small" label="สาขาสำหรับบรรทัดที่ไม่มีคอลัมน์สาขา" value={importBranch} onChange={(e) => setImportBranch(e.target.value)} sx={{ maxWidth: 360 }} slotProps={{ select: { displayEmpty: true } }}>
+              <MenuItem value="">ค่าเริ่มต้นของคลัง</MenuItem>
+              {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
+            </TextField>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Button variant="outlined" component="label" startIcon={<UploadFileRoundedIcon />} disabled={importing}>
                 เลือกไฟล์ CSV
@@ -374,9 +387,9 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                 {summary.preview.length > 0 ? (
                   <TableContainer sx={{ maxHeight: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
                     <Table size="small" stickyHeader>
-                      <TableHead><TableRow><TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell></TableRow></TableHead>
+                      <TableHead><TableRow><TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell></TableRow></TableHead>
                       <TableBody>
-                        {summary.preview.map((p) => <TableRow key={p.doc_no}><TableCell>{p.doc_no}</TableCell><TableCell>{p.partner}</TableCell><TableCell>{p.due_date ? formatDateDMY(p.due_date) : '-'}</TableCell><TableCell align="right">{p.items}</TableCell></TableRow>)}
+                        {summary.preview.map((p) => <TableRow key={p.doc_no}><TableCell>{p.doc_no}</TableCell><TableCell>{p.partner}</TableCell><TableCell>{p.branch ?? (branches.find((b) => b.id === importBranch)?.branch_name ?? 'ค่าเริ่มต้น')}</TableCell><TableCell>{p.due_date ? formatDateDMY(p.due_date) : '-'}</TableCell><TableCell align="right">{p.items}</TableCell></TableRow>)}
                       </TableBody>
                     </Table>
                   </TableContainer>

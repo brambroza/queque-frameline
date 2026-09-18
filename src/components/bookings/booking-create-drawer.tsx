@@ -14,6 +14,7 @@ import { DIRECTION_META, type Dock, type DocumentOption, type VehicleType } from
 
 export type CreateDraft = {
   direction: BookingDirection;
+  branch_id: string;
   document_id: string;
   partner_name: string;
   partner_phone: string;
@@ -32,7 +33,7 @@ export type CreateDraft = {
 export type CreateResult = { queueNo: string; doNumber: string | null; date: string; time: string; vehicle: string };
 
 const EMPTY: CreateDraft = {
-  direction: 'outbound', document_id: '', partner_name: '', partner_phone: '', service_id: '', resource_id: '',
+  direction: 'outbound', branch_id: '', document_id: '', partner_name: '', partner_phone: '', service_id: '', resource_id: '',
   booking_date: '', start_time: '', plate_number: '', driver_name: '', driver_phone: '', receiver_name: '', receiver_phone: '', note: '',
 };
 
@@ -41,10 +42,13 @@ const EMPTY: CreateDraft = {
  * 2) free day + slot 3) result. The parent owns submission so the list refreshes.
  */
 export function BookingCreateDrawer({
-  open, onClose, vehicleTypes, docks, creating, result, onSubmit, onReset,
+  open, onClose, branches, defaultBranchId, vehicleTypes, docks, creating, result, onSubmit, onReset,
 }: {
   open: boolean;
   onClose: () => void;
+  branches: Array<{ id: string; branch_name: string; active?: boolean }>;
+  /** Topbar branch, pre-selected for a new queue. */
+  defaultBranchId: string;
   vehicleTypes: VehicleType[];
   docks: Dock[];
   creating: boolean;
@@ -53,7 +57,8 @@ export function BookingCreateDrawer({
   onReset: () => void;
 }) {
   const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<CreateDraft>(EMPTY);
+  const [draft, setDraft] = useState<CreateDraft>({ ...EMPTY, branch_id: defaultBranchId });
+  useEffect(() => { if (open && !draft.branch_id) setDraft((p) => ({ ...p, branch_id: defaultBranchId || (branches.length === 1 ? branches[0].id : '') })); }, [open, defaultBranchId, branches, draft.branch_id]);
   const [docOptions, setDocOptions] = useState<DocumentOption[]>([]);
   const [docQuery, setDocQuery] = useState('');
   const [selectedDoc, setSelectedDoc] = useState<DocumentOption | null>(null);
@@ -63,37 +68,40 @@ export function BookingCreateDrawer({
   const docType = draft.direction === 'outbound' ? 'so' : 'po';
   const dir = DIRECTION_META[draft.direction];
 
-  // Document search, debounced. Only open / booked documents of the matching type.
+  // Document search, debounced. Only open / booked documents of the matching type and branch.
   useEffect(() => {
     if (!open) return;
     const ctl = new AbortController();
     const id = setTimeout(() => {
-      fetch(`/api/documents?${new URLSearchParams({ doc_type: docType, bookable: '1', page_size: '20', q: docQuery })}`, { cache: 'no-store', signal: ctl.signal })
+      const dq = new URLSearchParams({ doc_type: docType, bookable: '1', page_size: '20', q: docQuery });
+      if (draft.branch_id) dq.set('branch_id', draft.branch_id);
+      fetch(`/api/documents?${dq}`, { cache: 'no-store', signal: ctl.signal })
         .then((r) => r.json())
         .then((j: { data?: DocumentOption[] }) => setDocOptions(j.data ?? []))
         .catch(() => undefined);
     }, 250);
     return () => { clearTimeout(id); ctl.abort(); };
-  }, [open, docType, docQuery]);
+  }, [open, docType, docQuery, draft.branch_id]);
 
   const vehicleOptions = useMemo(
     () => vehicleTypes.filter((v) => v.active !== false && (!v.direction || v.direction === draft.direction)),
     [vehicleTypes, draft.direction],
   );
   const dockOptions = useMemo(
-    () => docks.filter((d) => d.active !== false && d.resource_type === 'dock' && (!d.direction || d.direction === draft.direction)
+    () => docks.filter((d) => d.active !== false && d.resource_type === 'dock' && (!d.branch_id || !draft.branch_id || d.branch_id === draft.branch_id) && (!d.direction || d.direction === draft.direction)
       && (!d.service_ids || d.service_ids.length === 0 || !draft.service_id || d.service_ids.includes(draft.service_id))),
-    [docks, draft.direction, draft.service_id],
+    [docks, draft.branch_id, draft.direction, draft.service_id],
   );
 
   const plateOk = isPlausiblePlate(draft.plate_number);
   const partnerOk = Boolean(selectedDoc || draft.partner_name.trim());
-  const step1Ok = Boolean(partnerOk && draft.service_id && plateOk);
+  const branchOk = branches.length <= 1 || Boolean(draft.branch_id);
+  const step1Ok = Boolean(branchOk && partnerOk && draft.service_id && plateOk);
   const step2Ok = Boolean(draft.booking_date && draft.start_time);
 
   function resetAll() {
     setStep(0);
-    setDraft(EMPTY);
+    setDraft({ ...EMPTY, branch_id: defaultBranchId });
     setSelectedDoc(null);
     setDocQuery('');
     onReset();
@@ -136,6 +144,14 @@ export function BookingCreateDrawer({
               <ToggleButton value="inbound">{DIRECTION_META.inbound.label}</ToggleButton>
             </ToggleButtonGroup>
 
+            {branches.length > 1 ? (
+              <TextField select required size="small" label="สาขา / คลัง" value={draft.branch_id}
+                onChange={(e) => { setSelectedDoc(null); setDraft((p) => ({ ...p, branch_id: e.target.value, document_id: '', resource_id: '', booking_date: '', start_time: '' })); }}
+                helperText="ท่า เวลาทำการ และเอกสารที่เลือกได้ ขึ้นกับสาขานี้">
+                {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
+              </TextField>
+            ) : null}
+
             <Autocomplete
               size="small"
               options={docOptions}
@@ -147,9 +163,11 @@ export function BookingCreateDrawer({
               onInputChange={(_, v, reason) => { if (reason === 'input') setDocQuery(v); }}
               onChange={(_, v) => {
                 setSelectedDoc(v);
-                setDraft((p) => ({ ...p, document_id: v?.id ?? '', partner_name: v ? '' : p.partner_name, partner_phone: v ? '' : p.partner_phone }));
+                // A document pins the branch: the goods are there.
+                setDraft((p) => ({ ...p, document_id: v?.id ?? '', branch_id: v?.branch_id ?? p.branch_id, partner_name: v ? '' : p.partner_name, partner_phone: v ? '' : p.partner_phone }));
               }}
               renderInput={(params) => <TextField {...params} label={`เอกสาร ${dir.docLabel} (ไม่บังคับ)`} placeholder={`ค้นหาเลขที่ ${dir.docLabel} หรือชื่อคู่ค้า`} />}
+              renderOption={(props, o) => <li {...props} key={o.id}>{o.doc_no} · {o.partner_name ?? '-'}{o.branches?.branch_name ? ` · ${o.branches.branch_name}` : ''}</li>}
             />
 
             {selectedDoc ? (
@@ -192,6 +210,7 @@ export function BookingCreateDrawer({
             <DockSlotPicker
               direction={draft.direction}
               serviceId={draft.service_id}
+              branchId={draft.branch_id || undefined}
               dockId={draft.resource_id || undefined}
               date={draft.booking_date}
               time={draft.start_time}

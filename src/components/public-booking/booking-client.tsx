@@ -6,7 +6,7 @@ import { BookingCard } from './booking-card';
 import { longThaiDate, shortThaiDate, type PublicBooking, type PublicItem } from './types';
 
 type Meta = {
-  site: { name: string; phone: string | null; address: string | null };
+  site: { name: string; branch: string | null; phone: string | null; address: string | null };
   document: { doc_no: string; doc_type: 'so' | 'po'; status: string; partner_name: string | null; due_date: string | null; remark: string | null; items: PublicItem[] };
   direction: 'inbound' | 'outbound';
   open: boolean;
@@ -164,7 +164,7 @@ export function BookingClient({ token }: { token: string }) {
   const stepIndex = stepsOrder.indexOf(step);
 
   return (
-    <Shell title={outbound ? 'จองคิวรับสินค้า' : 'จองคิวส่งสินค้า'} subtitle={meta.site.name}>
+    <Shell title={outbound ? 'จองคิวรับสินค้า' : 'จองคิวส่งสินค้า'} subtitle={[meta.site.name, meta.site.branch, meta.site.address].filter(Boolean).join(' · ')}>
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-sm text-slate-500">{outbound ? 'Sales Order' : 'Purchase Order'}</p>

@@ -46,8 +46,8 @@ export type BookingRow = {
 /** Vehicle type (`services` row). */
 export type VehicleType = { id: string; service_name: string; duration_minutes?: number | null; buffer_minutes?: number | null; direction?: BookingDirection | null; active?: boolean | null };
 /** Dock (`booking_resources` row). */
-export type Dock = { id: string; resource_name: string; resource_code?: string | null; resource_type: string; direction?: BookingDirection | null; service_ids?: string[] | null; active?: boolean | null };
-export type DocumentOption = { id: string; doc_type: 'so' | 'po'; doc_no: string; partner_id: string | null; partner_name: string | null; status: string };
+export type Dock = { id: string; resource_name: string; resource_code?: string | null; resource_type: string; branch_id?: string | null; direction?: BookingDirection | null; service_ids?: string[] | null; active?: boolean | null };
+export type DocumentOption = { id: string; doc_type: 'so' | 'po'; doc_no: string; branch_id: string | null; partner_id: string | null; partner_name: string | null; status: string; branches?: { branch_name?: string | null } | null };
 export type SlotOption = { slot_time: string; slot_end: string; capacity: number; remaining_capacity: number; is_past: boolean; bookable: boolean };
 
 export const DIRECTION_META: Record<BookingDirection, { label: string; short: string; palette: StatusPaletteKey; docLabel: string }> = {

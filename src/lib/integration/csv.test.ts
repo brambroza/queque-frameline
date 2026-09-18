@@ -28,8 +28,8 @@ describe('parseDocumentsCsv', () => {
   });
 
   it('accepts Thai headers', () => {
-    const r = parseDocumentsCsv('เลขที่เอกสาร,ชื่อผู้ขาย,สินค้า,จำนวน\nPO-9,หจก. ซี,ทราย,3\n');
-    expect(r.documents[0]).toMatchObject({ doc_no: 'PO-9', partner: { name: 'หจก. ซี' }, items: [{ name: 'ทราย', qty: 3 }] });
+    const r = parseDocumentsCsv('เลขที่เอกสาร,ชื่อผู้ขาย,สาขา,สินค้า,จำนวน\nPO-9,หจก. ซี,BKK2,ทราย,3\n');
+    expect(r.documents[0]).toMatchObject({ doc_no: 'PO-9', partner: { name: 'หจก. ซี' }, branch: 'BKK2', items: [{ name: 'ทราย', qty: 3 }] });
   });
 
   it('reports missing columns and bad rows without throwing', () => {

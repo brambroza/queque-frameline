@@ -93,6 +93,7 @@ export async function POST(req: Request) {
     const branchInsertPayload = {
       company_id: targetCompanyId,
       shop_id: targetShopId,
+      code: payload.code ?? null,
       branch_name: payload.branch_name,
       address: payload.address,
       phone: payload.phone,
@@ -141,6 +142,7 @@ export async function PATCH(req: Request) {
     const { error } = await supabase
       .from('branches')
       .update({
+        code: parsed.data.code ?? null,
         branch_name: parsed.data.branch_name,
         address: parsed.data.address,
         phone: parsed.data.phone,

@@ -65,7 +65,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     const status = resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: settings.require_admin_confirm });
     const { data: rows, error } = await admin.rpc('create_dock_booking', {
       p_shop_id: doc.shop_id,
-      p_branch_id: await resolveDefaultBranchId(admin, doc.shop_id),
+      p_branch_id: (doc.branch_id ?? (await resolveDefaultBranchId(admin, doc.shop_id))),
       p_direction: doc.doc_type === 'so' ? 'outbound' : 'inbound',
       p_service_id: p.vehicle_type_id,
       p_date: p.booking_date,

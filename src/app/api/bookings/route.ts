@@ -47,6 +47,7 @@ export async function GET(req: Request) {
       .order('start_time', { ascending: true });
 
     const id = searchParams.get('id');
+    const branchFilter = searchParams.get('branch_id');
     const date = searchParams.get('date');
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
@@ -58,6 +59,7 @@ export async function GET(req: Request) {
     const q = sanitizeSearch(searchParams.get('q') ?? '');
 
     if (id) query = query.eq('id', id);
+    if (branchFilter) query = query.eq('branch_id', branchFilter);
     if (date) query = query.eq('booking_date', date);
     if (dateFrom) query = query.gte('booking_date', dateFrom);
     if (dateTo) query = query.lte('booking_date', dateTo);
@@ -89,15 +91,14 @@ export async function POST(req: Request) {
     if (!parsed.success) return invalidPayload(parsed.error.issues);
     const payload = parsed.data;
 
-    const branchId = payload.branch_id ?? (await resolveDefaultBranchId(supabase, profile.shop_id));
-    if (!branchId) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่าสาขา/คลัง' }, { status: 400 });
+    let branchId = payload.branch_id ?? null;
 
     // Linked SO/PO must belong to this site and match the direction (SO = outbound, PO = inbound).
     let partnerId = payload.partner_id ?? null;
     if (payload.document_id) {
       const { data: doc } = await supabase
         .from('external_documents')
-        .select('id,doc_type,status,partner_id')
+        .select('id,doc_type,status,partner_id,branch_id')
         .eq('id', payload.document_id)
         .eq('shop_id', profile.shop_id)
         .eq('is_deleted', false)
@@ -111,7 +112,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'ประเภทคิวไม่ตรงกับเอกสาร (SO = รับสินค้า, PO = ส่งสินค้า)' }, { status: 400 });
       }
       partnerId = partnerId ?? (doc.partner_id as string | null);
+      // The document's branch wins: the goods are there.
+      if (doc.branch_id) branchId = doc.branch_id as string;
     }
+    branchId = branchId ?? (await resolveDefaultBranchId(supabase, profile.shop_id));
+    if (!branchId) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่าสาขา/คลัง' }, { status: 400 });
 
     if (partnerId) {
       const { data: partner } = await supabase.from('customers').select('id').eq('id', partnerId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();

@@ -17,8 +17,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     const { doc } = resolved;
     const direction = doc.doc_type === 'so' ? 'outbound' : 'inbound';
 
-    const [{ data: shop }, settings, { data: vehicles }, { data: bookings }] = await Promise.all([
+    const [{ data: shop }, { data: branch }, settings, { data: vehicles }, { data: bookings }] = await Promise.all([
       admin.from('shops').select('name,phone,address,logo_url').eq('id', doc.shop_id).maybeSingle(),
+      doc.branch_id ? admin.from('branches').select('branch_name,address,phone').eq('id', doc.branch_id).eq('shop_id', doc.shop_id).maybeSingle() : Promise.resolve({ data: null as { branch_name: string; address: string | null; phone: string | null } | null }),
       getSiteSettings(admin, doc.shop_id),
       admin
         .from('services')
@@ -33,7 +34,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
 
     return NextResponse.json({
       data: {
-        site: { name: shop?.name ?? 'Fameline', phone: shop?.phone ?? null, address: shop?.address ?? null, logo_url: shop?.logo_url ?? null },
+        site: {
+          name: shop?.name ?? 'Fameline',
+          branch: branch?.branch_name ?? null,
+          phone: branch?.phone ?? shop?.phone ?? null,
+          address: branch?.address ?? shop?.address ?? null,
+          logo_url: shop?.logo_url ?? null,
+        },
         document: { doc_no: doc.doc_no, doc_type: doc.doc_type, status: doc.status, partner_name: doc.partner_name, due_date: doc.due_date, remark: doc.remark, items: doc.items ?? [] },
         direction,
         open: doc.status === 'open' || doc.status === 'booked',
