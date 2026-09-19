@@ -122,7 +122,7 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
             {num('booking_horizon_days', 'จองล่วงหน้าได้ไกลสุด (วัน)', '', 1, 365)}
             {num('booking_token_ttl_days', 'อายุลิงก์จอง (วัน)', 'นับจากวันที่ออกลิงก์', 1, 90)}
             {num('driver_token_ttl_days', 'อายุลิงก์คนขับ (วัน)', 'นับหลังวันนัด', 1, 90)}
-            {toggle('driver_self_checkin', 'ให้คนขับกด “มาถึงแล้ว” เองจากลิงก์ (ปิด = เจ้าหน้าที่หน้าประตูเป็นคนเช็คอิน)')}
+            {toggle('driver_self_checkin', 'ให้คนขับกด “ฉันมาถึงแล้ว” เช็คอินเองจากลิงก์ — ตรวจ GPS ตามพิกัดและรัศมีที่ตั้งในหน้า สาขา / คลัง (ปิด = เจ้าหน้าที่หน้าประตูเป็นคนเช็คอิน)')}
           </Section>
 
           <Section title="เลข DO">

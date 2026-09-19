@@ -80,7 +80,7 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 | `booking_resources` | **ท่า / dock** (`resource_type = 'dock'`) | `direction`, `service_ids` (ประเภทรถที่เข้าท่านี้ได้; null = ทุกประเภท), `capacity` (=1) |
 | `working_hours` | เวลาเปิดท่า ต่อวันในสัปดาห์ | `direction` (null = ทั้งสองขา), `slot_interval_minutes`, `break_*` |
 | `holidays` | วันหยุดคลัง (ต่อสาขา) | — |
-| `branches` | **สาขา / คลัง** | `code` (รหัสสำหรับ CSV/ERP), `branch_name`, `address`, `phone` |
+| `branches` | **สาขา / คลัง** | `code` (รหัสสำหรับ CSV/ERP), `branch_name`, `address`, `phone`, `latitude`/`longitude`/`checkin_radius_m` (geofence เช็คอินคนขับ) |
 | `customers` | **คู่ค้า** | `partner_type` customer\|supplier, `code` (รหัส ERP), `email`, `address` |
 | `external_documents` | **SO / PO** | `doc_type` so\|po, `doc_no`, `branch_id` (สาขาที่รับ-ส่ง), `partner_id`, `items jsonb`, `status`, `source` api\|csv\|manual, `booking_token_hash`, `raw` |
 | `bookings` | **คิว** | `direction`, `document_id`, `service_id` (ประเภทรถ), `resource_id` (ท่า), `plate_number`, `plate_number_actual`, `driver_*`, `receiver_*`, `booking_source`, `confirmed_*`, `arrived_at`, `grace_deadline`, `called_*`, `serving_started_at`, `completed_at`, `auto_called`, `driver_token_hash`, `do_number`, `do_issued_*` |
@@ -120,6 +120,14 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - `src/lib/booking/slot-time.ts` — `isSlotPast`, Bangkok clock; server เป็นคนใส่ `is_past` เสมอ
 
 ---
+
+## Driver self check-in + geofence (2026-09-19)
+
+- `site_settings.driver_self_checkin` = **true** (default) → หน้า `/driver/[token]` มีปุ่ม "ฉันมาถึงแล้ว — เช็คอิน" เฉพาะวันที่นัด + สถานะใน `CHECKIN_STATUSES`
+- สาขาที่มี `latitude`+`longitude` = บังคับ GPS: หน้าเรียก `navigator.geolocation` แล้วส่ง `{lat,lng,accuracy}` ให้ `POST /api/public/driver/[token]/arrive` → `checkGeofence` (`src/lib/booking/geofence.ts`, pure + vitest) ผ่านเมื่อ `distance ≤ checkin_radius_m + min(accuracy, 100)`; accuracy > 500 ม. = ปฏิเสธ; สาขาไม่มีพิกัด = ไม่ตรวจ
+- พิกัดคลัง **ไม่ส่งออก** ไป client (meta คืนแค่ `check_in_requires_location`, `check_in_radius_m`); ระยะที่เช็คอินถูกเก็บใน `booking_logs.to_value`
+- ตั้งพิกัดที่ `/portal/branches` (วางจาก Google Maps หรือ "ใช้ตำแหน่งปัจจุบัน")
+- ข้อจำกัด: ตำแหน่งจากเบราว์เซอร์ปลอมได้ด้วยแอป mock location — ใช้กันกดล่วงหน้าโดยสุจริต ไม่ใช่หลักฐานทางกฎหมาย staff ยังตรวจทะเบียนที่ประตูได้ตามเดิม
 
 ## Auto-call (Phase 2)
 

@@ -8,6 +8,11 @@ export const nullableDirectionSchema = z.preprocess(
   directionSchema.nullable(),
 );
 
+/** Empty string / null → null; otherwise a finite number within ±limit. */
+function optionalCoordinate(limit: number) {
+  return z.preprocess((v) => (v === '' || v === null || v === undefined ? null : v), z.coerce.number().min(-limit).max(limit).nullable());
+}
+
 export const branchSchema = z.object({
   /** Short code used by CSV / ERP imports to name the branch (e.g. HQ, BKK2). */
   code: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().max(20).regex(/^[A-Za-z0-9_-]+$/).nullable().optional()),
@@ -18,7 +23,11 @@ export const branchSchema = z.object({
   close_time: z.string(),
   max_parallel_queues: z.coerce.number().int().min(1).max(100),
   active: z.coerce.boolean().default(true),
-});
+  /** Warehouse gate coordinates — set both to fence driver self check-in, leave both empty to disable. */
+  latitude: optionalCoordinate(90),
+  longitude: optionalCoordinate(180),
+  checkin_radius_m: z.preprocess((v) => (v === '' || v === null || v === undefined ? 300 : v), z.coerce.number().int().min(50).max(5000)),
+}).refine((b) => (b.latitude === null) === (b.longitude === null), { message: 'ต้องใส่ทั้งละติจูดและลองจิจูด', path: ['longitude'] });
 
 export const serviceSchema = z.object({
   service_name: z.string().min(2),

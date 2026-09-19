@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
@@ -13,19 +13,46 @@ import { MobileCardList } from '@/components/ui/responsive-table';
 import { MobileRecordCard } from '@/components/ui/mobile-record-card';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 
-type Column = { key: string; label: string; type?: 'text' | 'number' | 'time' | 'date' | 'checkbox' };
+type Column = {
+  key: string;
+  label: string;
+  type?: 'text' | 'number' | 'time' | 'date' | 'checkbox';
+  /** Field may be left empty (default: required). */
+  optional?: boolean;
+  /** `step` for number inputs, e.g. "any" for decimals. */
+  step?: string;
+  /** Form-only field: not shown as a table column / card line. */
+  hideInTable?: boolean;
+  /** Small helper text under the input. */
+  hint?: string;
+};
+
+/** Lets `formExtra` write into the (uncontrolled) form inputs by field name. */
+export type SimpleCrudFormApi = { setField: (name: string, value: string) => void };
 
 export function SimpleCrud({
   endpoint,
   title,
-  columns,
+  columns: allColumns,
   defaults,
+  formExtra,
 }: {
   endpoint: string;
   title: string;
   columns: Column[];
   defaults: Record<string, string | number | boolean>;
+  /** Extra block rendered inside the form (full width), e.g. a "use my location" helper. */
+  formExtra?: (api: SimpleCrudFormApi) => ReactNode;
 }) {
+  // `columns` = what the list shows; the form and payload use `allColumns`.
+  const columns = useMemo(() => allColumns.filter((c) => !c.hideInTable), [allColumns]);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const formApi = useMemo<SimpleCrudFormApi>(() => ({
+    setField: (name, value) => {
+      const el = formRef.current?.elements.namedItem(name);
+      if (el instanceof HTMLInputElement) el.value = value;
+    },
+  }), []);
   const { push } = useToast();
   const confirm = useConfirm();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -56,7 +83,7 @@ export function SimpleCrud({
 
   function openEdit(row: Record<string, unknown>) {
     const next: Record<string, string | number | boolean> = { ...defaults };
-    columns.forEach((c) => {
+    allColumns.forEach((c) => {
       const v = row[c.key];
       if (c.type === 'checkbox') next[c.key] = Boolean(v);
       else next[c.key] = String(v ?? defaults[c.key] ?? '');
@@ -72,7 +99,7 @@ export function SimpleCrud({
     const formData = new FormData(form);
     const payload = { ...defaults } as Record<string, unknown>;
 
-    columns.forEach((c) => {
+    allColumns.forEach((c) => {
       if (c.type === 'checkbox') payload[c.key] = formData.get(c.key) === 'on';
       else payload[c.key] = formData.get(c.key);
     });
@@ -262,17 +289,19 @@ export function SimpleCrud({
               <button className="btn-outline" onClick={() => setDrawerOpen(false)}>Close</button>
             </div>
 
-            <form key={editingId ?? 'new'} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
-              {columns.map((c) => (
+            <form ref={formRef} key={editingId ?? 'new'} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
+              {allColumns.map((c) => (
                 <label key={c.key} className="text-sm">
                   <span className="mb-1 block text-slate-600">{c.label}</span>
                   {c.type === 'checkbox' ? (
                     <input type="checkbox" name={c.key} defaultChecked={Boolean(formSeed[c.key])} />
                   ) : (
-                    <input className="input" name={c.key} type={c.type ?? 'text'} defaultValue={String(formSeed[c.key] ?? '')} required />
+                    <input className="input" name={c.key} type={c.type ?? 'text'} step={c.step} defaultValue={String(formSeed[c.key] ?? '')} required={!c.optional} />
                   )}
+                  {c.hint ? <span className="mt-1 block text-xs text-slate-500">{c.hint}</span> : null}
                 </label>
               ))}
+              {formExtra ? <div className="sm:col-span-2">{formExtra(formApi)}</div> : null}
               <div className="sm:col-span-2 flex gap-2 pt-2">
                 <button className="btn-primary" disabled={saving}>{saving ? 'กำลังบันทึก...' : editingId ? `บันทึก${title}` : `เพิ่ม${title}`}</button>
                 <button type="button" className="btn-outline" onClick={() => setDrawerOpen(false)}>ยกเลิก</button>

@@ -5,6 +5,7 @@ import { getSiteSettings } from '@/lib/booking/server';
 import { toBangkokStamp } from '@/lib/booking/slot-time';
 import { CHECKIN_STATUSES } from '@/lib/booking/status-flow';
 import { addFriendUrl, getLineConfig } from '@/lib/line/config';
+import { DEFAULT_CHECKIN_RADIUS_M, hasGeofence, type BranchGeofence } from '@/lib/booking/geofence';
 
 /** Driver page data: the DO, the dock and the live status. Read-only. */
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -23,6 +24,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     ]);
     if (!booking) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
 
+    const { data: branchRef } = await admin.from('bookings').select('branch_id').eq('id', ref.id).eq('shop_id', ref.shop_id).maybeSingle();
+    const { data: branch } = branchRef?.branch_id
+      ? await admin.from('branches').select('latitude,longitude,checkin_radius_m').eq('id', branchRef.branch_id as string).eq('shop_id', ref.shop_id).maybeSingle()
+      : { data: null };
+    const fenced = hasGeofence(branch as BranchGeofence | null);
+
     const { driver_token_version: _v, driver_line_user_id: _d, line_users: driverLine, ...pub } = booking as unknown as Record<string, unknown>;
     void _v; void _d;
     const today = toBangkokStamp(new Date()).date;
@@ -34,6 +41,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         booking: pub,
         today,
         can_self_check_in: canSelfCheckIn,
+        // The page asks for the phone's position only when the branch is fenced. Coordinates stay server-side.
+        check_in_requires_location: fenced,
+        check_in_radius_m: fenced ? Number((branch as BranchGeofence).checkin_radius_m ?? DEFAULT_CHECKIN_RADIUS_M) : null,
         early_arrival_minutes: settings.early_arrival_minutes,
         grace_minutes: settings.grace_minutes,
         line: { liff_id: line.liff_id, add_friend_url: addFriendUrl(line), linked_name: ((driverLine as { display_name?: string | null } | null)?.display_name) ?? null, enabled: Boolean(line.channel_access_token && line.liff_id && line.login_channel_id) },

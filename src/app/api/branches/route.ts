@@ -101,6 +101,9 @@ export async function POST(req: Request) {
       close_time: payload.close_time,
       max_parallel_queues: payload.max_parallel_queues,
       active: payload.active,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      checkin_radius_m: payload.checkin_radius_m,
       created_by: user.id,
       updated_by: user.id,
     };
@@ -136,7 +139,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const id = body.id as string;
     const parsed = branchSchema.safeParse(body);
-    if (!id || !parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+    if (!id || !parsed.success) return NextResponse.json({ error: parsed.success ? 'Invalid payload' : parsed.error.issues[0]?.message ?? 'Invalid payload' }, { status: 400 });
     assertBranchAllowed(branchScope, id);
 
     const { error } = await supabase
@@ -150,6 +153,9 @@ export async function PATCH(req: Request) {
         close_time: parsed.data.close_time,
         max_parallel_queues: parsed.data.max_parallel_queues,
         active: parsed.data.active,
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        checkin_radius_m: parsed.data.checkin_radius_m,
         updated_by: user.id,
       })
       .eq('id', id)

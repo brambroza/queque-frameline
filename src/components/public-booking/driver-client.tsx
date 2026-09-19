@@ -11,12 +11,32 @@ type DriverData = {
   site: { name: string; phone: string | null; address: string | null };
   booking: PublicBooking;
   can_self_check_in: boolean;
+  check_in_requires_location?: boolean;
+  check_in_radius_m?: number | null;
   early_arrival_minutes: number;
   grace_minutes: number;
   line?: LineMeta;
 };
 
 const POLL_MS = 10_000;
+
+type Fix = { lat: number; lng: number; accuracy: number };
+
+/** One high-accuracy GPS fix; rejects with a Thai message the driver can act on. */
+function getPosition(): Promise<Fix> {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return reject(new Error('โทรศัพท์นี้ไม่รองรับการระบุตำแหน่ง กรุณาแจ้งเจ้าหน้าที่หน้าประตู'));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      (err) => reject(new Error(
+        err.code === err.PERMISSION_DENIED ? 'ต้องอนุญาตให้เข้าถึงตำแหน่งก่อน — เปิดสิทธิ์ตำแหน่งของเบราว์เซอร์/LINE ในการตั้งค่าโทรศัพท์แล้วลองใหม่'
+        : err.code === err.TIMEOUT ? 'หาตำแหน่งไม่ทัน กรุณาเปิด GPS ออกมาที่โล่งแล้วลองใหม่'
+        : 'อ่านตำแหน่งไม่ได้ กรุณาเปิด GPS แล้วลองใหม่',
+      )),
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
+  });
+}
 
 /** Driver's page: which job, which dock, live status, and the DO to show at the gate. */
 export function DriverClient({ token }: { token: string }) {
@@ -45,10 +65,17 @@ export function DriverClient({ token }: { token: string }) {
     setBusy(true);
     setNotice(null);
     try {
-      const res = await fetch(`${api}/arrive`, { method: 'POST' });
+      let fix: Fix | null = null;
+      if (data?.check_in_requires_location) {
+        setNotice('กำลังตรวจตำแหน่ง…');
+        try { fix = await getPosition(); } catch (e) { setNotice(e instanceof Error ? e.message : 'อ่านตำแหน่งไม่ได้'); return; }
+      }
+      const res = await fetch(`${api}/arrive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fix ?? {}) });
       const j = (await res.json().catch(() => ({}))) as { error?: string };
-      setNotice(res.ok ? 'แจ้งเจ้าหน้าที่แล้วว่ารถมาถึง' : j.error ?? 'เช็คอินไม่สำเร็จ');
+      setNotice(res.ok ? 'เช็คอินแล้ว — รอเรียกเข้าท่า' : j.error ?? 'เช็คอินไม่สำเร็จ');
       await load(true);
+    } catch {
+      setNotice('เชื่อมต่อไม่ได้ กรุณาลองใหม่');
     } finally {
       setBusy(false);
     }
@@ -100,9 +127,12 @@ export function DriverClient({ token }: { token: string }) {
         <BookingCard b={b} />
 
         {notice ? <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700" role="status">{notice}</p> : null}
+        {data.can_self_check_in && data.check_in_requires_location ? (
+          <p className="text-center text-xs text-slate-500">กดได้เมื่ออยู่ในระยะ {data.check_in_radius_m ?? 300} ม. จากคลัง · ระบบจะขอตำแหน่งจากโทรศัพท์</p>
+        ) : null}
         {data.can_self_check_in ? (
           <button type="button" disabled={busy} onClick={() => void arrive()} className="min-h-[52px] w-full rounded-xl bg-emerald-600 text-lg font-semibold text-white active:bg-emerald-700 disabled:bg-slate-300">
-            {busy ? 'กำลังแจ้ง…' : 'ฉันมาถึงแล้ว'}
+            {busy ? 'กำลังเช็คอิน…' : 'ฉันมาถึงแล้ว — เช็คอิน'}
           </button>
         ) : ['confirmed', 'late'].includes(b.status) ? (
           <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-600">เมื่อมาถึง แจ้งเลขคิว <b>{b.queue_number}</b> ที่ป้อมยามเพื่อเช็คอิน · มาก่อนเวลาได้ไม่เกิน {data.early_arrival_minutes} นาที</p>
