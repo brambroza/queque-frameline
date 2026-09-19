@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, MenuItem, Skeleton,
+  Alert, Autocomplete, Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, MenuItem, Skeleton,
   Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -26,6 +26,7 @@ type DocRow = {
   status: 'open' | 'booked' | 'completed' | 'cancelled'; source: string; items: Array<{ name: string; qty: number; uom?: string }>; has_link: boolean; booking_count: number;
   partner_line_linked?: boolean; partner_line_name?: string | null;
 };
+type PartnerOption = { id: string; code: string | null; full_name: string; phone: string | null };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
 type ImportSummary = {
   rows: number; documents: number; created: number; updated: number; truncated: boolean;
@@ -71,6 +72,9 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [importBranch, setImportBranch] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
   const [saving, setSaving] = useState(false);
+  const [partnerOptions, setPartnerOptions] = useState<PartnerOption[]>([]);
+  const [partnerLoading, setPartnerLoading] = useState(false);
+  const [pickedPartner, setPickedPartner] = useState<PartnerOption | null>(null);
 
   const [importOpen, setImportOpen] = useState(false);
   const [csvText, setCsvText] = useState('');
@@ -100,6 +104,26 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   }, [docType, status, page, pageSize, q, branchQuery]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Partner suggestions for the create form: matches name / code / phone, so one pick fills all three.
+  useEffect(() => {
+    if (!formOpen) return undefined;
+    const ctrl = new AbortController();
+    const id = setTimeout(async () => {
+      setPartnerLoading(true);
+      try {
+        const qs = new URLSearchParams({ partner_type: docType === 'so' ? 'customer' : 'supplier', page_size: '10', q: form.partner_name.trim() });
+        const res = await fetch(`/api/partners?${qs}`, { cache: 'no-store', signal: ctrl.signal });
+        const j = (await res.json()) as { data?: PartnerOption[] };
+        if (res.ok) setPartnerOptions(j.data ?? []);
+      } catch {
+        // aborted or offline — the field still accepts free text
+      } finally {
+        if (!ctrl.signal.aborted) setPartnerLoading(false);
+      }
+    }, 250);
+    return () => { clearTimeout(id); ctrl.abort(); };
+  }, [formOpen, docType, form.partner_name]);
 
   // ── booking link ───────────────────────────────────────────────────────────
   async function openLink(doc: DocRow, regenerate = false) {
@@ -245,7 +269,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         action={isAdmin ? (
           <Stack direction="row" spacing={1}>
             <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportBranch(scopedBranch || (branches.length === 1 ? branches[0].id : '')); setImportOpen(true); }}>นำเข้า CSV</Button>
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' }); setItems([{ ...EMPTY_ITEM }]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
+            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' }); setItems([{ ...EMPTY_ITEM }]); setPickedPartner(null); setPartnerOptions([]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
           </Stack>
         ) : undefined}
       />
@@ -343,10 +367,55 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
               <TextField autoFocus required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} helperText="เลขที่ซ้ำ = อัปเดตเอกสารเดิม" />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
             </Stack>
+            <Autocomplete<PartnerOption, false, false, true>
+              freeSolo
+              fullWidth
+              size="small"
+              options={partnerOptions}
+              loading={partnerLoading}
+              filterOptions={(x) => x}
+              inputValue={form.partner_name}
+              getOptionLabel={(o) => (typeof o === 'string' ? o : o.full_name)}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              loadingText="กำลังค้นหา…"
+              onInputChange={(_, v, reason) => { if (reason === 'reset' && !v) return; setForm((p) => ({ ...p, partner_name: v })); }}
+              onChange={(_, v) => {
+                if (!v || typeof v === 'string') { setPickedPartner(null); return; }
+                setPickedPartner(v);
+                setForm((p) => ({ ...p, partner_name: v.full_name, partner_code: v.code ?? '', partner_phone: v.phone ?? '' }));
+              }}
+              renderOption={(props, o) => {
+                // MUI puts `key` inside props; React refuses a spread key, so take it out first.
+                const rest: Record<string, unknown> = { ...props };
+                delete rest.key;
+                return (
+                  <Box component="li" key={o.id} {...rest}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" noWrap>{o.full_name}</Typography>
+                      <Typography variant="caption" color="text.secondary">{[o.code, o.phone].filter(Boolean).join(' · ') || 'ไม่มีรหัส / เบอร์โทร'}</Typography>
+                    </Box>
+                  </Box>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  required
+                  label={`ชื่อ${meta.partner}`}
+                  placeholder="พิมพ์ชื่อ รหัส หรือเบอร์โทรเพื่อค้นหา"
+                  helperText={
+                    pickedPartner && pickedPartner.full_name === form.partner_name
+                      ? `${meta.partner}เดิมในระบบ — เติมรหัสและเบอร์โทรให้แล้ว`
+                      : form.partner_name.trim()
+                        ? `ไม่ได้เลือกจากรายการ = บันทึกเป็น${meta.partner}ใหม่ให้อัตโนมัติ`
+                        : `เลือก${meta.partner}เดิมจากรายการ ไม่ต้องกรอกรหัส / เบอร์โทรซ้ำ`
+                  }
+                />
+              )}
+            />
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField size="small" label={`รหัส${meta.partner}`} value={form.partner_code} onChange={(e) => setForm((p) => ({ ...p, partner_code: e.target.value }))} sx={{ width: { sm: 160 } }} />
-              <TextField required fullWidth size="small" label={`ชื่อ${meta.partner}`} value={form.partner_name} onChange={(e) => setForm((p) => ({ ...p, partner_name: e.target.value }))} />
-              <TextField size="small" label="เบอร์โทร" value={form.partner_phone} onChange={(e) => setForm((p) => ({ ...p, partner_phone: e.target.value }))} sx={{ width: { sm: 170 } }} />
+              <TextField fullWidth size="small" label={`รหัส${meta.partner}`} value={form.partner_code} onChange={(e) => setForm((p) => ({ ...p, partner_code: e.target.value }))} />
+              <TextField fullWidth size="small" type="tel" label="เบอร์โทร" placeholder="08x-xxx-xxxx" value={form.partner_phone} onChange={(e) => setForm((p) => ({ ...p, partner_phone: e.target.value }))} slotProps={{ htmlInput: { inputMode: 'tel' } }} />
             </Stack>
             <Typography variant="subtitle2" fontWeight={700}>รายการสินค้า (ไม่บังคับ)</Typography>
             {items.map((it, idx) => (
