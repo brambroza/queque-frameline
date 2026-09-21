@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isPlausiblePlate } from '@/lib/booking/plate';
+import { PLATE_FORMATS, isPlausiblePlate } from '@/lib/booking/plate';
 
 export const directionSchema = z.enum(['inbound', 'outbound']);
 /** '' / 'both' from a select = the row serves both directions (stored as null). */
@@ -44,6 +44,8 @@ export const serviceSchema = z.object({
   buffer_minutes: z.coerce.number().int().min(0).max(240).default(0),
   direction: nullableDirectionSchema.optional(),
   sort_order: z.coerce.number().int().min(0).max(9999).default(0),
+  /** Plate layout the customer booking link accepts for this vehicle type. */
+  plate_format: z.enum(PLATE_FORMATS).default('any'),
 });
 
 export const workingHourSchema = z.object({
@@ -102,10 +104,29 @@ export const dockBookingSchema = vehicleDetailsSchema
     path: ['partner_name'],
   });
 
-export const bookingStatusPatchSchema = z.object({
-  id: z.string().uuid(),
-  status: z.enum(['confirmed', 'late', 'checked_in', 'called', 'serving', 'completed', 'cancelled', 'no_show']),
-  cancel_reason: optionalText(300),
+/** Minutes at the dock for one queue (the vehicle type's duration is only the default). */
+export const serviceMinutesSchema = z.coerce.number().int().min(5).max(1440);
+
+export const bookingStatusPatchSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(['confirmed', 'late', 'checked_in', 'called', 'serving', 'completed', 'cancelled', 'no_show']),
+    cancel_reason: optionalText(300),
+    /** Only read on approval (pending → confirmed). */
+    service_minutes: serviceMinutesSchema.optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.status === 'cancelled' && (!v.cancel_reason || v.cancel_reason.trim().length < 3)) {
+      ctx.addIssue({ code: 'custom', path: ['cancel_reason'], message: 'ต้องระบุเหตุผลที่ยกเลิก (อย่างน้อย 3 ตัวอักษร)' });
+    }
+  });
+
+export const bookingDurationSchema = z.object({ service_minutes: serviceMinutesSchema });
+
+export const documentPaymentSchema = z.object({
+  payment_status: z.enum(['unpaid', 'paid', 'credit']),
+  payment_ref: optionalText(80),
+  payment_note: optionalText(300),
 });
 
 export const plateChangeSchema = z.object({

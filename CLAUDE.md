@@ -45,8 +45,8 @@ Forked from GoAlong **Queue** (LINE queue booking SaaS) @ `035e174` on 2026-09-1
 ## Roles
 
 ```
-admin  — ตั้งค่า, จัดการเอกสาร SO/PO, ยืนยันคิว, ออก DO, จัดการพนักงาน, API keys
-staff  — หน้างาน: เช็คอิน, เรียกคิว, เริ่ม/ปิดงาน, แก้ทะเบียน
+admin  — ตั้งค่า, จัดการเอกสาร SO/PO, จัดการพนักงาน, API keys + ทุกอย่างที่ staff ทำได้
+staff  — คลัง/หน้างาน: บันทึกการชำระเงิน SO, อนุมัติคิว + ออก DO, ปรับเวลาที่ท่า, ยกเลิก (ต้องมีเหตุผล), เช็คอิน, เรียกคิว, เริ่ม/ปิดงาน, แก้ทะเบียน
 driver — ไม่มี login: เข้าผ่านลิงก์ token ดู DO ของตัวเอง
 ```
 
@@ -76,7 +76,7 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 
 | ตาราง | ความหมายใน Fameline | คอลัมน์สำคัญที่เพิ่ม |
 |---|---|---|
-| `services` | **ประเภทรถ** (4 ล้อ / 6 ล้อ / 10 ล้อ / เทรลเลอร์) | `duration_minutes` (เวลาที่ท่า), `buffer_minutes` (เผื่อ turnaround), `direction` (null = ทั้งสองขา), `sort_order` |
+| `services` | **ประเภทรถ** (4 ล้อ / 6 ล้อ / 10 ล้อ / เทรลเลอร์) | `duration_minutes` (เวลาที่ท่า), `buffer_minutes` (เผื่อ turnaround), `direction` (null = ทั้งสองขา), `sort_order`, `plate_format` any\|car\|truck (รูปแบบทะเบียนที่ลิงก์ลูกค้ายอมรับ — `matchesPlateFormat`/`formatPlateInput` ใน `src/lib/booking/plate.ts`; staff หน้าประตูยังใช้ `isPlausiblePlate` แบบหลวม) |
 | `booking_resources` | **ท่า / dock** (`resource_type = 'dock'`) | `direction`, `service_ids` (ประเภทรถที่เข้าท่านี้ได้; null = ทุกประเภท), `capacity` (=1) |
 | `working_hours` | เวลาเปิดท่า ต่อวันในสัปดาห์ | `direction` (null = ทั้งสองขา), `slot_interval_minutes`, `break_*` |
 | `holidays` | วันหยุดคลัง (ต่อสาขา) | — |
@@ -96,7 +96,7 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 ## Booking Status Flow (เป้าหมาย Phase 1 — `src/lib/booking/status-flow.ts`)
 
 ```
-customer link submit ─(require_admin_confirm)─▶ pending ─(admin ยืนยัน + ออก DO)─▶ confirmed
+customer link submit ─(require_admin_confirm หรือ SO ยังไม่ชำระ)─▶ pending ─(admin/staff อนุมัติ + ออก DO; SO ต้อง paid/credit)─▶ confirmed
 admin สร้างเอง / require_admin_confirm=false ─────────────────────────────────▶ confirmed
 
 confirmed ─(staff เช็คอินหน้าประตู)─▶ checked_in ─(staff เรียก / auto-call เมื่อท่าว่าง)─▶ called ─▶ serving ─▶ completed
@@ -120,6 +120,17 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - `src/lib/booking/slot-time.ts` — `isSlotPast`, Bangkok clock; server เป็นคนใส่ `is_past` เสมอ
 
 ---
+
+## Payment gate + เวลาที่ท่า (2026-09-21)
+
+- `external_documents.payment_status` = `unpaid` (default) | `paid` | `credit` — **เฉพาะ SO**; PO และคิวที่ไม่มีเอกสารไม่ถูกตรวจ กติกา pure อยู่ `src/lib/booking/payment.ts` (`isPaymentCleared`)
+- ลูกค้าจอง SO ที่ยังไม่ชำระได้ แต่คิวเป็น `pending` เสมอ (`resolveInitialBookingStatus({ paymentCleared })`) และ **อนุมัติไม่ได้** จนกว่าจะเป็น paid/credit — บังคับ 2 ชั้น: RPC `confirm_dock_booking` raise `payment_required` + trigger `bookings_payment_gate` กันทุกทางที่ทำให้แถวเป็น `confirmed` (admin สร้างเอง, auto-confirm, update ตรง)
+- บันทึกการชำระ: `PATCH /api/documents/[id]/payment` (admin + staff, ใช้ service role หลังตรวจ role + shop_id) → audit log + แจ้งทีมว่าคิวไหนอนุมัติได้แล้ว; เปลี่ยนกลับเป็น unpaid ไม่ได้ถ้ามีคิวที่อนุมัติแล้ว; CSV/ฟอร์มรับ `payment_status` (ไทย/อังกฤษ) — re-import ที่ไม่ส่งค่ามา **ไม่ทับ** ของเดิม
+- ฝั่งลูกค้าเห็นแค่ `payment.pending` (ไม่เห็นเลขอ้างอิง/หมายเหตุ) → แถบ "รอชำระเงิน" + Flex LINE; ไม่มีจ่ายออนไลน์/แนบสลิป
+- **Staff อนุมัติคิวได้** (`ADMIN_ONLY` ว่าง) — สิ่งที่คุม DO คือ payment gate ไม่ใช่ role
+- `bookings.service_minutes` = เวลาที่ท่าของคิวนั้น (ค่าตั้งต้นจากประเภทรถ, snapshot ตอน insert) ปรับได้ตอนอนุมัติ (`p_service_minutes`) หรือภายหลัง `PATCH /api/bookings/[id]/duration` → `set_booking_service_minutes`; ชนคิวถัดไปของท่าเดียวกัน/ข้ามวัน = `duration_conflict`; **ไม่บังคับ**เวลาปิด/พักเที่ยง (คลังตัดสินใจเอง); `move_dock_booking` ใช้ `service_minutes` ของคิว
+- ยกเลิกจาก portal ต้องมี `cancel_reason` ≥ 3 ตัวอักษร (`bookingStatusPatchSchema`) — ลูกค้าเห็นเหตุผลในหน้าลิงก์
+- UI รวมอยู่ที่ `src/components/bookings/booking-action-dialogs.tsx` (`ApproveDialog`, `DurationDialog`, `CancelDialog`, `PaymentDialog`, `PaymentChip`)
 
 ## Driver self check-in + geofence (2026-09-19)
 

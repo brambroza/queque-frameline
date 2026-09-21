@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isPaymentCleared, paymentApplies } from '@/lib/booking/payment';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PUBLIC_BOOKING_SELECT, resolveBookingToken } from '@/lib/public/resolve';
 import { getSiteSettings } from '@/lib/booking/server';
@@ -24,7 +25,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       getSiteSettings(admin, doc.shop_id),
       admin
         .from('services')
-        .select('id,service_name,duration_minutes,direction')
+        .select('id,service_name,duration_minutes,direction,plate_format')
         .eq('shop_id', doc.shop_id)
         .eq('active', true)
         .eq('is_deleted', false)
@@ -46,6 +47,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
           logo_url: shop?.logo_url ?? null,
         },
         document: { doc_no: doc.doc_no, doc_type: doc.doc_type, status: doc.status, partner_name: doc.partner_name, due_date: doc.due_date, remark: doc.remark, items: doc.items ?? [] },
+        // Customers only learn whether payment is still awaited — never the reference or the note.
+        payment: { required: paymentApplies(doc.doc_type), pending: !isPaymentCleared(doc.doc_type, doc.payment_status) },
         direction,
         open: doc.status === 'open' || doc.status === 'booked',
         vehicle_types: vehicles ?? [],

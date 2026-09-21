@@ -4,7 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { bookingStatusPatchSchema, dockBookingSchema } from '@/lib/booking/schemas';
 import { normalizePlate } from '@/lib/booking/plate';
 import { normalizeSlotTime } from '@/lib/booking/slot-time';
-import { canTransition, freesDock, isConfirmTransition, transitionDenialMessage, transitionStamps } from '@/lib/booking/status-flow';
+import { canTransition, freesDock, isConfirmTransition, resolveInitialBookingStatus, transitionDenialMessage, transitionStamps } from '@/lib/booking/status-flow';
+import { isPaymentCleared } from '@/lib/booking/payment';
 import { actorFromRoles, dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
@@ -14,7 +15,7 @@ import { safeCreateNotification } from '@/lib/notifications/createNotification';
 
 /** Columns + joins the portal list, board and drawers render. */
 const BOOKING_SELECT =
-  '*, services(service_name,duration_minutes), customers(full_name,phone,partner_type,code), branches(branch_name), external_documents(doc_no,doc_type)';
+  '*, services(service_name,duration_minutes), customers(full_name,phone,partner_type,code), branches(branch_name), external_documents(doc_no,doc_type,payment_status)';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -97,10 +98,11 @@ export async function POST(req: Request) {
 
     // Linked SO/PO must belong to this site and match the direction (SO = outbound, PO = inbound).
     let partnerId = payload.partner_id ?? null;
+    let paymentCleared = true;
     if (payload.document_id) {
       const { data: doc } = await supabase
         .from('external_documents')
-        .select('id,doc_type,status,partner_id,branch_id')
+        .select('id,doc_type,status,partner_id,branch_id,payment_status')
         .eq('id', payload.document_id)
         .eq('shop_id', profile.shop_id)
         .eq('is_deleted', false)
@@ -116,7 +118,10 @@ export async function POST(req: Request) {
       partnerId = partnerId ?? (doc.partner_id as string | null);
       // The document's branch wins: the goods are there.
       if (doc.branch_id) branchId = doc.branch_id as string;
+      paymentCleared = isPaymentCleared(doc.doc_type as string, doc.payment_status as string | null);
     }
+    // An unpaid SO still gets its queue, but it waits as pending: no DO until the payment is recorded.
+    const initialStatus = resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared });
     branchId = branchId ?? (await resolveDefaultBranchId(supabase, profile.shop_id));
     if (!branchId) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่าสาขา/คลัง' }, { status: 400 });
 
@@ -170,7 +175,7 @@ export async function POST(req: Request) {
       p_start: normalizeSlotTime(payload.start_time),
       p_customer_id: partnerId,
       p_plate_number: normalizePlate(payload.plate_number),
-      p_status: 'confirmed',
+      p_status: initialStatus,
       p_source: 'admin',
       p_resource_id: payload.resource_id ?? null,
       p_document_id: payload.document_id ?? null,
@@ -190,7 +195,9 @@ export async function POST(req: Request) {
     if (!created) throw new Error('Create booking failed');
 
     const createSettings = await getSiteSettings(supabase, profile.shop_id);
-    await ensureDriverLink(admin, { id: created.booking_id, shopId: profile.shop_id, bookingDate: payload.booking_date, version: 0 }, createSettings.driver_token_ttl_days);
+    if (initialStatus === 'confirmed') {
+      await ensureDriverLink(admin, { id: created.booking_id, shopId: profile.shop_id, bookingDate: payload.booking_date, version: 0 }, createSettings.driver_token_ttl_days);
+    }
 
     await logBooking(supabase, {
       companyId: profile.company_id,
@@ -198,12 +205,17 @@ export async function POST(req: Request) {
       bookingId: created.booking_id,
       action: 'create',
       description: `Created ${created.queue_number}${created.do_number ? ` · ${created.do_number}` : ''}`,
-      to: { status: 'confirmed', queue_number: created.queue_number, do_number: created.do_number, dock_id: created.resource_id },
+      to: { status: initialStatus, queue_number: created.queue_number, do_number: created.do_number, dock_id: created.resource_id },
       actorKind: 'admin',
       actorId: user.id,
     });
 
-    return NextResponse.json({ data: { ok: true, id: created.booking_id, queue_number: created.queue_number, do_number: created.do_number } });
+    return NextResponse.json({
+      data: {
+        ok: true, id: created.booking_id, queue_number: created.queue_number, do_number: created.do_number, status: initialStatus,
+        notice: initialStatus === 'pending' ? 'SO นี้ยังไม่ชำระเงิน — สร้างคิวเป็น "รอยืนยัน" แล้ว จะอนุมัติและออก DO ได้หลังบันทึกการชำระเงิน' : null,
+      },
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }
@@ -214,8 +226,12 @@ export async function PATCH(req: Request) {
   try {
     const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = bookingStatusPatchSchema.safeParse(await req.json());
-    if (!parsed.success) return invalidPayload(parsed.error.issues);
-    const { id, status, cancel_reason: cancelReason } = parsed.data;
+    if (!parsed.success) {
+      const reasonIssue = parsed.error.issues.find((i) => i.path[0] === 'cancel_reason');
+      if (reasonIssue) return NextResponse.json({ error: reasonIssue.message, code: 'cancel_reason_required' }, { status: 400 });
+      return invalidPayload(parsed.error.issues);
+    }
+    const { id, status, cancel_reason: cancelReason, service_minutes: serviceMinutes } = parsed.data;
     const actor = actorFromRoles(roles);
 
     const { data: before } = await supabase
@@ -234,14 +250,21 @@ export async function PATCH(req: Request) {
     const admin = createAdminClient();
     const settings = await getSiteSettings(supabase, profile.shop_id);
     let doNumber = (before.do_number as string | null) ?? null;
+    let confirmedMinutes: number | null = null;
 
     if (isConfirmTransition(from, status)) {
       // Atomic in SQL: status + DO number in one statement, so a lost race never burns a number.
-      const { data: confirmed, error } = await admin.rpc('confirm_dock_booking', { p_shop_id: profile.shop_id, p_booking_id: id, p_actor: user.id });
-      if (error) throw error;
-      const row = (confirmed as Array<{ do_number: string | null }> | null)?.[0];
+      // Payment gate and dock-time change run inside the same transaction as the DO number.
+      const { data: confirmed, error } = await admin.rpc('confirm_dock_booking', { p_shop_id: profile.shop_id, p_booking_id: id, p_actor: user.id, p_service_minutes: serviceMinutes ?? null });
+      if (error) {
+        const mapped = dockErrorResponse(error.message);
+        if (mapped) return NextResponse.json({ error: mapped.error, code: mapped.code }, { status: mapped.status });
+        throw error;
+      }
+      const row = (confirmed as Array<{ do_number: string | null; end_time: string | null; service_minutes: number | null }> | null)?.[0];
       if (!row) return NextResponse.json({ error: 'คิวนี้ถูกเปลี่ยนสถานะไปแล้ว กรุณารีเฟรช', code: 'stale' }, { status: 409 });
       doNumber = row.do_number;
+      confirmedMinutes = row.service_minutes;
       await ensureDriverLink(admin, { id, shopId: profile.shop_id, bookingDate: String(before.booking_date), version: Number(before.driver_token_version ?? 0) }, settings.driver_token_ttl_days);
     } else {
       const stamps = transitionStamps(from, status, {
@@ -272,9 +295,9 @@ export async function PATCH(req: Request) {
       shopId: profile.shop_id,
       bookingId: id,
       action: status === 'cancelled' ? 'cancel' : 'status_change',
-      description: `${queueLabel}: ${from} → ${status}${isConfirmTransition(from, status) && doNumber ? ` · ${doNumber}` : ''}`,
+      description: `${queueLabel}: ${from} → ${status}${isConfirmTransition(from, status) && doNumber ? ` · ${doNumber}` : ''}${confirmedMinutes ? ` · ${confirmedMinutes} นาทีที่ท่า` : ''}${status === 'cancelled' && cancelReason ? ` · ${cancelReason}` : ''}`,
       from: { status: from },
-      to: { status, do_number: isConfirmTransition(from, status) ? doNumber : undefined, cancel_reason: cancelReason },
+      to: { status, do_number: isConfirmTransition(from, status) ? doNumber : undefined, service_minutes: confirmedMinutes ?? undefined, cancel_reason: cancelReason },
       actorKind: actor,
       actorId: user.id,
     });

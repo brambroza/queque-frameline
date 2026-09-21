@@ -86,6 +86,8 @@ export function bookingLinkFlex(i: LinkInput): Flex {
 export type BookingInput = {
   siteName: string; queueNo: string; direction: BookingDirection; docNo: string | null; date: string; startTime: string; endTime?: string | null;
   dock: string | null; plate: string; vehicleType: string | null; doNo: string | null; statusUrl: string; driverUrl?: string | null;
+  /** SO not paid yet: the queue is held but will not be confirmed until payment. */
+  paymentPending?: boolean;
 };
 
 function bookingRows(b: BookingInput, opts: { dockBig?: boolean } = {}) {
@@ -103,13 +105,15 @@ function bookingRows(b: BookingInput, opts: { dockBig?: boolean } = {}) {
 /** Customer submitted through the link and the site requires admin confirmation. */
 export function bookingSubmittedFlex(b: BookingInput): Flex {
   return card({
-    altText: `รับคำขอจองคิว ${b.queueNo} แล้ว รอเจ้าหน้าที่ยืนยัน`,
+    altText: b.paymentPending ? `รับคำขอจองคิว ${b.queueNo} แล้ว รอชำระเงิน` : `รับคำขอจองคิว ${b.queueNo} แล้ว รอเจ้าหน้าที่ยืนยัน`,
     header: 'รับคำขอจองคิวแล้ว',
     headerColor: COLOR.warn,
-    sub: 'รอเจ้าหน้าที่ยืนยันและออกเลข DO',
+    sub: b.paymentPending ? 'รอชำระเงิน — คิวจะยืนยันหลังชำระเงินแล้ว' : 'รอเจ้าหน้าที่ยืนยันและออกเลข DO',
     body: bookingRows(b),
     footer: [button('ดูสถานะ', b.statusUrl, 'secondary')],
-    note: 'เมื่อยืนยันแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้',
+    note: b.paymentPending
+      ? 'กรุณาชำระเงินและแจ้งฝ่ายขาย เมื่อบันทึกการชำระเงินแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้'
+      : 'เมื่อยืนยันแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้',
   });
 }
 
@@ -203,7 +207,8 @@ export type StaffEvent =
   | { kind: 'plate_mismatch'; queueNo: string; booked: string; actual: string }
   | { kind: 'no_show'; queueNo: string; partner: string; date: string; time: string }
   | { kind: 'late'; queueNo: string; partner: string; time: string }
-  | { kind: 'auto_called'; queueNo: string; plate: string; dock: string | null };
+  | { kind: 'auto_called'; queueNo: string; plate: string; dock: string | null }
+  | { kind: 'payment_cleared'; docNo: string; partner: string; queues: string[]; status: string };
 
 /** One-line group message; the group is a notification feed, not a chat. */
 export function staffGroupText(e: StaffEvent): Text {
@@ -218,6 +223,8 @@ export function staffGroupText(e: StaffEvent): Text {
       return { type: 'text', text: `⚠️ ทะเบียนไม่ตรง ${e.queueNo}\nจอง ${e.booked} · มาจริง ${e.actual}` };
     case 'no_show':
       return { type: 'text', text: `⛔ ปิดคิว ไม่มา ${e.queueNo}\n${e.partner} · ${thaiDate(e.date)} ${hhmm(e.time)} น.` };
+    case 'payment_cleared':
+      return { type: 'text', text: `💰 ${e.docNo} ${e.status}\n${e.partner}\nคิว ${e.queues.join(', ')} รออนุมัติ` };
     case 'late':
       return { type: 'text', text: `⏰ เลยเวลานัด ${e.queueNo} (${hhmm(e.time)} น.) · ${e.partner}` };
     case 'auto_called':

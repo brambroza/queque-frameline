@@ -16,6 +16,8 @@ export type PublicBooking = {
   receiver_name: string | null;
   receiver_phone: string | null;
   note: string | null;
+  /** Shown to the customer when the warehouse cancels the queue. */
+  cancel_reason?: string | null;
   do_number: string | null;
   do_issued_at: string | null;
   called_at: string | null;

@@ -68,6 +68,7 @@ describe('staff group text', () => {
     expect(t.text).toContain('รอยืนยัน');
     expect(t.text).toContain('10:30');
     expect(t.text.length).toBeLessThan(200);
+    expect(staffGroupText({ kind: 'payment_cleared', docNo: 'SO-9', partner: 'บจก. เอ', queues: ['R-001', 'R-002'], status: 'ชำระแล้ว' }).text).toContain('R-001, R-002 รออนุมัติ');
     expect(staffGroupText({ kind: 'plate_mismatch', queueNo: 'R-1', booked: 'A', actual: 'B' }).text).toContain('มาจริง B');
     expect(staffGroupText({ kind: 'arrived', queueNo: 'R-1', plate: 'X', dock: null, by: 'driver' }).text).toContain('คนขับเช็คอินเอง');
   });

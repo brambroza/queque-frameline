@@ -14,11 +14,12 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import { StatusChip } from '@/components/shared/status-chip';
 import { QrCode } from '@/components/ui/qr-code';
 import { useToast } from '@/components/ui/toast';
-import { useConfirm } from '@/components/ui/confirm-dialog';
 import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
 import { useDoPrint } from '@/components/delivery-order/do-print';
 import { effectivePlate, hasPlateMismatch, isPlausiblePlate } from '@/lib/booking/plate';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
+import { PaymentChip, isPaymentBlocked, paymentOf, type PaymentTarget } from './booking-action-dialogs';
+import { PAYMENT_BLOCK_MESSAGE } from '@/lib/booking/payment';
 import { CANCELLABLE, DIRECTION_META, MOVABLE, NEXT_STATUSES, customerName, customerPhone, hhmm, type BookingRow } from './booking-types';
 
 type LogRow = { id: string; action: string; description: string | null; actor_kind: string | null; actor_name: string | null; created_at: string };
@@ -41,7 +42,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
  * driver link are handled here because they only concern this drawer.
  */
 export function BookingEditDrawer({
-  booking, isAdmin, saving, siteName, onClose, onStatus, onMove, onChanged,
+  booking, isAdmin, saving, siteName, onClose, onStatus, onMove, onChanged, onDuration, onPayment,
 }: {
   booking: BookingRow | null;
   isAdmin: boolean;
@@ -49,12 +50,15 @@ export function BookingEditDrawer({
   siteName: string;
   onClose: () => void;
   onStatus: (b: BookingRow, status: string, cancelReason?: string) => void;
+  /** Open the "ปรับเวลาที่ท่า" dialog. */
+  onDuration: (b: BookingRow) => void;
+  /** Open the payment dialog for the queue's SO. */
+  onPayment: (target: PaymentTarget) => void;
   onMove: (b: BookingRow) => void;
   /** Something other than status changed (plate) — parent should reload. */
   onChanged: () => void;
 }) {
   const { push } = useToast();
-  const confirm = useConfirm();
   const [tab, setTab] = useState(0);
   const [logs, setLogs] = useState<LogRow[] | null>(null);
   const [logsError, setLogsError] = useState(false);
@@ -158,17 +162,9 @@ export function BookingEditDrawer({
     }
   }
 
-  async function cancelBooking() {
-    if (!b) return;
-    const ok = await confirm({
-      tone: 'error',
-      title: 'ยกเลิกคิวนี้?',
-      description: 'ช่วงเวลาและท่าจะว่างให้คิวอื่นทันที ลูกค้าจะเห็นสถานะยกเลิกในลิงก์ของตน',
-      context: { primary: `${b.queue_number} · ${effectivePlate(b) || '-'}`, secondary: customerName(b) },
-      confirmLabel: 'ยกเลิกคิว',
-      cancelLabel: 'ไม่ยกเลิก',
-    });
-    if (ok) onStatus(b, 'cancelled');
+  /** The parent opens the cancel dialog, where the reason is mandatory. */
+  function cancelBooking() {
+    if (b) onStatus(b, 'cancelled');
   }
 
   async function copyLink() {
@@ -190,8 +186,12 @@ export function BookingEditDrawer({
     }
   }
 
-  const next = b ? (NEXT_STATUSES[b.status] ?? []).filter((o) => !o.adminOnly || isAdmin) : [];
-  const needsAdmin = b?.status === 'pending' && !isAdmin;
+  const next = b ? NEXT_STATUSES[b.status] ?? [] : [];
+  const payment = b ? paymentOf(b) : null;
+  const paymentBlocked = b ? isPaymentBlocked(b) : false;
+  const paymentTarget: PaymentTarget | null = b?.document_id && b.external_documents
+    ? { id: b.document_id, doc_no: b.external_documents.doc_no, partner_name: customerName(b), payment_status: b.external_documents.payment_status }
+    : null;
   const dir = b ? DIRECTION_META[b.direction] ?? DIRECTION_META.outbound : DIRECTION_META.outbound;
   const terminal = b ? ['completed', 'cancelled', 'no_show'].includes(b.status) : false;
 
@@ -220,17 +220,38 @@ export function BookingEditDrawer({
           <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5 }}>
             {tab === 0 ? (
               <Stack spacing={2}>
-                {needsAdmin ? <Alert severity="info">คิวนี้รอผู้ดูแลระบบยืนยันและออก DO</Alert> : null}
+                {paymentBlocked && b.status === 'pending' ? (
+                  <Alert severity="error" action={paymentTarget ? <Button color="inherit" size="small" onClick={() => onPayment(paymentTarget)}>บันทึกการชำระเงิน</Button> : undefined}>
+                    {PAYMENT_BLOCK_MESSAGE}
+                  </Alert>
+                ) : null}
                 {b.status === 'late' ? <Alert severity="warning">เลยเวลานัดแล้ว รถยังไม่มาถึง — ยังเช็คอินได้เมื่อรถมา</Alert> : null}
                 <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2 }}>
                   <Row k="วันเวลา" v={<><b>{formatDateDMY(b.booking_date)}</b> {hhmm(b.start_time)}{b.end_time ? ` – ${hhmm(b.end_time)}` : ''}</>} />
                   <Row k="ท่า (Dock)" v={b.resource_name} />
                   <Row k="ประเภทรถ" v={b.services?.service_name} />
+                  <Row k="เวลาที่ท่า" v={b.service_minutes ? `${b.service_minutes} นาที${b.services?.duration_minutes && b.services.duration_minutes !== b.service_minutes ? ` (ค่าตั้งต้น ${b.services.duration_minutes})` : ''}` : null} />
                   <Row k={`เอกสาร ${dir.docLabel}`} v={b.external_documents?.doc_no} />
+                  {payment ? (
+                    <Row
+                      k="การชำระเงิน"
+                      v={
+                        <Stack direction="row" spacing={0.75} alignItems="center">
+                          <PaymentChip status={payment} />
+                          {paymentTarget && !terminal ? <Button size="small" onClick={() => onPayment(paymentTarget)}>แก้ไข</Button> : null}
+                        </Stack>
+                      }
+                    />
+                  ) : null}
                   <Row k="เลข DO" v={b.do_number ? <b>{b.do_number}</b> : 'ยังไม่ออก'} />
                   {MOVABLE.has(b.status) && isAdmin ? (
                     <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onMove(b)}>
                       เลื่อนวัน / เวลา / ท่า
+                    </Button>
+                  ) : null}
+                  {!terminal ? (
+                    <Button size="small" variant="outlined" color="secondary" startIcon={<EditRoundedIcon />} sx={{ mt: 1, ml: MOVABLE.has(b.status) && isAdmin ? 1 : 0 }} disabled={saving} onClick={() => onDuration(b)}>
+                      ปรับเวลาที่ท่า
                     </Button>
                   ) : null}
                 </Box>
@@ -272,7 +293,7 @@ export function BookingEditDrawer({
                           key={`${o.kind}-${o.status}`}
                           variant={o.primary ? 'contained' : 'outlined'}
                           color={o.kind === 'no_show' ? 'error' : o.kind === 'uncall' ? 'inherit' : 'primary'}
-                          disabled={saving}
+                          disabled={saving || (o.kind === 'confirm' && paymentBlocked)}
                           onClick={() => onStatus(b, o.status)}
                           sx={{ minHeight: 40 }}
                         >

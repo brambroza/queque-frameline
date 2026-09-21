@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
 import { formatDateDMY } from '@/lib/utils/date-format';
+import { PaymentChip, isPaymentBlocked, paymentOf } from './booking-action-dialogs';
 import { DIRECTION_META, NEXT_STATUSES, customerName, hhmm, type BookingRow } from './booking-types';
 
 function DirectionChip({ b }: { b: BookingRow }) {
@@ -48,6 +49,8 @@ export function BookingsTable({
   onCreate: () => void;
 }) {
   const primaryOf = (b: BookingRow) => (NEXT_STATUSES[b.status] ?? []).find((o) => o.primary && (!o.adminOnly || isAdmin));
+  /** Approval is locked while the queue's SO is unpaid; the row opens the drawer where payment is recorded. */
+  const lockedOf = (b: BookingRow) => b.status === 'pending' && isPaymentBlocked(b);
 
   if (loading && rows.length === 0) {
     return <Card sx={{ p: 2 }}><Stack spacing={1}>{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} variant="rounded" height={44} />)}</Stack></Card>;
@@ -83,9 +86,9 @@ export function BookingsTable({
                 {customerName(b)} · {b.services?.service_name ?? '-'} · {b.resource_name ?? 'ยังไม่ระบุท่า'}
               </Typography>
               {primary ? (
-                <Button fullWidth size="small" variant="contained" disabled={busy} sx={{ mt: 1, minHeight: 40 }}
+                <Button fullWidth size="small" variant="contained" disabled={busy || lockedOf(b)} sx={{ mt: 1, minHeight: 40 }}
                   onClick={(e) => { e.stopPropagation(); onStatus(b, primary.status); }}>
-                  {primary.label}
+                  {lockedOf(b) ? 'รอชำระเงิน — อนุมัติไม่ได้' : primary.label}
                 </Button>
               ) : null}
             </Paper>
@@ -136,12 +139,17 @@ export function BookingsTable({
                   <TableCell>
                     <Stack spacing={0.5} alignItems="flex-start">
                       <StatusChip status={b.status} />
+                      {['pending', 'confirmed', 'late'].includes(b.status) ? <PaymentChip status={paymentOf(b)} /> : null}
                       {b.status === 'called' && b.auto_called ? <Chip size="small" variant="outlined" color="success" label="อัตโนมัติ" /> : null}
                     </Stack>
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {primary ? (
-                      <Button size="small" variant="contained" disabled={busy} onClick={(e) => { e.stopPropagation(); onStatus(b, primary.status); }}>{primary.label}</Button>
+                      <Tooltip title={lockedOf(b) ? 'SO ยังไม่ชำระเงิน — เปิดรายละเอียดเพื่อบันทึกการชำระเงิน' : ''}>
+                        <span>
+                          <Button size="small" variant="contained" disabled={busy || lockedOf(b)} onClick={(e) => { e.stopPropagation(); onStatus(b, primary.status); }}>{primary.label}</Button>
+                        </span>
+                      </Tooltip>
                     ) : null}
                     <Button size="small" color="inherit" sx={{ ml: 0.5 }} onClick={(e) => { e.stopPropagation(); onEdit(b); }}>รายละเอียด</Button>
                   </TableCell>

@@ -13,6 +13,7 @@ import { BookingsTable } from '@/components/bookings/bookings-table';
 import { BookingMoveDialog, type MoveDraft } from '@/components/bookings/booking-move-dialog';
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
+import { ApproveDialog, CancelDialog, DurationDialog, PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,6 +76,10 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [createResult, setCreateResult] = useState<CreateResult | null>(null);
   const [editTarget, setEditTarget] = useState<BookingRow | null>(null);
   const [moveTarget, setMoveTarget] = useState<BookingRow | null>(null);
+  const [approveTarget, setApproveTarget] = useState<BookingRow | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<BookingRow | null>(null);
+  const [durationTarget, setDurationTarget] = useState<BookingRow | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Search is typed continuously; wait for a pause before hitting the API.
@@ -157,9 +162,9 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     setCreating(true);
     try {
       const res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const j = (await res.json().catch(() => ({}))) as { data?: { queue_number?: string; do_number?: string | null }; error?: string };
+      const j = (await res.json().catch(() => ({}))) as { data?: { queue_number?: string; do_number?: string | null; notice?: string | null }; error?: string };
       if (!res.ok) { push(j.error ?? t('create_failed', 'สร้างคิวไม่สำเร็จ'), 'error'); return; }
-      push(t('create_ok', 'สร้างคิวสำเร็จ'));
+      push(j.data?.notice ?? t('create_ok', 'สร้างคิวสำเร็จ'));
       setCreateResult({
         queueNo: String(j.data?.queue_number ?? '-'),
         doNumber: j.data?.do_number ?? null,
@@ -173,11 +178,34 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  async function updateStatus(b: BookingRow, status: string) {
+  /** Approval and cancellation need more input, so they open a dialog instead of patching straight away. */
+  function requestStatus(b: BookingRow, status: string) {
+    if (status === 'confirmed' && b.status === 'pending') { setApproveTarget(b); return; }
+    if (status === 'cancelled') { setCancelTarget(b); return; }
+    void updateStatus(b, status);
+  }
+
+  async function submitDuration(b: BookingRow, serviceMinutes: number) {
     if (saving) return;
     setSaving(true);
     try {
-      const r = await patchBooking({ id: b.id, status });
+      const res = await fetch(`/api/bookings/${b.id}/duration`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ service_minutes: serviceMinutes }) });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { push(j.error ?? 'ปรับเวลาไม่สำเร็จ', 'error'); return; }
+      push(`ปรับเวลาที่ท่าของ ${b.queue_number} เป็น ${serviceMinutes} นาทีแล้ว`);
+      setDurationTarget(null);
+      setEditTarget(null);
+      reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateStatus(b: BookingRow, status: string, extra: { cancel_reason?: string; service_minutes?: number } = {}) {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const r = await patchBooking({ id: b.id, status, ...extra });
       if (!r.ok) { push(r.error ?? t('status_failed', 'เปลี่ยนสถานะไม่สำเร็จ'), 'error'); reload(); return; }
       if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}`);
       else if (status === 'cancelled') push(t('cancel_ok', 'ยกเลิกคิวแล้ว'));
@@ -185,6 +213,8 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       else push(t('status_ok', 'อัปเดตสถานะแล้ว'));
       if (r.autoCalled.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${r.autoCalled.join(', ')}`);
       setEditTarget(null);
+      setApproveTarget(null);
+      setCancelTarget(null);
       reload();
     } finally {
       setSaving(false);
@@ -256,7 +286,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         isAdmin={isAdmin}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
-        onStatus={(b, s) => void updateStatus(b, s)}
+        onStatus={requestStatus}
         onEdit={setEditTarget}
         onCreate={() => { setCreateResult(null); setCreateOpen(true); }}
       />
@@ -280,9 +310,25 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         saving={saving}
         siteName={siteName}
         onClose={() => setEditTarget(null)}
-        onStatus={(b, s) => void updateStatus(b, s)}
+        onStatus={requestStatus}
         onMove={setMoveTarget}
+        onDuration={setDurationTarget}
+        onPayment={setPaymentTarget}
         onChanged={() => { setEditTarget(null); reload(); }}
+      />
+
+      <ApproveDialog booking={approveTarget} saving={saving} onClose={() => setApproveTarget(null)} onSubmit={(b, m) => void updateStatus(b, 'confirmed', { service_minutes: m })} />
+      <CancelDialog booking={cancelTarget} saving={saving} onClose={() => setCancelTarget(null)} onSubmit={(b, reason) => void updateStatus(b, 'cancelled', { cancel_reason: reason })} />
+      <DurationDialog booking={durationTarget} saving={saving} onClose={() => setDurationTarget(null)} onSubmit={(b, m) => void submitDuration(b, m)} />
+      <PaymentDialog
+        target={paymentTarget}
+        onClose={() => setPaymentTarget(null)}
+        onSaved={(r) => {
+          push(r.unlocked.length > 0 ? `บันทึกการชำระเงินแล้ว — คิว ${r.unlocked.join(', ')} อนุมัติได้แล้ว` : 'บันทึกการชำระเงินแล้ว');
+          setPaymentTarget(null);
+          setEditTarget(null);
+          reload();
+        }}
       />
 
       <BookingMoveDialog

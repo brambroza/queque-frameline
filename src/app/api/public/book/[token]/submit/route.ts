@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveBookingToken } from '@/lib/public/resolve';
 import { isoDateSchema, slotTimeSchema, vehicleDetailsSchema } from '@/lib/booking/schemas';
-import { normalizePlate } from '@/lib/booking/plate';
+import { PLATE_FORMAT_INFO, matchesPlateFormat, normalizePlate, toPlateFormat } from '@/lib/booking/plate';
 import { addDaysIso, normalizeSlotTime, toBangkokStamp } from '@/lib/booking/slot-time';
 import { resolveInitialBookingStatus } from '@/lib/booking/status-flow';
+import { isPaymentCleared } from '@/lib/booking/payment';
 import { dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
@@ -39,6 +40,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     }
     const p = parsed.data;
 
+    // The plate must follow the layout of the chosen vehicle type (the form masks it; this is the real gate).
+    const { data: vehicleType, error: vehicleError } = await admin
+      .from('services')
+      .select('plate_format')
+      .eq('id', p.vehicle_type_id)
+      .eq('shop_id', doc.shop_id)
+      .eq('active', true)
+      .eq('is_deleted', false)
+      .maybeSingle();
+    if (vehicleError) throw vehicleError;
+    if (!vehicleType) return NextResponse.json({ error: 'ไม่พบประเภทรถที่เลือก กรุณาเลือกใหม่', fields: ['vehicle_type_id'] }, { status: 400 });
+    const plateFormat = toPlateFormat(vehicleType.plate_format);
+    if (!matchesPlateFormat(p.plate_number, plateFormat)) {
+      return NextResponse.json({ error: `ทะเบียนรถไม่ตรงรูปแบบของประเภทรถนี้ — ${PLATE_FORMAT_INFO[plateFormat].hint}`, fields: ['plate_number'], code: 'plate_format' }, { status: 400 });
+    }
+
     const now = new Date();
     const settings = await getSiteSettings(admin, doc.shop_id);
     const today = toBangkokStamp(now).date;
@@ -63,7 +80,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       await admin.from('external_documents').update({ partner_id: partnerId }).eq('id', doc.id).eq('shop_id', doc.shop_id);
     }
 
-    const status = resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: settings.require_admin_confirm });
+    // An unpaid SO may be booked, but the queue waits as pending until the warehouse records the payment.
+    const paymentCleared = isPaymentCleared(doc.doc_type, doc.payment_status);
+    const status = resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: settings.require_admin_confirm, paymentCleared });
     const { data: rows, error } = await admin.rpc('create_dock_booking', {
       p_shop_id: doc.shop_id,
       p_branch_id: (doc.branch_id ?? (await resolveDefaultBranchId(admin, doc.shop_id))),
@@ -110,14 +129,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       type: 'booking_submitted',
       category: 'bookings',
       priority: status === 'pending' ? 'high' : 'medium',
-      title: status === 'pending' ? `คิวใหม่รอยืนยัน ${created.queue_number}` : `คิวใหม่ ${created.queue_number}`,
+      title: !paymentCleared ? `คิวใหม่รอชำระเงิน ${created.queue_number}` : status === 'pending' ? `คิวใหม่รอยืนยัน ${created.queue_number}` : `คิวใหม่ ${created.queue_number}`,
       message: `${doc.partner_name ?? '-'} · ${doc.doc_no} · ${p.booking_date} ${p.start_time.slice(0, 5)} · ${normalizePlate(p.plate_number)}`,
       relatedType: 'booking',
       relatedId: created.booking_id,
       actionUrl: '/portal/bookings',
       icon: 'LocalShipping',
       color: '#ed6c02',
-      metadata: { doc_no: doc.doc_no, status },
+      metadata: { doc_no: doc.doc_no, status, payment_pending: !paymentCleared },
     });
 
     // LINE (never throws): the person who booked, then the warehouse group.
@@ -128,7 +147,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       event: { kind: 'submitted', queueNo: created.queue_number, partner: doc.partner_name ?? '-', docNo: doc.doc_no, date: p.booking_date, time: p.start_time, plate: normalizePlate(p.plate_number), vehicle: (vt?.service_name as string | null) ?? null, pending: status === 'pending' },
     });
 
-    return NextResponse.json({ data: { queue_number: created.queue_number, status, do_number: created.do_number } });
+    return NextResponse.json({ data: { queue_number: created.queue_number, status, do_number: created.do_number, payment_pending: !paymentCleared } });
   } catch (e) {
     console.error('[public/book/submit]', e instanceof Error ? e.message : e);
     return NextResponse.json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' }, { status: 500 });

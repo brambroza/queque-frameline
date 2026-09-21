@@ -15,6 +15,7 @@ import { deriveLinkToken } from '@/lib/tokens';
 import { bookingUrl, driverUrl } from '@/lib/links';
 import { effectivePlate } from '@/lib/booking/plate';
 import { logBooking } from '@/lib/booking/server';
+import { isPaymentCleared } from '@/lib/booking/payment';
 
 export type NotifyResult = { sent: boolean; reason?: 'not_configured' | 'disabled' | 'not_linked' | 'not_found' | 'push_failed' | 'no_group' };
 
@@ -27,12 +28,12 @@ type BookingRowForLine = {
   cancel_reason: string | null; customer_id: string | null; line_user_id: string | null; driver_line_user_id: string | null;
   driver_token_hash: string | null; driver_token_version: number | null;
   services: { service_name: string } | null;
-  external_documents: { id: string; doc_no: string; booking_token_hash: string | null; booking_token_version: number | null } | null;
+  external_documents: { id: string; doc_no: string; doc_type: string | null; payment_status: string | null; booking_token_hash: string | null; booking_token_version: number | null } | null;
   customers: { line_user_id: string | null } | null;
 };
 
 const BOOKING_SELECT =
-  'id,company_id,shop_id,queue_number,direction,booking_date,start_time,end_time,resource_name,plate_number,plate_number_actual,do_number,call_count,cancel_reason,customer_id,line_user_id,driver_line_user_id,driver_token_hash,driver_token_version,services(service_name),external_documents(id,doc_no,booking_token_hash,booking_token_version),customers(line_user_id)';
+  'id,company_id,shop_id,queue_number,direction,booking_date,start_time,end_time,resource_name,plate_number,plate_number_actual,do_number,call_count,cancel_reason,customer_id,line_user_id,driver_line_user_id,driver_token_hash,driver_token_version,services(service_name),external_documents(id,doc_no,doc_type,payment_status,booking_token_hash,booking_token_version),customers(line_user_id)';
 
 async function loadBooking(admin: SupabaseClient, shopId: string, bookingId: string): Promise<BookingRowForLine | null> {
   const { data } = await admin.from('bookings').select(BOOKING_SELECT).eq('id', bookingId).eq('shop_id', shopId).maybeSingle();
@@ -77,6 +78,7 @@ function toInput(cfg: LineConfig, site: string, b: BookingRowForLine): BookingIn
     doNo: b.do_number,
     statusUrl: links.statusUrl,
     driverUrl: links.driverUrl,
+    paymentPending: !isPaymentCleared(b.external_documents?.doc_type, b.external_documents?.payment_status),
   };
 }
 

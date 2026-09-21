@@ -12,11 +12,12 @@ import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { PLATE_FORMATS, PLATE_FORMAT_INFO, toPlateFormat, type PlateFormat } from '@/lib/booking/plate';
 
-type Row = { id: string; service_name: string; duration_minutes: number; buffer_minutes: number; direction: 'inbound' | 'outbound' | null; sort_order: number; active: boolean };
-type Form = { service_name: string; duration_minutes: string; buffer_minutes: string; direction: '' | 'inbound' | 'outbound'; sort_order: string; active: boolean };
+type Row = { id: string; service_name: string; duration_minutes: number; buffer_minutes: number; direction: 'inbound' | 'outbound' | null; sort_order: number; active: boolean; plate_format?: PlateFormat | null };
+type Form = { service_name: string; duration_minutes: string; buffer_minutes: string; direction: '' | 'inbound' | 'outbound'; sort_order: string; active: boolean; plate_format: PlateFormat };
 
-const EMPTY: Form = { service_name: '', duration_minutes: '30', buffer_minutes: '0', direction: '', sort_order: '0', active: true };
+const EMPTY: Form = { service_name: '', duration_minutes: '30', buffer_minutes: '0', direction: '', sort_order: '0', active: true, plate_format: 'any' };
 export const DIRECTION_LABEL = { '': 'รับ + ส่ง', outbound: 'รับสินค้าเท่านั้น', inbound: 'ส่งสินค้าเท่านั้น' } as const;
 
 /**
@@ -51,7 +52,7 @@ export function VehicleTypesCrud({ isAdmin }: { isAdmin: boolean }) {
   function openCreate() { setEditingId(null); setForm({ ...EMPTY, sort_order: String((rows?.length ?? 0) + 1) }); setOpen(true); }
   function openEdit(r: Row) {
     setEditingId(r.id);
-    setForm({ service_name: r.service_name, duration_minutes: String(r.duration_minutes), buffer_minutes: String(r.buffer_minutes ?? 0), direction: r.direction ?? '', sort_order: String(r.sort_order ?? 0), active: r.active });
+    setForm({ service_name: r.service_name, duration_minutes: String(r.duration_minutes), buffer_minutes: String(r.buffer_minutes ?? 0), direction: r.direction ?? '', sort_order: String(r.sort_order ?? 0), active: r.active, plate_format: toPlateFormat(r.plate_format) });
     setOpen(true);
   }
 
@@ -74,6 +75,7 @@ export function VehicleTypesCrud({ isAdmin }: { isAdmin: boolean }) {
           direction: form.direction || null,
           sort_order: Number(form.sort_order) || 0,
           active: form.active,
+          plate_format: form.plate_format,
           price: 0,
         }),
       });
@@ -125,6 +127,7 @@ export function VehicleTypesCrud({ isAdmin }: { isAdmin: boolean }) {
                   <TableCell align="right">เวลาที่ท่า</TableCell>
                   <TableCell align="right">เผื่อหลังเสร็จ</TableCell>
                   <TableCell>ใช้กับ</TableCell>
+                  <TableCell>รูปแบบทะเบียน</TableCell>
                   <TableCell>สถานะ</TableCell>
                   {isAdmin ? <TableCell align="right">จัดการ</TableCell> : null}
                 </TableRow>
@@ -136,6 +139,7 @@ export function VehicleTypesCrud({ isAdmin }: { isAdmin: boolean }) {
                     <TableCell align="right">{r.duration_minutes} นาที</TableCell>
                     <TableCell align="right">{r.buffer_minutes ?? 0} นาที</TableCell>
                     <TableCell>{DIRECTION_LABEL[r.direction ?? '']}</TableCell>
+                    <TableCell>{PLATE_FORMAT_INFO[toPlateFormat(r.plate_format)].label}</TableCell>
                     <TableCell><Chip size="small" color={r.active ? 'success' : 'default'} variant={r.active ? 'filled' : 'outlined'} label={r.active ? 'ใช้งาน' : 'ปิด'} /></TableCell>
                     {isAdmin ? (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
@@ -164,6 +168,9 @@ export function VehicleTypesCrud({ isAdmin }: { isAdmin: boolean }) {
               <MenuItem value="">{DIRECTION_LABEL['']}</MenuItem>
               <MenuItem value="outbound">{DIRECTION_LABEL.outbound}</MenuItem>
               <MenuItem value="inbound">{DIRECTION_LABEL.inbound}</MenuItem>
+            </TextField>
+            <TextField select size="small" label="รูปแบบทะเบียนที่ลูกค้ากรอกได้" value={form.plate_format} onChange={(e) => setForm((p) => ({ ...p, plate_format: toPlateFormat(e.target.value) }))} helperText={PLATE_FORMAT_INFO[form.plate_format].hint}>
+              {PLATE_FORMATS.map((f) => <MenuItem key={f} value={f}>{PLATE_FORMAT_INFO[f].label}</MenuItem>)}
             </TextField>
             <TextField size="small" type="number" label="ลำดับการแสดง" value={form.sort_order} onChange={(e) => setForm((p) => ({ ...p, sort_order: e.target.value }))} />
             <FormControlLabel control={<Switch checked={form.active} onChange={(e) => setForm((p) => ({ ...p, active: e.target.checked }))} />} label="เปิดให้จอง" />

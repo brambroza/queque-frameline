@@ -3,6 +3,7 @@
  * portal form. Whatever the source, the row is validated here before it touches the DB.
  */
 import { z } from 'zod';
+import { parsePaymentStatus } from '@/lib/booking/payment';
 
 const blankToUndefined = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 const optText = (max: number) => z.preprocess(blankToUndefined, z.string().trim().max(max).optional());
@@ -32,6 +33,14 @@ export const documentUpsertSchema = z.object({
   status: z.enum(['open', 'cancelled']).optional(),
   /** Branch code or name (branches.code / branch_name); resolved to branch_id by the importer. */
   branch: optText(80),
+  /**
+   * SO only. English or Thai (paid / ชำระแล้ว / unpaid / ยังไม่ชำระ / credit / เครดิต).
+   * Omitted = a new SO starts unpaid and an existing SO keeps what the warehouse recorded.
+   */
+  payment_status: z.preprocess(
+    (v) => { const p = parsePaymentStatus(v); return p === null ? '__invalid__' : p; },
+    z.enum(['unpaid', 'paid', 'credit'], { message: 'สถานะชำระเงินไม่ถูกต้อง (paid / unpaid / credit)' }).optional(),
+  ),
 });
 
 export type DocumentUpsert = z.infer<typeof documentUpsertSchema>;

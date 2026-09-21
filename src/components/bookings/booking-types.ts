@@ -8,6 +8,8 @@ export type BookingRow = {
   booking_date: string;
   start_time: string;
   end_time?: string | null;
+  /** Minutes at the dock for this queue (vehicle type's duration unless the warehouse changed it). */
+  service_minutes?: number | null;
   status: string;
   direction: BookingDirection;
   service_id?: string | null;
@@ -40,7 +42,7 @@ export type BookingRow = {
   branches?: { branch_name: string } | null;
   services?: { service_name: string; duration_minutes?: number | null } | null;
   customers?: { full_name: string | null; phone: string | null; partner_type?: string | null; code?: string | null } | null;
-  external_documents?: { doc_no: string; doc_type: 'so' | 'po' } | null;
+  external_documents?: { doc_no: string; doc_type: 'so' | 'po'; payment_status?: string | null } | null;
 };
 
 /** Vehicle type (`services` row). */
@@ -78,7 +80,7 @@ export type NextStatusOption = { status: BookingStatus; label: string; kind: Nex
  * `ALLOWED_TRANSITIONS` in `src/lib/booking/status-flow.ts` — the API is the authority.
  */
 export const NEXT_STATUSES: Record<string, NextStatusOption[]> = {
-  pending: [{ status: 'confirmed', label: 'ยืนยันคิว + ออก DO', kind: 'confirm', primary: true, adminOnly: true }],
+  pending: [{ status: 'confirmed', label: 'อนุมัติคิว + ออก DO', kind: 'confirm', primary: true }],
   confirmed: [
     { status: 'checked_in', label: 'รถมาถึงแล้ว', kind: 'arrive', primary: true },
     { status: 'no_show', label: 'ไม่มา', kind: 'no_show', primary: false },

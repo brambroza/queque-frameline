@@ -1,11 +1,14 @@
 'use client';
 
 import { QrCode } from '@/components/ui/qr-code';
+import { CUSTOMER_PAYMENT_NOTICE } from '@/lib/booking/payment';
 import { PUBLIC_STATUS, longThaiDate, type PublicBooking } from './types';
 
 /** One queue as the customer / driver sees it: status, time, dock, plate, DO. */
-export function BookingCard({ b, showDriverLink, footer, onShareDriver }: { b: PublicBooking; showDriverLink?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. */ onShareDriver?: (b: PublicBooking) => void }) {
-  const st = PUBLIC_STATUS[b.status] ?? { label: b.status, tone: 'bg-slate-200 text-slate-700', hint: '' };
+export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentPending }: { b: PublicBooking; showDriverLink?: boolean; /** SO not paid yet: the queue is held but cannot be confirmed. */ paymentPending?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. */ onShareDriver?: (b: PublicBooking) => void }) {
+  const base = PUBLIC_STATUS[b.status] ?? { label: b.status, tone: 'bg-slate-200 text-slate-700', hint: '' };
+  const awaitingPayment = Boolean(paymentPending) && b.status === 'pending';
+  const st = awaitingPayment ? { ...base, label: 'รอชำระเงิน', hint: '' } : base;
   const plate = b.plate_number_actual || b.plate_number || '-';
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -17,6 +20,12 @@ export function BookingCard({ b, showDriverLink, footer, onShareDriver }: { b: P
         <span className={`rounded-full px-3 py-1 text-sm font-semibold ${st.tone}`}>{st.label}</span>
       </div>
       {st.hint ? <p className="mt-2 text-sm text-slate-600">{st.hint}</p> : null}
+      {awaitingPayment ? (
+        <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">{CUSTOMER_PAYMENT_NOTICE}</p>
+      ) : null}
+      {b.status === 'cancelled' && b.cancel_reason ? (
+        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span className="font-semibold">เหตุผลที่ยกเลิก:</span> {b.cancel_reason}</p>
+      ) : null}
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div className="col-span-2"><dt className="text-xs text-slate-500">วันเวลานัด</dt><dd className="font-semibold text-slate-900">{longThaiDate(b.booking_date)} · {b.start_time.slice(0, 5)}{b.end_time ? `–${b.end_time.slice(0, 5)}` : ''} น.</dd></div>

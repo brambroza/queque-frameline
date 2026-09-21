@@ -27,6 +27,19 @@ describe('parseDocumentsCsv', () => {
     expect(r.documents[1].items).toEqual([]);
   });
 
+  it('reads the payment status column in English or Thai, and leaves it unset when empty', () => {
+    const r = parseDocumentsCsv('doc_no,customer_name,สถานะชำระเงิน\nSO-1,เอ,ชำระแล้ว\nSO-2,บี,credit\nSO-3,ซี,\nSO-4,ดี,ยังไม่ชำระ\n');
+    expect(r.errors).toEqual([]);
+    expect(r.documents.map((d) => d.payment_status)).toEqual(['paid', 'credit', undefined, 'unpaid']);
+  });
+
+  it('reports an unknown payment status as a row error', () => {
+    const r = parseDocumentsCsv('doc_no,customer_name,payment_status\nSO-1,เอ,half\n');
+    expect(r.documents).toEqual([]);
+    expect(r.errors[0]).toMatchObject({ doc_no: 'SO-1' });
+    expect(r.errors[0].message).toContain('สถานะชำระเงิน');
+  });
+
   it('accepts Thai headers', () => {
     const r = parseDocumentsCsv('เลขที่เอกสาร,ชื่อผู้ขาย,สาขา,สินค้า,จำนวน\nPO-9,หจก. ซี,BKK2,ทราย,3\n');
     expect(r.documents[0]).toMatchObject({ doc_no: 'PO-9', partner: { name: 'หจก. ซี' }, branch: 'BKK2', items: [{ name: 'ทราย', qty: 3 }] });

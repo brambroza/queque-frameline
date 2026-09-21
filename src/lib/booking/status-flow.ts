@@ -29,8 +29,11 @@ export const ALLOWED_TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]
   no_show: [],
 };
 
-/** Moves only an admin may make (they commit the site: confirm = issue a DO). */
-const ADMIN_ONLY: ReadonlyArray<`${BookingStatus}>${BookingStatus}`> = ['pending>confirmed'];
+/**
+ * Moves only an admin may make. Empty since 2026-09-21: warehouse staff approve
+ * queues too (the SO payment gate, not the role, is what protects the DO).
+ */
+const ADMIN_ONLY: ReadonlyArray<`${BookingStatus}>${BookingStatus}`> = [];
 
 /** Moves the cron sweep may make on its own. */
 const SYSTEM_MOVES: ReadonlyArray<`${BookingStatus}>${BookingStatus}`> = [
@@ -67,7 +70,9 @@ export function isTerminalStatus(status: string): boolean {
  * Admin-created queues are confirmed at once (DO issued); a customer/supplier
  * link booking waits for the admin unless the site turned confirmation off.
  */
-export function resolveInitialBookingStatus(input: { source: BookingSource; requireAdminConfirm: boolean }): 'pending' | 'confirmed' {
+export function resolveInitialBookingStatus(input: { source: BookingSource; requireAdminConfirm: boolean; paymentCleared?: boolean }): 'pending' | 'confirmed' {
+  // An unpaid SO can be booked but never starts confirmed, whoever creates the queue.
+  if (input.paymentCleared === false) return 'pending';
   if (input.source === 'admin') return 'confirmed';
   return input.requireAdminConfirm ? 'pending' : 'confirmed';
 }

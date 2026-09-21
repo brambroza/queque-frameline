@@ -16,6 +16,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { QrCode } from '@/components/ui/qr-code';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { useToast } from '@/components/ui/toast';
+import { PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
+import { PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
@@ -25,7 +27,13 @@ type DocRow = {
   id: string; doc_type: DocType; doc_no: string; branch_id: string | null; branches?: { branch_name?: string | null; code?: string | null } | null; partner_name: string | null; partner_code: string | null; doc_date: string | null; due_date: string | null;
   status: 'open' | 'booked' | 'completed' | 'cancelled'; source: string; items: Array<{ name: string; qty: number; uom?: string }>; has_link: boolean; booking_count: number;
   partner_line_linked?: boolean; partner_line_name?: string | null;
+  payment_status?: string | null; payment_ref?: string | null; payment_note?: string | null;
 };
+/** Anything unknown counts as unpaid, the same way the server treats it. */
+function paymentStatusOf(d: Pick<DocRow, 'payment_status'>): PaymentStatus {
+  return isPaymentStatus(d.payment_status) ? d.payment_status : 'unpaid';
+}
+
 type PartnerOption = { id: string; code: string | null; full_name: string; phone: string | null };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
 type ImportSummary = {
@@ -54,6 +62,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const { branches, branchId: scopedBranch, branchQuery } = useBranchScope();
   const [docType, setDocType] = useState<DocType>('so');
   const [status, setStatus] = useState('');
+  const [payment, setPayment] = useState('');
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -68,7 +78,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [sendingLine, setSendingLine] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState({ doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' });
+  const [form, setForm] = useState({ doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '', payment_status: 'unpaid' });
   const [importBranch, setImportBranch] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
   const [saving, setSaving] = useState(false);
@@ -92,6 +102,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     try {
       const qs = new URLSearchParams({ doc_type: docType, page: String(page), page_size: String(pageSize), q });
       if (status) qs.set('status', status);
+      if (payment && docType === 'so') qs.set('payment', payment);
       const res = await fetch(`/api/documents?${qs}${branchQuery ? `&${branchQuery}` : ''}`, { cache: 'no-store' });
       const j = (await res.json()) as { data?: DocRow[]; pagination?: { total: number }; error?: string };
       if (!res.ok) throw new Error(j.error ?? 'โหลดเอกสารไม่สำเร็จ');
@@ -101,7 +112,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
       setError(e instanceof Error ? e.message : 'โหลดเอกสารไม่สำเร็จ');
       setRows((prev) => prev ?? []);
     }
-  }, [docType, status, page, pageSize, q, branchQuery]);
+  }, [docType, status, payment, page, pageSize, q, branchQuery]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -219,6 +230,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
           partner: { code: form.partner_code, name: form.partner_name, phone: form.partner_phone },
           due_date: form.due_date,
           remark: form.remark,
+          ...(docType === 'so' ? { payment_status: form.payment_status } : {}),
           items: items.filter((i) => i.name.trim()).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty || '1', uom: i.uom })),
         }),
       });
@@ -269,7 +281,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         action={isAdmin ? (
           <Stack direction="row" spacing={1}>
             <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportBranch(scopedBranch || (branches.length === 1 ? branches[0].id : '')); setImportOpen(true); }}>นำเข้า CSV</Button>
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '' }); setItems([{ ...EMPTY_ITEM }]); setPickedPartner(null); setPartnerOptions([]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
+            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '', payment_status: 'unpaid' }); setItems([{ ...EMPTY_ITEM }]); setPickedPartner(null); setPartnerOptions([]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
           </Stack>
         ) : undefined}
       />
@@ -279,7 +291,13 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
             <Tab value="so" label="SO · ลูกค้ารับสินค้า" />
             <Tab value="po" label="PO · Supplier ส่งสินค้า" />
           </Tabs>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            {docType === 'so' ? (
+              <TextField id="doc-payment-filter" select size="small" value={payment} onChange={(e) => { setPayment(e.target.value); setPage(1); }} slotProps={{ select: { displayEmpty: true } }} sx={{ minWidth: 150 }}>
+                <MenuItem value="">ทุกการชำระเงิน</MenuItem>
+                {PAYMENT_STATUSES.map((p) => <MenuItem key={p} value={p}>{PAYMENT_LABEL[p]}</MenuItem>)}
+              </TextField>
+            ) : null}
             <TextField select size="small" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} slotProps={{ select: { displayEmpty: true } }} sx={{ minWidth: 140 }}>
               <MenuItem value="">ทุกสถานะ</MenuItem>
               {(Object.keys(STATUS) as Array<DocRow['status']>).map((s) => <MenuItem key={s} value={s}>{STATUS[s].label}</MenuItem>)}
@@ -299,7 +317,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
               <TableHead>
                 <TableRow>
                   <TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell>
-                  <TableCell align="right">คิว</TableCell><TableCell>สถานะ</TableCell><TableCell align="right">จัดการ</TableCell>
+                  <TableCell align="right">คิว</TableCell>{docType === 'so' ? <TableCell>ชำระเงิน</TableCell> : null}<TableCell>สถานะ</TableCell><TableCell align="right">จัดการ</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -313,8 +331,22 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                       <TableCell>{d.due_date ? formatDateDMY(d.due_date) : '-'}</TableCell>
                       <TableCell align="right">{d.items?.length ?? 0}</TableCell>
                       <TableCell align="right">{d.booking_count > 0 ? <Button size="small" href={`/portal/bookings?doc=${d.id}`}>{d.booking_count}</Button> : 0}</TableCell>
+                      {docType === 'so' ? (
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                          <Tooltip title={d.payment_ref ? `อ้างอิง ${d.payment_ref}` : live ? 'คลิกเพื่อบันทึกการชำระเงิน' : ''}>
+                            <Chip
+                              size="small"
+                              color={PAYMENT_COLOR[paymentStatusOf(d)]}
+                              variant={paymentStatusOf(d) === 'unpaid' ? 'filled' : 'outlined'}
+                              label={PAYMENT_LABEL[paymentStatusOf(d)]}
+                              onClick={live ? () => setPaymentTarget(d) : undefined}
+                            />
+                          </Tooltip>
+                        </TableCell>
+                      ) : null}
                       <TableCell><Chip size="small" color={STATUS[d.status].color} variant={d.status === 'open' ? 'outlined' : 'filled'} label={STATUS[d.status].label} /></TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        {docType === 'so' && live && paymentStatusOf(d) === 'unpaid' ? <Button size="small" color="success" variant="outlined" sx={{ mr: 0.5 }} onClick={() => setPaymentTarget(d)}>บันทึกชำระเงิน</Button> : null}
                         {isAdmin && live ? <Button size="small" variant={d.has_link ? 'text' : 'contained'} startIcon={<QrCode2RoundedIcon />} onClick={() => void openLink(d)}>{d.has_link ? 'ดูลิงก์' : 'ส่งลิงก์จอง'}</Button> : null}
                         {isAdmin && live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'completed')}>ปิด</Button> : null}
                         {isAdmin && live ? <Button size="small" color="error" onClick={() => void setDocStatus(d, 'cancelled')}>ยกเลิก</Button> : null}
@@ -330,6 +362,16 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         )}
         <TablePaginationControls page={page} rowsPerPage={pageSize} total={total} onPageChange={setPage} onRowsPerPageChange={(n) => { setPageSize(n); setPage(1); }} />
       </Card>
+
+      <PaymentDialog
+        target={paymentTarget}
+        onClose={() => setPaymentTarget(null)}
+        onSaved={(r) => {
+          push(r.unlocked.length > 0 ? `บันทึกการชำระเงินแล้ว — คิว ${r.unlocked.join(', ')} อนุมัติได้แล้ว` : 'บันทึกการชำระเงินแล้ว');
+          setPaymentTarget(null);
+          void load();
+        }}
+      />
 
       {/* Booking link */}
       <Dialog open={Boolean(linkDoc)} onClose={() => setLinkDoc(null)} fullWidth maxWidth="xs">
@@ -366,6 +408,11 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField autoFocus required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} helperText="เลขที่ซ้ำ = อัปเดตเอกสารเดิม" />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
+              {docType === 'so' ? (
+                <TextField id="doc-payment-status" select fullWidth size="small" label="สถานะการชำระเงิน" value={form.payment_status} onChange={(e) => setForm((p) => ({ ...p, payment_status: e.target.value }))} helperText="ยังไม่ชำระ = ลูกค้าจองได้ แต่อนุมัติคิวไม่ได้">
+                  {PAYMENT_STATUSES.map((p) => <MenuItem key={p} value={p}>{PAYMENT_LABEL[p]}</MenuItem>)}
+                </TextField>
+              ) : null}
             </Stack>
             <Autocomplete<PartnerOption, false, false, true>
               freeSolo
@@ -443,7 +490,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Alert severity="info">
-              1 บรรทัด = 1 รายการสินค้า, บรรทัดที่เลขที่เอกสารเดียวกันรวมเป็นเอกสารเดียว. คอลัมน์ที่ต้องมี: <b>doc_no</b>, <b>partner_name</b> (รองรับหัวคอลัมน์ไทย เช่น เลขที่เอกสาร, ชื่อลูกค้า). ไม่บังคับ: <b>branch</b> (รหัสหรือชื่อสาขา), partner_code, phone, due_date, sku, item_name, qty, uom, remark. บันทึกไฟล์เป็น CSV UTF-8
+              1 บรรทัด = 1 รายการสินค้า, บรรทัดที่เลขที่เอกสารเดียวกันรวมเป็นเอกสารเดียว. คอลัมน์ที่ต้องมี: <b>doc_no</b>, <b>partner_name</b> (รองรับหัวคอลัมน์ไทย เช่น เลขที่เอกสาร, ชื่อลูกค้า). ไม่บังคับ: <b>branch</b> (รหัสหรือชื่อสาขา), <b>payment_status</b> (SO: paid / unpaid / credit หรือ ชำระแล้ว / ยังไม่ชำระ / เครดิต — เว้นว่าง = ไม่เปลี่ยนค่าเดิม), partner_code, phone, due_date, sku, item_name, qty, uom, remark. บันทึกไฟล์เป็น CSV UTF-8
             </Alert>
             <TextField select size="small" label="สาขาสำหรับบรรทัดที่ไม่มีคอลัมน์สาขา" value={importBranch} onChange={(e) => setImportBranch(e.target.value)} sx={{ maxWidth: 360 }} slotProps={{ select: { displayEmpty: true } }}>
               <MenuItem value="">ค่าเริ่มต้นของคลัง</MenuItem>

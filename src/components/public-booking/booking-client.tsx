@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isPlausiblePlate } from '@/lib/booking/plate';
+import { PLATE_FORMAT_INFO, formatPlateInput, matchesPlateFormat, toPlateFormat, type PlateFormat } from '@/lib/booking/plate';
 import { BookingCard } from './booking-card';
 import { LineBanner, type LineMeta } from './line-banner';
 import { useLiffBind } from './use-liff-bind';
@@ -12,7 +12,8 @@ type Meta = {
   document: { doc_no: string; doc_type: 'so' | 'po'; status: string; partner_name: string | null; due_date: string | null; remark: string | null; items: PublicItem[] };
   direction: 'inbound' | 'outbound';
   open: boolean;
-  vehicle_types: Array<{ id: string; service_name: string; duration_minutes: number }>;
+  vehicle_types: Array<{ id: string; service_name: string; duration_minutes: number; plate_format?: PlateFormat | null }>;
+  payment?: { required: boolean; pending: boolean };
   rules: { lead_hours: number; horizon_days: number; require_admin_confirm: boolean; grace_minutes: number; early_arrival_minutes: number };
   line?: LineMeta;
   bookings: PublicBooking[];
@@ -102,14 +103,17 @@ export function BookingClient({ token }: { token: string }) {
     }
   }, [api]);
 
+  // Plate layout is locked to the chosen vehicle type (car "กข 1234" vs truck "70-1234").
+  const plateFormat = toPlateFormat(meta?.vehicle_types.find((v) => v.id === vehicleId)?.plate_format);
+
   const errors = useMemo(() => {
     const e: Partial<Record<keyof Details, string>> = {};
-    if (!isPlausiblePlate(details.plate_number)) e.plate_number = 'กรอกทะเบียนรถ เช่น 70-1234 หรือ กข 1234';
+    if (!matchesPlateFormat(details.plate_number, plateFormat)) e.plate_number = `ทะเบียนไม่ตรงรูปแบบ — ${PLATE_FORMAT_INFO[plateFormat].hint}`;
     if (!details.receiver_name.trim()) e.receiver_name = 'กรอกชื่อผู้ติดต่อ';
     if (!PHONE.test(details.receiver_phone.trim())) e.receiver_phone = 'กรอกเบอร์โทรที่ติดต่อได้';
     if (details.driver_phone.trim() && !PHONE.test(details.driver_phone.trim())) e.driver_phone = 'เบอร์โทรไม่ถูกต้อง';
     return e;
-  }, [details]);
+  }, [details, plateFormat]);
 
   async function submit() {
     if (busy) return;
@@ -126,6 +130,7 @@ export function BookingClient({ token }: { token: string }) {
         setError(j.error ?? 'จองไม่สำเร็จ กรุณาลองใหม่');
         // Someone took the slot while this form was open: go back to a fresh slot list.
         if (j.code === 'slot_unavailable' || j.code === 'slot_past') { setTime(''); setStep('slot'); void loadSlots(vehicleId, date); }
+        if (j.code === 'plate_format') { setTouched(true); setStep('details'); }
         return;
       }
       await loadMeta(true);
@@ -196,6 +201,11 @@ export function BookingClient({ token }: { token: string }) {
       </section>
 
       <LineBanner line={meta.line} state={lineBind.state} viaLine={lineBind.viaLine} path={`/book/${encodeURIComponent(token)}`} who="customer" />
+      {meta.payment?.pending && step !== 'status' ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+          เอกสารนี้ยังไม่ได้ชำระเงิน — จองคิวไว้ก่อนได้ แต่คิวจะได้รับการยืนยันและออกใบรับสินค้า (DO) หลังชำระเงินแล้วเท่านั้น
+        </div>
+      ) : null}
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</div> : null}
 
@@ -203,7 +213,7 @@ export function BookingClient({ token }: { token: string }) {
         <>
           {meta.bookings.length === 0 ? <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">ยังไม่มีคิวสำหรับเอกสารนี้</p> : null}
           {meta.bookings.map((b) => (
-            <BookingCard key={b.id} b={b} showDriverLink onShareDriver={lineBind.liff?.shareTargetPicker && lineBind.state.phase === 'bound' ? shareDriver : undefined}
+            <BookingCard key={b.id} b={b} showDriverLink paymentPending={meta.payment?.pending} onShareDriver={lineBind.liff?.shareTargetPicker && lineBind.state.phase === 'bound' ? shareDriver : undefined}
               footer={b.cancellable ? <button type="button" disabled={busy} onClick={() => void cancel(b)} className="mt-4 min-h-[44px] w-full rounded-xl border border-red-200 text-sm font-medium text-red-700 active:bg-red-50">ยกเลิกคิวนี้</button> : null} />
           ))}
           {meta.open ? (
@@ -223,7 +233,7 @@ export function BookingClient({ token }: { token: string }) {
           {meta.vehicle_types.length === 0 ? <p className="text-sm text-slate-600">ยังไม่เปิดให้จอง กรุณาติดต่อเจ้าหน้าที่</p> : null}
           <div className="grid gap-2">
             {meta.vehicle_types.map((v) => (
-              <button key={v.id} type="button" onClick={() => { setVehicleId(v.id); setDate(''); setTime(''); setStep('date'); void loadDays(v.id); }}
+              <button key={v.id} type="button" onClick={() => { setVehicleId(v.id); setDate(''); setTime(''); setDetails((p) => ({ ...p, plate_number: formatPlateInput(p.plate_number, toPlateFormat(v.plate_format)) })); setStep('date'); void loadDays(v.id); }}
                 className={`flex min-h-[56px] items-center justify-between rounded-xl border px-4 text-left active:bg-emerald-50 ${vehicleId === v.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-300 bg-white'}`}>
                 <span className="font-semibold text-slate-900">{v.service_name}</span>
                 <span className="text-sm text-slate-500">ประมาณ {v.duration_minutes} นาที</span>
@@ -278,8 +288,10 @@ export function BookingClient({ token }: { token: string }) {
 
       {step === 'details' ? (
         <StepCard title="4. ข้อมูลรถและผู้ติดต่อ" hint="ป้อมยามจะตรวจทะเบียนรถตามข้อมูลนี้">
-          <Field label="ทะเบียนรถ *" error={touched ? errors.plate_number : undefined}>
-            <input className={inputCls} value={details.plate_number} onChange={(e) => setDetails((p) => ({ ...p, plate_number: e.target.value }))} placeholder="เช่น 70-1234" autoCapitalize="characters" />
+          <Field label={`ทะเบียนรถ${vehicle ? ` (${vehicle.service_name})` : ''} *`} error={touched ? errors.plate_number : undefined}>
+            <input className={inputCls} value={details.plate_number} onChange={(e) => setDetails((p) => ({ ...p, plate_number: formatPlateInput(e.target.value, plateFormat) }))}
+              placeholder={`เช่น ${PLATE_FORMAT_INFO[plateFormat].example}`} inputMode={plateFormat === 'truck' ? 'numeric' : 'text'} maxLength={12} autoComplete="off" autoCorrect="off" spellCheck={false} />
+            <span className="mt-1 block text-xs font-normal text-slate-500">{PLATE_FORMAT_INFO[plateFormat].hint}</span>
           </Field>
           <Field label={outbound ? 'ชื่อผู้รับสินค้า *' : 'ชื่อผู้ติดต่อ *'} error={touched ? errors.receiver_name : undefined}>
             <input className={inputCls} value={details.receiver_name} onChange={(e) => setDetails((p) => ({ ...p, receiver_name: e.target.value }))} autoComplete="name" />

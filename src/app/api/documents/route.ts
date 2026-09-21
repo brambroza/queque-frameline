@@ -5,7 +5,7 @@ import { documentUpsertSchema } from '@/lib/integration/schemas';
 import { upsertDocument } from '@/lib/integration/upsert';
 
 const DOC_SELECT =
-  'id,doc_type,doc_no,branch_id,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,booking_token_hash,booking_token_expires_at,imported_at,updated_at,branches(branch_name,code),customers(line_users(display_name))';
+  'id,doc_type,doc_no,branch_id,partner_id,partner_code,partner_name,doc_date,due_date,status,source,items,total_qty,remark,payment_status,payment_ref,payment_note,payment_updated_at,booking_token_hash,booking_token_expires_at,imported_at,updated_at,branches(branch_name,code),customers(line_users(display_name))';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -37,6 +37,8 @@ export async function GET(req: Request) {
     const branchId = sp.get('branch_id');
     if (branchId) query = query.eq('branch_id', branchId);
     if (status) query = query.eq('status', status);
+    const payment = sp.get('payment');
+    if (payment === 'unpaid' || payment === 'paid' || payment === 'credit') query = query.eq('doc_type', 'so').eq('payment_status', payment);
     if (sp.get('bookable') === '1') query = query.in('status', ['open', 'booked']);
     if (q) query = query.or(`doc_no.ilike.%${q}%,partner_name.ilike.%${q}%,partner_code.ilike.%${q}%`);
 

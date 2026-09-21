@@ -19,13 +19,17 @@ describe('resolveInitialBookingStatus', () => {
     expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: true })).toBe('pending');
     expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: false })).toBe('confirmed');
     expect(resolveInitialBookingStatus({ source: 'api', requireAdminConfirm: true })).toBe('pending');
+    // Unpaid SO: never starts confirmed, not even for an admin or with confirmation turned off.
+    expect(resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared: false })).toBe('pending');
+    expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: false, paymentCleared: false })).toBe('pending');
+    expect(resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared: true })).toBe('confirmed');
   });
 });
 
 describe('canTransition', () => {
   it('follows the happy path for staff, except confirm', () => {
     expect(canTransition('pending', 'confirmed', 'admin')).toEqual({ ok: true });
-    expect(canTransition('pending', 'confirmed', 'staff')).toEqual({ ok: false, reason: 'admin_only' });
+    expect(canTransition('pending', 'confirmed', 'staff')).toEqual({ ok: true });
     expect(canTransition('confirmed', 'checked_in', 'staff')).toEqual({ ok: true });
     expect(canTransition('checked_in', 'called', 'staff')).toEqual({ ok: true });
     expect(canTransition('called', 'serving', 'staff')).toEqual({ ok: true });

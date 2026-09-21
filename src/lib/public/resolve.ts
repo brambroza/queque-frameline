@@ -15,6 +15,8 @@ export type ResolvedDocument = {
   doc: {
     id: string; company_id: string; shop_id: string; branch_id: string | null; doc_type: 'so' | 'po'; doc_no: string; status: string;
     partner_id: string | null; partner_name: string | null; due_date: string | null; remark: string | null;
+    /** SO only: `unpaid` means the queue can be booked but not confirmed. */
+    payment_status: string | null;
     items: Array<{ sku?: string | null; name: string; qty: number; uom?: string | null }>;
   };
 };
@@ -27,7 +29,7 @@ export async function resolveBookingToken(admin: SupabaseClient, token: string, 
   if (!isWellFormedToken(token)) return NOT_FOUND;
   const { data } = await admin
     .from('external_documents')
-    .select('id,company_id,shop_id,branch_id,doc_type,doc_no,status,partner_id,partner_name,due_date,remark,items,booking_token_expires_at')
+    .select('id,company_id,shop_id,branch_id,doc_type,doc_no,status,partner_id,partner_name,due_date,remark,items,payment_status,booking_token_expires_at')
     .eq('booking_token_hash', hashToken(token))
     .eq('is_deleted', false)
     .maybeSingle();
@@ -56,4 +58,4 @@ export async function resolveDriverToken(admin: SupabaseClient, token: string, n
 
 /** Public shape of a booking — no ids of other tables, no internal notes beyond the customer's own. */
 export const PUBLIC_BOOKING_SELECT =
-  'id,queue_number,status,direction,booking_date,start_time,end_time,resource_name,plate_number,plate_number_actual,driver_name,driver_phone,receiver_name,receiver_phone,note,do_number,do_issued_at,called_at,call_count,driver_token_version,services(service_name),external_documents(doc_no,doc_type,partner_name,items)';
+  'id,queue_number,status,direction,booking_date,start_time,end_time,resource_name,plate_number,plate_number_actual,driver_name,driver_phone,receiver_name,receiver_phone,note,cancel_reason,do_number,do_issued_at,called_at,call_count,driver_token_version,services(service_name),external_documents(doc_no,doc_type,partner_name,items)';

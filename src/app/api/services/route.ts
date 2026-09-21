@@ -62,6 +62,7 @@ export async function POST(req: Request) {
       buffer_minutes: parsed.data.buffer_minutes,
       direction: parsed.data.direction ?? null,
       sort_order: parsed.data.sort_order,
+      plate_format: parsed.data.plate_format,
       created_by: user.id,
       updated_by: user.id,
     });
@@ -97,6 +98,7 @@ export async function PATCH(req: Request) {
         buffer_minutes: parsed.data.buffer_minutes,
         direction: parsed.data.direction ?? null,
         sort_order: parsed.data.sort_order,
+        plate_format: parsed.data.plate_format,
         updated_by: user.id,
       })
       .eq('id', id)

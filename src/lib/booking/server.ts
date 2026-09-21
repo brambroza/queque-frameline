@@ -4,6 +4,7 @@
  * the session client (RLS) and the service-role client.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { PAYMENT_BLOCK_MESSAGE } from '@/lib/booking/payment';
 import type { AppRole, AutoCallMode } from '@/types/db';
 import type { TransitionActor } from '@/lib/booking/status-flow';
 
@@ -94,6 +95,10 @@ export async function logBooking(client: SupabaseClient, input: BookingLogInput)
 /** Errors raised by the dock SQL functions, mapped to HTTP + Thai copy. */
 export function dockErrorResponse(message: string | undefined | null): { status: number; error: string; code: string } | null {
   const m = String(message ?? '');
+  if (m.includes('payment_required')) return { status: 409, code: 'payment_required', error: PAYMENT_BLOCK_MESSAGE };
+  if (m.includes('duration_conflict')) return { status: 409, code: 'duration_conflict', error: 'เวลาที่ท่านานขนาดนี้ชนกับคิวถัดไปของท่าเดียวกัน (หรือข้ามวัน) — ลดเวลาลง หรือเลื่อนคิวก่อน' };
+  if (m.includes('invalid_minutes')) return { status: 400, code: 'invalid_minutes', error: 'เวลาที่ท่าต้องอยู่ระหว่าง 5–1440 นาที' };
+  if (m.includes('not_adjustable')) return { status: 409, code: 'not_adjustable', error: 'คิวนี้ปิดแล้ว ปรับเวลาไม่ได้' };
   if (m.includes('slot_unavailable')) return { status: 409, code: 'slot_unavailable', error: 'ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาใหม่' };
   if (m.includes('invalid_service')) return { status: 400, code: 'invalid_service', error: 'ประเภทรถไม่ถูกต้องสำหรับคิวประเภทนี้' };
   if (m.includes('not_movable')) return { status: 409, code: 'not_movable', error: 'คิวนี้เลื่อนไม่ได้แล้ว' };

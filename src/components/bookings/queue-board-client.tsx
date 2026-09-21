@@ -11,6 +11,7 @@ import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
+import { ApproveDialog, PaymentChip, isPaymentBlocked, paymentOf } from './booking-action-dialogs';
 import { DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type BookingRow, type NextStatusOption } from './booking-types';
 
 const POLL_MS = 15_000;
@@ -38,6 +39,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [approveTarget, setApproveTarget] = useState<{ booking: BookingRow; opt: NextStatusOption } | null>(null);
   const [site, setSite] = useState<SiteInfo | null>(null);
   const dateRef = useRef(date);
   dateRef.current = date;
@@ -75,8 +77,10 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
     return () => clearInterval(id);
   }, [load, loadSite]);
 
-  async function setStatus(b: BookingRow, opt: NextStatusOption) {
+  async function setStatus(b: BookingRow, opt: NextStatusOption, serviceMinutes?: number) {
     if (busyId) return;
+    // Approval asks for the dock time first (and shows the payment block).
+    if (opt.kind === 'confirm' && serviceMinutes === undefined) { setApproveTarget({ booking: b, opt }); return; }
     if (opt.kind === 'no_show') {
       const ok = await confirm({
         tone: 'warning',
@@ -92,7 +96,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
       const res = await fetch('/api/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: b.id, status: opt.status }),
+        body: JSON.stringify({ id: b.id, status: opt.status, ...(serviceMinutes !== undefined ? { service_minutes: serviceMinutes } : {}) }),
       });
       const json = (await res.json().catch(() => ({}))) as PatchResponse;
       if (!res.ok) {
@@ -100,7 +104,8 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         if (json.code === 'stale') await load(true);
         return;
       }
-      if (opt.kind === 'confirm' && json.data?.do_number) push(`ยืนยันคิวแล้ว · ${json.data.do_number}`);
+      setApproveTarget(null);
+      if (opt.kind === 'confirm' && json.data?.do_number) push(`อนุมัติคิวแล้ว · ${json.data.do_number}`);
       else if (opt.kind === 'call' || opt.kind === 'recall') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
       const auto = json.data?.auto_called ?? [];
       if (auto.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${auto.join(', ')}`);
@@ -179,6 +184,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                       </Typography>
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                         {r.status === 'late' ? <Chip size="small" color="warning" label="เลยเวลานัด" /> : null}
+                        {r.status === 'pending' ? <PaymentChip status={paymentOf(r)} /> : null}
                         {r.status === 'called' && r.auto_called ? <Chip size="small" variant="outlined" color="success" label="เรียกอัตโนมัติ" /> : null}
                         {r.status === 'called' && Number(r.call_count ?? 0) > 1 ? <Chip size="small" variant="outlined" color="warning" label={`เรียก ${r.call_count} ครั้ง`} /> : null}
                       </Stack>
@@ -190,7 +196,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                               size="small"
                               variant={o.primary ? 'contained' : 'text'}
                               color={o.kind === 'no_show' ? 'error' : o.kind === 'uncall' ? 'inherit' : 'primary'}
-                              disabled={busyId !== null}
+                              disabled={busyId !== null || (o.kind === 'confirm' && isPaymentBlocked(r))}
                               onClick={() => void setStatus(r, o)}
                               sx={{ minHeight: 36 }}
                             >
@@ -207,6 +213,13 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
           );
         })}
       </Box>
+
+      <ApproveDialog
+        booking={approveTarget?.booking ?? null}
+        saving={busyId !== null}
+        onClose={() => setApproveTarget(null)}
+        onSubmit={(b, minutes) => { if (approveTarget) void setStatus(b, approveTarget.opt, minutes); }}
+      />
     </Stack>
   );
 }

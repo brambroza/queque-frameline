@@ -110,6 +110,12 @@ export async function upsertDocument(
       is_deleted: false,
       updated_by: actorId,
     };
+    // Payment is only written when the source says so: a re-import must not undo what the warehouse recorded.
+    if (docType === 'so' && doc.payment_status) {
+      fields.payment_status = doc.payment_status;
+      fields.payment_updated_at = new Date().toISOString();
+      fields.payment_updated_by = actorId;
+    }
 
     if (doc.status === 'cancelled' && existing) {
       const { count } = await client
