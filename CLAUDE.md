@@ -116,6 +116,7 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - `get_available_days(..., p_not_before)` — ปฏิทิน "เฉพาะวันว่าง" (ตัด slot ที่ผ่านแล้ว / ไม่ถึง lead time)
 - `create_dock_booking(...)` (service role เท่านั้น) — advisory lock ต่อ shop+วัน, ตรวจ slot ซ้ำ, เลือกท่า (ท่าเฉพาะขาก่อนท่าร่วม), ออกเลขคิว `R-nnn`/`S-nnn`, stamp `grace_deadline`, ออก DO ถ้าสร้างเป็น confirmed
 - `confirm_dock_booking` (status + DO ใน statement เดียว), `move_dock_booking` (ย้ายข้ามวัน = ออกเลขคิวใหม่ของวันปลายทาง)
+- **กันคิวซ้อน (2026-09-21, `202609210002_dock_overlap_guard`)** — กฎ: ห้ามซ้อนเฉพาะ **ท่าเดียวกัน** (`start .. end + buffer`); คนละท่าเวลาซ้อนได้ แม้ลูกค้าเดียวกัน บังคับ 2 ชั้น: `confirm_dock_booking` ถือ day lock + ตรวจ `is_dock_free` ทุกครั้งที่อนุมัติ และ trigger `bookings_dock_overlap_guard` กันทุก write ที่วาง/ย้ายคิวลงท่า (insert, เปลี่ยนท่า/วัน/เวลา/buffer, คิวปิดหรือลบแล้วกลับมา) — เดินสถานะปกติไม่ถูกตรวจ; error `dock_conflict` → 409 (`dockErrorResponse`); smoke test `supabase/tests/dock_overlap_guard.sql` (rollback ท้ายไฟล์)
 - RPC เก่าของ Queue (`get_available_slots`, `get_slot_availability`) ยังอยู่ใน DB แต่ไม่มีโค้ดเรียกแล้ว
 - `src/lib/booking/slot-time.ts` — `isSlotPast`, Bangkok clock; server เป็นคนใส่ `is_past` เสมอ
 

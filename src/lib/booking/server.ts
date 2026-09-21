@@ -97,6 +97,7 @@ export function dockErrorResponse(message: string | undefined | null): { status:
   const m = String(message ?? '');
   if (m.includes('payment_required')) return { status: 409, code: 'payment_required', error: PAYMENT_BLOCK_MESSAGE };
   if (m.includes('duration_conflict')) return { status: 409, code: 'duration_conflict', error: 'เวลาที่ท่านานขนาดนี้ชนกับคิวถัดไปของท่าเดียวกัน (หรือข้ามวัน) — ลดเวลาลง หรือเลื่อนคิวก่อน' };
+  if (m.includes('dock_conflict')) return { status: 409, code: 'dock_conflict', error: 'ท่านี้มีคิวอื่นในช่วงเวลาเดียวกันแล้ว — เลื่อนคิวหรือปรับเวลาที่ท่าก่อน' };
   if (m.includes('invalid_minutes')) return { status: 400, code: 'invalid_minutes', error: 'เวลาที่ท่าต้องอยู่ระหว่าง 5–1440 นาที' };
   if (m.includes('not_adjustable')) return { status: 409, code: 'not_adjustable', error: 'คิวนี้ปิดแล้ว ปรับเวลาไม่ได้' };
   if (m.includes('slot_unavailable')) return { status: 409, code: 'slot_unavailable', error: 'ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาใหม่' };
