@@ -5,6 +5,7 @@ import {
   Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material';
 import { PAYMENT_BLOCK_MESSAGE, PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentCleared, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
+import { suggestServiceMinutes, type ItemMinutesRule, type SuggestedMinutes } from '@/lib/booking/suggest-minutes';
 import { customerName, hhmm, type BookingRow } from './booking-types';
 
 /** Payment status of the SO behind a queue; null when the queue is not gated (PO / no document). */
@@ -45,19 +46,41 @@ function minutesOf(b: BookingRow): number {
   return b.services?.duration_minutes ?? 30;
 }
 
+/** Dock time suggested for a queue: item lines x minutes-per-item, else the vehicle type's time. */
+function suggestionOf(b: BookingRow, rule: ItemMinutesRule | undefined): SuggestedMinutes {
+  return suggestServiceMinutes({
+    itemCount: b.external_documents?.item_count ?? 0,
+    minutesPerItem: rule?.minutesPerItem,
+    enabled: rule?.enabled ?? false,
+    vehicleMinutes: b.services?.duration_minutes ?? null,
+  });
+}
+
 const QUICK_MINUTES = [30, 45, 60, 90, 120, 180];
 
 /**
  * Minutes-at-the-dock editor shared by the approve and the adjust dialogs.
  * The vehicle type's duration is only the starting value.
  */
-function MinutesField({ booking, value, onChange }: { booking: BookingRow; value: string; onChange: (v: string) => void }) {
+function MinutesField({ booking, value, onChange, itemMinutes }: { booking: BookingRow; value: string; onChange: (v: string) => void; itemMinutes?: ItemMinutesRule }) {
   const n = Number(value);
   const valid = Number.isInteger(n) && n >= 5 && n <= 1440;
   const end = valid ? endTimeLabel(booking.start_time, n) : null;
   const typeDefault = booking.services?.duration_minutes ?? null;
+  const suggestion = suggestionOf(booking, itemMinutes);
+  const lines = booking.external_documents?.item_count ?? 0;
   return (
     <Stack spacing={1}>
+      {suggestion.source === 'items' ? (
+        <Chip
+          size="small"
+          color="info"
+          variant={n === suggestion.minutes ? 'filled' : 'outlined'}
+          label={`แนะนำตามรายการ: ${lines} รายการ × ${itemMinutes?.minutesPerItem ?? 10} นาที = ${suggestion.minutes} นาที`}
+          onClick={() => onChange(String(suggestion.minutes))}
+          sx={{ alignSelf: 'flex-start' }}
+        />
+      ) : null}
       <TextField
         id="booking-service-minutes"
         label="เวลาที่ท่า (นาที)"
@@ -94,11 +117,20 @@ function Summary({ b }: { b: BookingRow }) {
 }
 
 /** Approve a pending queue (issues the DO). The warehouse may set the real dock time here. */
-export function ApproveDialog({ booking, saving, onClose, onSubmit }: {
-  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void;
+export function ApproveDialog({ booking, saving, onClose, onSubmit, itemMinutes }: {
+  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void; itemMinutes?: ItemMinutesRule;
 }) {
   const [minutes, setMinutes] = useState('');
-  useEffect(() => { if (booking) setMinutes(String(minutesOf(booking))); }, [booking]);
+  const ruleEnabled = itemMinutes?.enabled ?? false;
+  const perItem = itemMinutes?.minutesPerItem;
+  // Item lines win over the vehicle-type snapshot, but never over a time somebody already set by hand.
+  useEffect(() => {
+    if (!booking) return;
+    const current = minutesOf(booking);
+    const untouched = current === (booking.services?.duration_minutes ?? current);
+    const suggestion = suggestionOf(booking, { enabled: ruleEnabled, minutesPerItem: perItem ?? 10 });
+    setMinutes(String(suggestion.source === 'items' && untouched ? suggestion.minutes : current));
+  }, [booking, ruleEnabled, perItem]);
   if (!booking) return null;
   const n = Number(minutes);
   const blocked = isPaymentBlocked(booking);
@@ -110,9 +142,9 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit }: {
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           <Summary b={booking} />
           {blocked ? <Alert severity="error">{PAYMENT_BLOCK_MESSAGE}</Alert> : null}
-          <MinutesField booking={booking} value={minutes} onChange={setMinutes} />
+          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} />
           <Typography variant="caption" color="text.secondary">
-            เวลาตามประเภทรถเป็นค่าเบื้องต้น ปรับตามเวลาหยิบสินค้าจริงได้ — ระบบจะกันท่าตามเวลานี้ และปฏิเสธถ้าชนกับคิวถัดไปของท่าเดียวกัน
+            {suggestionOf(booking, itemMinutes).source === 'items' ? 'เวลาตามจำนวนรายการสินค้าเป็นค่าเบื้องต้น' : 'เวลาตามประเภทรถเป็นค่าเบื้องต้น'} ปรับตามเวลาหยิบสินค้าจริงได้ — ระบบจะกันท่าตามเวลานี้ และปฏิเสธถ้าชนกับคิวถัดไปของท่าเดียวกัน
           </Typography>
         </Stack>
       </DialogContent>
@@ -125,8 +157,8 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit }: {
 }
 
 /** Change the dock time of a queue that is already approved. */
-export function DurationDialog({ booking, saving, onClose, onSubmit }: {
-  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void;
+export function DurationDialog({ booking, saving, onClose, onSubmit, itemMinutes }: {
+  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void; itemMinutes?: ItemMinutesRule;
 }) {
   const [minutes, setMinutes] = useState('');
   useEffect(() => { if (booking) setMinutes(String(minutesOf(booking))); }, [booking]);
@@ -139,7 +171,7 @@ export function DurationDialog({ booking, saving, onClose, onSubmit }: {
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           <Summary b={booking} />
-          <MinutesField booking={booking} value={minutes} onChange={setMinutes} />
+          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} />
         </Stack>
       </DialogContent>
       <DialogActions>

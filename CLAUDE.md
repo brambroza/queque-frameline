@@ -50,6 +50,14 @@ staff  — คลัง/หน้างาน: บันทึกการชำ
 driver — ไม่มี login: เข้าผ่านลิงก์ token ดู DO ของตัวเอง
 ```
 
+**Role ที่ admin สร้างเอง + เมนูต่อ role (2026-09-22, `202609220001_roles_menu_access`)**
+- `roles.access_level` (admin|staff) = ระดับสิทธิ์ API ที่ทุก route ตรวจ; `roles.menu_keys text[]` = เมนูที่เห็น (null = ทุกเมนูของระดับนั้น); `is_system` = admin/staff ลบ/เปลี่ยนระดับไม่ได้
+- `requireAuthContext().roles` คืน **ระดับ** (ไม่ใช่ code) — role ที่สร้างเอง เช่น `gate` ระดับ staff จะผ่าน guard `['admin','staff']` เหมือน staff; code ดิบอยู่ที่ `roleCodes`
+- Registry เมนู + กติกา pure: `src/lib/auth/menu-registry.ts` (`MENU_ITEMS`, `resolveMenuAccess`, `adminOnly` = reports/staff/line_settings/translations ที่ API เป็น admin เท่านั้น; role ระดับ admin ถูกบังคับให้มีเมนู `staff` เสมอ กันล็อกตัวเอง) — เพิ่มหน้าใหม่ = เพิ่ม entry ที่นี่ + icon ใน `portal-nav.tsx` + `requirePageAccess('<key>')` ใน page.tsx
+- กันเข้าหน้าตรง: ทุก `src/app/portal/*/page.tsx` เรียก `requirePageAccess(key)` (`src/lib/auth/page-roles.ts`) → ไม่มีสิทธิ์ redirect ไปเมนูแรกที่เปิดได้ / `/portal/no-access`; sidebar กรองจาก `AccessProvider` ที่ layout ส่งลงมา (ไม่ fetch, ไม่ flicker)
+- จัดการที่ `/portal/staff` แท็บ "สิทธิ์และเมนู" (`roles-crud.tsx`) → `/api/roles` (เขียนผ่าน service role เพราะ RLS `roles` เป็น select-only); พนักงาน 1 คน = 1 role (`setUserRole` soft-delete grant เก่า); เปลี่ยนสิทธิ์ตัวเอง/ลบตัวเองไม่ได้, ต้องเหลือ admin-level ≥ 1 คน; ลบพนักงานแล้ว revoke `user_roles` ด้วย
+- RLS `user_roles` เขียนได้เฉพาะ `has_access_level('admin')` (เดิมทุกคนในร้านเขียนได้ = self-grant admin ได้); `i18n_is_admin_or_owner()` ใช้ access_level แทน code
+
 - `requireAuthContext({ roles: ['admin'] })` สำหรับงานตั้งค่า/ยืนยัน · `['admin', 'staff']` สำหรับงานหน้างาน
 - ทั้งสอง role เห็นทั้ง site (`SHOP_WIDE_ROLES` ใน `src/lib/auth/branch-scope.ts`, `is_branch_bound()` คืน false)
 - สร้าง admin คนแรก: `node scripts/create-admin.mjs <email> <password> "ชื่อ" admin` · คนอื่น ๆ เชิญทางอีเมลจาก `/portal/staff` (`inviteUserByEmail` → ลิงก์ไป `/auth/callback` → `/set-password`); ไม่มีหน้าสมัครเอง
@@ -85,7 +93,8 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 | `external_documents` | **SO / PO** | `doc_type` so\|po, `doc_no`, `branch_id` (สาขาที่รับ-ส่ง), `partner_id`, `items jsonb`, `status`, `source` api\|csv\|manual, `booking_token_hash`, `raw` |
 | `bookings` | **คิว** | `direction`, `document_id`, `service_id` (ประเภทรถ), `resource_id` (ท่า), `plate_number`, `plate_number_actual`, `driver_*`, `receiver_*`, `booking_source`, `confirmed_*`, `arrived_at`, `grace_deadline`, `called_*`, `serving_started_at`, `completed_at`, `auto_called`, `driver_token_hash`, `do_number`, `do_issued_*` |
 | `booking_logs` | **audit log** ของคิว | `action`, `from_value`, `to_value`, `actor_kind` admin\|staff\|customer\|driver\|system |
-| `site_settings` | ตั้งค่าของ site (1 แถว) | `grace_minutes`, `early_arrival_minutes`, `auto_call_mode`, `called_timeout_minutes`, `auto_no_show_after_grace`, `booking_token_ttl_days`, `driver_token_ttl_days`, `booking_lead_min_hours`, `booking_horizon_days`, `require_admin_confirm`, `driver_self_checkin`, `do_number_format`, `auto_call_last_run_at` |
+| `site_settings` | ตั้งค่าของ site (1 แถว) | `grace_minutes`, `early_arrival_minutes`, `auto_call_mode`, `called_timeout_minutes`, `auto_no_show_after_grace`, `booking_token_ttl_days`, `driver_token_ttl_days`, `booking_lead_min_hours`, `booking_horizon_days`, `require_admin_confirm`, `driver_self_checkin`, `do_number_format`, `item_minutes_enabled`, `minutes_per_item`, `auto_call_last_run_at` |
+| `roles` / `user_roles` | สิทธิ์ (admin สร้างเพิ่มได้) | `code`, `name`, `access_level` admin\|staff, `menu_keys text[]` (null = ทุกเมนูของระดับ), `is_system`, `sort_order`; user 1 คน = 1 grant ต่อ shop |
 | `api_keys` | key สำหรับ ERP push SO/PO | `key_hash` (sha256), `key_prefix`, `scopes` |
 | `do_counters` + `next_do_number(shop_id, format)` | เลข DO ไม่ซ้ำ/ไม่ข้าม ต่อเดือน | format `DO-{YYYYMM}-{NNNN}` |
 
@@ -116,7 +125,7 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - `get_available_days(..., p_not_before)` — ปฏิทิน "เฉพาะวันว่าง" (ตัด slot ที่ผ่านแล้ว / ไม่ถึง lead time)
 - `create_dock_booking(...)` (service role เท่านั้น) — advisory lock ต่อ shop+วัน, ตรวจ slot ซ้ำ, เลือกท่า (ท่าเฉพาะขาก่อนท่าร่วม), ออกเลขคิว `R-nnn`/`S-nnn`, stamp `grace_deadline`, ออก DO ถ้าสร้างเป็น confirmed
 - `confirm_dock_booking` (status + DO ใน statement เดียว), `move_dock_booking` (ย้ายข้ามวัน = ออกเลขคิวใหม่ของวันปลายทาง)
-- **กันคิวซ้อน (2026-09-21, `202609210002_dock_overlap_guard`)** — กฎ: ห้ามซ้อนเฉพาะ **ท่าเดียวกัน** (`start .. end + buffer`); คนละท่าเวลาซ้อนได้ แม้ลูกค้าเดียวกัน บังคับ 2 ชั้น: `confirm_dock_booking` ถือ day lock + ตรวจ `is_dock_free` ทุกครั้งที่อนุมัติ และ trigger `bookings_dock_overlap_guard` กันทุก write ที่วาง/ย้ายคิวลงท่า (insert, เปลี่ยนท่า/วัน/เวลา/buffer, คิวปิดหรือลบแล้วกลับมา) — เดินสถานะปกติไม่ถูกตรวจ; error `dock_conflict` → 409 (`dockErrorResponse`); smoke test `supabase/tests/dock_overlap_guard.sql` (rollback ท้ายไฟล์)
+- **กันคิวซ้อน (2026-09-21, `202609210002_dock_overlap_guard`)** — กฎ: ห้ามซ้อนเฉพาะ **ท่าเดียวกัน** (`start .. end + buffer`); คนละท่าเวลาซ้อนได้ แม้ลูกค้าเดียวกัน บังคับ 2 ชั้น: `confirm_dock_booking` ถือ day lock + ตรวจ `is_dock_free` ทุกครั้งที่อนุมัติ และ trigger `bookings_dock_overlap_guard` กันทุก write ที่วาง/ย้ายคิวลงท่า (insert, เปลี่ยนท่า/วัน/เวลา/buffer, คิวปิดหรือลบแล้วกลับมา) — เดินสถานะปกติไม่ถูกตรวจ; error `dock_conflict` → 409 (`dockErrorResponse`); smoke test `supabase/tests/dock_overlap_guard.sql` + `dock_overlap_multibranch.sql` (หลายสาขา ผ่าน RPC จริง; ทั้งคู่ rollback ท้ายไฟล์ รันกับ DB จริงได้)
 - RPC เก่าของ Queue (`get_available_slots`, `get_slot_availability`) ยังอยู่ใน DB แต่ไม่มีโค้ดเรียกแล้ว
 - `src/lib/booking/slot-time.ts` — `isSlotPast`, Bangkok clock; server เป็นคนใส่ `is_past` เสมอ
 
@@ -130,6 +139,7 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - ฝั่งลูกค้าเห็นแค่ `payment.pending` (ไม่เห็นเลขอ้างอิง/หมายเหตุ) → แถบ "รอชำระเงิน" + Flex LINE; ไม่มีจ่ายออนไลน์/แนบสลิป
 - **Staff อนุมัติคิวได้** (`ADMIN_ONLY` ว่าง) — สิ่งที่คุม DO คือ payment gate ไม่ใช่ role
 - `bookings.service_minutes` = เวลาที่ท่าของคิวนั้น (ค่าตั้งต้นจากประเภทรถ, snapshot ตอน insert) ปรับได้ตอนอนุมัติ (`p_service_minutes`) หรือภายหลัง `PATCH /api/bookings/[id]/duration` → `set_booking_service_minutes`; ชนคิวถัดไปของท่าเดียวกัน/ข้ามวัน = `duration_conflict`; **ไม่บังคับ**เวลาปิด/พักเที่ยง (คลังตัดสินใจเอง); `move_dock_booking` ใช้ `service_minutes` ของคิว
+- **เวลาแนะนำตามรายการสินค้า (2026-09-21, `202609210003_item_based_minutes`)** — ตอนอนุมัติ ถ้าเอกสารมีรายการ (`external_documents.item_count`, generated จาก `items`) ค่าเริ่มต้นใน `ApproveDialog` = จำนวนรายการ × `site_settings.minutes_per_item` (default 10, **ไม่นับจำนวนชิ้น**, ทุกเที่ยวของเอกสารเดียวกันคิดเต็ม); ไม่มีรายการ / ปิด `item_minutes_enabled` = เวลารถตามเดิม; ถ้าเวลาของคิวถูกปรับมือไปแล้วจะไม่ทับ; กติกา pure อยู่ `src/lib/booking/suggest-minutes.ts` (vitest); เป็น **ค่าแนะนำตอนอนุมัติเท่านั้น** — slot grid / `create_dock_booking` ยังใช้เวลารถ (ช่วง pending ท่าถูกกันตามเวลารถ อาจเจอ `dock_conflict`/`duration_conflict` ตอนอนุมัติ); ตั้งค่าที่ `/portal/site-settings` section "เวลาตามรายการสินค้า"
 - ยกเลิกจาก portal ต้องมี `cancel_reason` ≥ 3 ตัวอักษร (`bookingStatusPatchSchema`) — ลูกค้าเห็นเหตุผลในหน้าลิงก์
 - UI รวมอยู่ที่ `src/components/bookings/booking-action-dialogs.tsx` (`ApproveDialog`, `DurationDialog`, `CancelDialog`, `PaymentDialog`, `PaymentChip`)
 

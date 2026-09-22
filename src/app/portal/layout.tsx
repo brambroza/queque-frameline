@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PortalFrame } from '@/components/layout/portal-frame';
+import { getPageRoles } from '@/lib/auth/page-roles';
 
 type ShellShop = { id: string; name: string | null; logo_url: string | null };
 
@@ -42,6 +43,7 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || 'v0.1.0';
+  const { access } = await getPageRoles();
 
   return (
     <PortalFrame
@@ -50,6 +52,7 @@ export default async function PortalLayout({ children }: { children: React.React
       fullName={profile?.full_name}
       email={user.email}
       appVersion={appVersion}
+      access={access}
     >
       {children}
     </PortalFrame>

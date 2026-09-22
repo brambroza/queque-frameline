@@ -14,6 +14,7 @@ import { BookingMoveDialog, type MoveDraft } from '@/components/bookings/booking
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
 import { ApproveDialog, CancelDialog, DurationDialog, PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
+import type { ItemMinutesRule } from '@/lib/booking/suggest-minutes';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -70,6 +71,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [resources, setResources] = useState<Dock[]>([]);
   const [siteName, setSiteName] = useState('Fameline');
+  const [itemMinutes, setItemMinutes] = useState<ItemMinutesRule | undefined>(undefined);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -132,17 +134,20 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     (async () => {
       try {
-        const [sRes, rRes, shopRes] = await Promise.all([
+        const [sRes, rRes, shopRes, siteRes] = await Promise.all([
           fetch('/api/services?page_size=200', { cache: 'no-store' }),
           fetch('/api/resources?page_size=500', { cache: 'no-store' }),
           fetch('/api/shop-profile', { cache: 'no-store' }),
+          fetch('/api/site-settings', { cache: 'no-store' }),
         ]);
-        const [sv, r, shop] = (await Promise.all([sRes.json(), rRes.json(), shopRes.json()])) as [
+        const [sv, r, shop, site] = (await Promise.all([sRes.json(), rRes.json(), shopRes.json(), siteRes.json()])) as [
           { data?: VehicleType[] }, { data?: Dock[] }, { data?: { name?: string | null } },
+          { data?: { item_minutes_enabled?: boolean; minutes_per_item?: number } },
         ];
         setVehicleTypes(sv.data ?? []);
         setResources((r.data ?? []).filter((d) => d.resource_type === 'dock'));
         if (shop.data?.name) setSiteName(shop.data.name);
+        if (site.data) setItemMinutes({ enabled: site.data.item_minutes_enabled ?? false, minutesPerItem: site.data.minutes_per_item ?? 10 });
       } catch {
         // Reference data only feeds dropdowns; the list still renders without it.
       }
@@ -317,9 +322,9 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         onChanged={() => { setEditTarget(null); reload(); }}
       />
 
-      <ApproveDialog booking={approveTarget} saving={saving} onClose={() => setApproveTarget(null)} onSubmit={(b, m) => void updateStatus(b, 'confirmed', { service_minutes: m })} />
+      <ApproveDialog booking={approveTarget} saving={saving} onClose={() => setApproveTarget(null)} onSubmit={(b, m) => void updateStatus(b, 'confirmed', { service_minutes: m })} itemMinutes={itemMinutes} />
       <CancelDialog booking={cancelTarget} saving={saving} onClose={() => setCancelTarget(null)} onSubmit={(b, reason) => void updateStatus(b, 'cancelled', { cancel_reason: reason })} />
-      <DurationDialog booking={durationTarget} saving={saving} onClose={() => setDurationTarget(null)} onSubmit={(b, m) => void submitDuration(b, m)} />
+      <DurationDialog booking={durationTarget} saving={saving} onClose={() => setDurationTarget(null)} onSubmit={(b, m) => void submitDuration(b, m)} itemMinutes={itemMinutes} />
       <PaymentDialog
         target={paymentTarget}
         onClose={() => setPaymentTarget(null)}

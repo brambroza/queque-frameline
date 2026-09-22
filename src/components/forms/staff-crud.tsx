@@ -12,7 +12,8 @@ import { useTranslation } from '@/lib/i18n/useTranslation';
 
 type RefUser = { id: string; full_name: string | null; email: string | null; phone: string | null };
 type RefBranch = { id: string; branch_name: string };
-type StaffRow = { id: string; user_id: string; display_name: string; active: boolean; branches: Array<{ id: string; branch_name: string }> };
+type RefRole = { id: string; code: string; name: string; access_level: 'admin' | 'staff' };
+type StaffRow = { id: string; user_id: string; display_name: string; active: boolean; branches: Array<{ id: string; branch_name: string }>; role: { code: string; name: string; access_level: string } | null };
 
 /** 'existing' picks an account already in the shop; 'invite' creates a new login. */
 type StaffMode = 'existing' | 'invite';
@@ -22,7 +23,8 @@ type FormState = {
   mode: StaffMode;
   user_id: string;
   email: string;
-  role: 'admin' | 'staff';
+  /** Role code from /api/roles; '' = keep the current one. */
+  role: string;
   display_name: string;
   active: boolean;
   branch_ids: string[];
@@ -46,6 +48,7 @@ export function StaffCrud() {
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [users, setUsers] = useState<RefUser[]>([]);
   const [branches, setBranches] = useState<RefBranch[]>([]);
+  const [roles, setRoles] = useState<RefRole[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
@@ -64,6 +67,7 @@ export function StaffCrud() {
     setRows(json.data ?? []);
     setUsers(json.refs?.users ?? []);
     setBranches(json.refs?.branches ?? []);
+    setRoles(json.refs?.roles ?? []);
   }
 
   useEffect(() => { void load(); }, []);
@@ -82,6 +86,7 @@ export function StaffCrud() {
       id: row.id,
       mode: 'existing',
       user_id: row.user_id,
+      role: row.role?.code ?? '',
       display_name: row.display_name,
       active: row.active,
       branch_ids: row.branches.map((b) => b.id),
@@ -108,7 +113,8 @@ export function StaffCrud() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: form.id,
-        ...(invitingNew ? { email: form.email.trim(), role: form.role } : { user_id: form.user_id }),
+        ...(invitingNew ? { email: form.email.trim() } : { user_id: form.user_id }),
+        ...(form.role ? { role: form.role } : {}),
         display_name: form.display_name,
         active: form.active,
         branch_ids: form.branch_ids,
@@ -181,11 +187,12 @@ export function StaffCrud() {
                 title={r.display_name}
                 subtitle={user?.email ?? user?.full_name ?? r.user_id}
                 status={{ active: r.active, activeLabel: t('active', 'ใช้งานอยู่'), inactiveLabel: t('inactive', 'ปิดใช้งาน') }}
-                tags={
-                  r.branches.length > 0
+                tags={<>
+                  <Chip size="small" color={r.role ? 'primary' : 'warning'} variant="outlined" label={r.role?.name ?? t('no_role', 'ยังไม่มีสิทธิ์')} />
+                  {r.branches.length > 0
                     ? r.branches.map((b) => <Chip key={b.id} size="small" variant="outlined" icon={<StorefrontRoundedIcon />} label={b.branch_name} />)
-                    : <Chip size="small" variant="outlined" label={t('no_branch', 'ยังไม่ระบุสาขา')} />
-                }
+                    : <Chip size="small" variant="outlined" label={t('no_branch', 'ยังไม่ระบุสาขา')} />}
+                </>}
                 onEdit={() => openEdit(r)}
                 onDelete={() => void onDelete(r)}
                 editLabel={t('edit', 'แก้ไข')}
@@ -202,6 +209,7 @@ export function StaffCrud() {
             <tr>
               <th className="px-3 py-2 text-left">{t('col_name', 'ชื่อ-สกุล')}</th>
               <th className="px-3 py-2 text-left">{t('col_user', 'รหัสเข้าใช้งาน')}</th>
+              <th className="px-3 py-2 text-left">{t('role', 'สิทธิ์')}</th>
               <th className="px-3 py-2 text-left">{t('col_branches', 'สาขา')}</th>
               <th className="px-3 py-2 text-left">{t('col_status', 'สถานะ')}</th>
               <th className="px-3 py-2 text-left">{t('col_actions', 'จัดการ')}</th>
@@ -209,13 +217,14 @@ export function StaffCrud() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td className="px-3 py-4 text-slate-500" colSpan={5}>{t('empty', 'ยังไม่มีพนักงาน')}</td></tr>
+              <tr><td className="px-3 py-4 text-slate-500" colSpan={6}>{t('empty', 'ยังไม่มีพนักงาน')}</td></tr>
             ) : pagedRows.map((r) => {
               const user = users.find((u) => u.id === r.user_id);
               return (
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{r.display_name}</td>
                   <td className="px-3 py-2">{user?.email ?? user?.full_name ?? r.user_id}</td>
+                  <td className="px-3 py-2">{r.role?.name ?? <span className="text-amber-700">{t('no_role', 'ยังไม่มีสิทธิ์')}</span>}</td>
                   <td className="px-3 py-2">{r.branches.map((b) => b.branch_name).join(', ') || '-'}</td>
                   <td className="px-3 py-2">{r.active ? t('active', 'ใช้งานอยู่') : t('inactive', 'ปิดใช้งาน')}</td>
                   <td className="px-3 py-2 flex gap-2">
@@ -286,17 +295,6 @@ export function StaffCrud() {
                         required
                       />
                     </label>
-                    <label className="text-sm">
-                      <span className="mb-1 block text-slate-600">{t('role', 'สิทธิ์')}</span>
-                      <select
-                        className="input"
-                        value={form.role}
-                        onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as FormState['role'] }))}
-                      >
-                        <option value="staff">{t('role_staff', 'พนักงาน')}</option>
-                        <option value="admin">{t('role_admin', 'ผู้ดูแลระบบ')}</option>
-                      </select>
-                    </label>
                   </>
                 ) : (
                   <label className="text-sm">
@@ -322,6 +320,22 @@ export function StaffCrud() {
                     </select>
                   </label>
                 )}
+
+                <label className="text-sm">
+                  <span className="mb-1 block text-slate-600">{t('role', 'สิทธิ์')}</span>
+                  <select
+                    className="input"
+                    value={form.role}
+                    onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))}
+                    required={!editing}
+                  >
+                    <option value="">{editing ? t('role_keep', 'คงสิทธิ์เดิม') : t('pick_role', 'เลือกสิทธิ์')}</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.code}>{r.name} · {r.access_level === 'admin' ? t('role_admin', 'ผู้ดูแลระบบ') : t('role_staff', 'พนักงาน')}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block text-xs text-slate-500">{t('role_hint', 'กำหนดเมนูของแต่ละสิทธิ์ได้ที่แท็บ “สิทธิ์และเมนู” — เปลี่ยนสิทธิ์ตัวเองไม่ได้')}</span>
+                </label>
 
                 <label className="text-sm">
                   <span className="mb-1 block text-slate-600">{t('display_name', 'ชื่อแสดงผล')}</span>

@@ -1,7 +1,7 @@
 import { VehicleTypesCrud } from '@/components/forms/vehicle-types-crud';
-import { getPageRoles } from '@/lib/auth/page-roles';
+import { requirePageAccess } from '@/lib/auth/page-roles';
 
 export default async function VehicleTypesPage() {
-  const { isAdmin } = await getPageRoles();
+  const { isAdmin } = await requirePageAccess('vehicle_types');
   return <VehicleTypesCrud isAdmin={isAdmin} />;
 }

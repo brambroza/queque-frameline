@@ -1,7 +1,9 @@
+import { requirePageAccess } from '@/lib/auth/page-roles';
 import { PageShell } from '@/components/ui/page-shell';
 
 /** Where to find the yard TV page. */
-export default function QueueDisplayPage() {
+export default async function QueueDisplayPage() {
+  await requirePageAccess('queue_display');
   const base = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
   const needsKey = Boolean(process.env.DISPLAY_KEY);
   return (

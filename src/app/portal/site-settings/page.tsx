@@ -1,7 +1,7 @@
 import { SiteSettingsForm } from '@/components/forms/site-settings-form';
-import { getPageRoles } from '@/lib/auth/page-roles';
+import { requirePageAccess } from '@/lib/auth/page-roles';
 
 export default async function SiteSettingsPage() {
-  const { isAdmin } = await getPageRoles();
+  const { isAdmin } = await requirePageAccess('site_settings');
   return <SiteSettingsForm isAdmin={isAdmin} />;
 }

@@ -4,9 +4,10 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { writeAuditLog } from '@/lib/audit/activity-log';
+import { ROLE_SELECT, countOtherAdmins, findRoleByCode, revokeUserRoles, rolesOfUser, setUserRole, type RoleDef } from '@/lib/auth/role-grants';
 
-/** Roles a shop owner may hand out from the staff screen. Never shop_owner or super_admin. */
-const ASSIGNABLE_ROLES = ['admin', 'staff'] as const;
+/** Role codes come from the admin-managed `roles` table (see /api/roles). */
+const roleCodeSchema = z.string().trim().regex(/^[a-z][a-z0-9_]{1,31}$/);
 
 /**
  * Managing staff and their branch assignments is owner-level: a branch_manager who
@@ -19,7 +20,7 @@ const staffSchema = z
     /** Existing auth user to attach. Omit and pass `email` to invite a new one. */
     user_id: z.string().uuid().optional(),
     email: z.string().email().optional(),
-    role: z.enum(ASSIGNABLE_ROLES).optional(),
+    role: roleCodeSchema.optional(),
     display_name: z.string().min(2),
     active: z.boolean().default(true),
     branch_ids: z.array(z.string().uuid()).default([]),
@@ -40,20 +41,12 @@ const staffSchema = z
 async function provisionStaffUser(input: {
   email: string;
   displayName: string;
-  role: (typeof ASSIGNABLE_ROLES)[number];
+  role: RoleDef;
   companyId: string;
   shopId: string;
   actorId: string;
 }): Promise<string> {
   const admin = createAdminClient();
-
-  const { data: roleRow, error: roleError } = await admin
-    .from('roles')
-    .select('id')
-    .eq('code', input.role)
-    .eq('is_deleted', false)
-    .single();
-  if (roleError || !roleRow) throw new Error(`Role ${input.role} not found in seed data`);
 
   // The email link lands on /auth/callback, which turns the code into a session and opens /set-password.
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
@@ -82,28 +75,31 @@ async function provisionStaffUser(input: {
   });
   if (profileError) throw profileError;
 
-  const { data: existingRole } = await admin
-    .from('user_roles')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('role_id', roleRow.id)
-    .eq('shop_id', input.shopId)
-    .eq('is_deleted', false)
-    .maybeSingle();
-
-  if (!existingRole) {
-    const { error: roleInsertError } = await admin.from('user_roles').insert({
-      user_id: userId,
-      role_id: roleRow.id,
-      company_id: input.companyId,
-      shop_id: input.shopId,
-      created_by: input.actorId,
-      updated_by: input.actorId,
-    });
-    if (roleInsertError) throw roleInsertError;
-  }
+  await setUserRole(admin, { userId, roleId: input.role.id, shopId: input.shopId, companyId: input.companyId, actorId: input.actorId });
 
   return userId;
+}
+
+/**
+ * Give a member a (different) role. Refuses to change the caller's own role and
+ * to demote the last admin-level user, so the site can never lock itself out.
+ */
+async function changeMemberRole(input: {
+  targetUserId: string;
+  role: RoleDef;
+  actorId: string;
+  shopId: string;
+  companyId: string;
+}): Promise<NextResponse | null> {
+  const admin = createAdminClient();
+  if (input.targetUserId === input.actorId) return NextResponse.json({ error: 'เปลี่ยนสิทธิ์ของตัวเองไม่ได้ — ให้ผู้ดูแลระบบคนอื่นทำ' }, { status: 400 });
+  const current = await rolesOfUser(admin, input.targetUserId, input.shopId);
+  const wasAdmin = current.some((r) => r.access_level === 'admin');
+  if (wasAdmin && input.role.access_level !== 'admin' && (await countOtherAdmins(admin, input.shopId, input.targetUserId)) === 0) {
+    return NextResponse.json({ error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' }, { status: 400 });
+  }
+  await setUserRole(admin, { userId: input.targetUserId, roleId: input.role.id, shopId: input.shopId, companyId: input.companyId, actorId: input.actorId });
+  return null;
 }
 
 /** auth.users is not queryable directly, so page through the admin listing. */
@@ -165,8 +161,9 @@ export async function GET(req: Request) {
     if (error) throw error;
 
     const staffIds = (staffs ?? []).map((s) => s.id);
+    const userIds = (staffs ?? []).map((s) => s.user_id as string);
 
-    const [branchMapRes, usersRes, branchesRes] = await Promise.all([
+    const [branchMapRes, usersRes, branchesRes, rolesRes, grantsRes] = await Promise.all([
       staffIds.length
         ? supabase
             .from('staff_branches')
@@ -191,11 +188,23 @@ export async function GET(req: Request) {
         null,
         'id',
       ).order('created_at', { ascending: false }),
+      supabase.from('roles').select(ROLE_SELECT).eq('is_deleted', false).order('sort_order').order('created_at'),
+      userIds.length
+        ? supabase.from('user_roles').select('user_id, roles!inner(code,name,access_level,is_deleted)').eq('shop_id', profile.shop_id).eq('is_deleted', false).eq('roles.is_deleted', false).in('user_id', userIds)
+        : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (branchMapRes.error) throw branchMapRes.error;
     if (usersRes.error) throw usersRes.error;
     if (branchesRes.error) throw branchesRes.error;
+    if (rolesRes.error) throw rolesRes.error;
+    if (grantsRes.error) throw grantsRes.error;
+
+    const roleByUser = new Map<string, { code: string; name: string; access_level: string }>();
+    (grantsRes.data ?? []).forEach((g) => {
+      const r = (g as unknown as { user_id: string; roles: { code: string; name: string; access_level: string } | null }).roles;
+      if (r) roleByUser.set((g as { user_id: string }).user_id, r);
+    });
 
     const grouped = new Map<string, Array<{ id: string; branch_name: string }>>();
     (branchMapRes.data ?? []).forEach((r) => {
@@ -205,13 +214,14 @@ export async function GET(req: Request) {
       grouped.set(r.staff_id, arr);
     });
 
-    const rows = (staffs ?? []).map((s) => ({ ...s, branches: grouped.get(s.id) ?? [] }));
+    const rows = (staffs ?? []).map((s) => ({ ...s, branches: grouped.get(s.id) ?? [], role: roleByUser.get(s.user_id as string) ?? null }));
 
     return NextResponse.json({
       data: rows,
       refs: {
         users: usersRes.data ?? [],
         branches: branchesRes.data ?? [],
+        roles: rolesRes.data ?? [],
       },
       pagination: { page, page_size: pageSize, total: count ?? 0 },
     });
@@ -230,16 +240,27 @@ export async function POST(req: Request) {
     }
 
     const payload = parsed.data;
-    const staffUserId = payload.user_id
-      ? payload.user_id
-      : await provisionStaffUser({
-          email: payload.email!,
-          displayName: payload.display_name,
-          role: payload.role ?? 'staff',
-          companyId: profile.company_id,
-          shopId: profile.shop_id,
-          actorId: user.id,
-        });
+    const role = await findRoleByCode(createAdminClient(), payload.role ?? 'staff');
+    if (!role) return NextResponse.json({ error: 'ไม่พบสิทธิ์ที่เลือก' }, { status: 400 });
+
+    let staffUserId: string;
+    if (payload.user_id) {
+      staffUserId = payload.user_id;
+      // Attaching an existing account: the picked role replaces whatever it had.
+      if (payload.role) {
+        const denied = await changeMemberRole({ targetUserId: staffUserId, role, actorId: user.id, shopId: profile.shop_id, companyId: profile.company_id });
+        if (denied) return denied;
+      }
+    } else {
+      staffUserId = await provisionStaffUser({
+        email: payload.email!,
+        displayName: payload.display_name,
+        role,
+        companyId: profile.company_id,
+        shopId: profile.shop_id,
+        actorId: user.id,
+      });
+    }
 
     const { data: existed } = await supabase
       .from('staff')
@@ -292,6 +313,15 @@ export async function PATCH(req: Request) {
 
     const payload = parsed.data;
 
+    if (payload.role) {
+      const { data: target } = await supabase.from('staff').select('user_id').eq('id', id).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
+      if (!target) return NextResponse.json({ error: 'ไม่พบพนักงาน' }, { status: 404 });
+      const role = await findRoleByCode(createAdminClient(), payload.role);
+      if (!role) return NextResponse.json({ error: 'ไม่พบสิทธิ์ที่เลือก' }, { status: 400 });
+      const denied = await changeMemberRole({ targetUserId: target.user_id as string, role, actorId: user.id, shopId: profile.shop_id, companyId: profile.company_id });
+      if (denied) return denied;
+    }
+
     const { error } = await supabase
       .from('staff')
       .update({
@@ -327,12 +357,25 @@ export async function DELETE(req: Request) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
+    const { data: target } = await supabase.from('staff').select('user_id').eq('id', id).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
+    if (!target) return NextResponse.json({ error: 'ไม่พบพนักงาน' }, { status: 404 });
+    const targetUserId = target.user_id as string;
+    if (targetUserId === user.id) return NextResponse.json({ error: 'ลบบัญชีของตัวเองไม่ได้' }, { status: 400 });
+    const admin = createAdminClient();
+    const wasAdmin = (await rolesOfUser(admin, targetUserId, profile.shop_id)).some((r) => r.access_level === 'admin');
+    if (wasAdmin && (await countOtherAdmins(admin, profile.shop_id, targetUserId)) === 0) {
+      return NextResponse.json({ error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' }, { status: 400 });
+    }
+
     const { error } = await supabase
       .from('staff')
       .update({ is_deleted: true, active: false, updated_by: user.id })
       .eq('id', id)
       .eq('shop_id', profile.shop_id);
     if (error) throw error;
+
+    // Removing a member also ends their login rights; before this the grant lingered.
+    await revokeUserRoles(admin, { userId: targetUserId, shopId: profile.shop_id, actorId: user.id });
 
     await supabase
       .from('staff_branches')
@@ -348,7 +391,7 @@ export async function DELETE(req: Request) {
       action: 'data_deleted',
       targetTable: 'staff',
       targetId: id,
-      payload: { soft_delete: true, cascade_soft_delete: ['staff_branches'] },
+      payload: { soft_delete: true, cascade_soft_delete: ['staff_branches', 'user_roles'] },
     });
 
     return NextResponse.json({ data: true });

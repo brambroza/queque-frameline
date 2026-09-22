@@ -1,7 +1,7 @@
 import { PartnersCrud } from '@/components/forms/partners-crud';
-import { getPageRoles } from '@/lib/auth/page-roles';
+import { requirePageAccess } from '@/lib/auth/page-roles';
 
 export default async function PartnersPage() {
-  const { isAdmin } = await getPageRoles();
+  const { isAdmin } = await requirePageAccess('partners');
   return <PartnersCrud isAdmin={isAdmin} />;
 }

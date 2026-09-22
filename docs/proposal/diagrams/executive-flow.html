@@ -1,0 +1,209 @@
+<title>เส้นทางคิว Fameline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@500;600;700&family=Sarabun:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#F8FAF8; --surface:#FFFFFF; --lane:#EFF4F0; --ink:#1B2A24; --muted:#56675F; --rule:#CBD5D0;
+  --brand:#0B7A4B; --brand-soft:#E3F3EA; --badge:#F2B01E; --badge-ink:#3A2A00; --warn:#B45309; --warn-soft:#FDF1E1; --line:#06A94A;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1512; --surface:#18231E; --lane:#131C18; --ink:#E6EEE9; --muted:#9DB0A7; --rule:#2F3E36;
+    --brand:#4CC38A; --brand-soft:#15382A; --badge:#F2B01E; --badge-ink:#3A2A00; --warn:#F0A44B; --warn-soft:#3A2A14; --line:#06A94A;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1512; --surface:#18231E; --lane:#131C18; --ink:#E6EEE9; --muted:#9DB0A7; --rule:#2F3E36;
+  --brand:#4CC38A; --brand-soft:#15382A; --badge:#F2B01E; --badge-ink:#3A2A00; --warn:#F0A44B; --warn-soft:#3A2A14; --line:#06A94A;
+}
+body{background:var(--ground);color:var(--ink);font-family:"Sarabun","IBM Plex Sans Thai","Tahoma",sans-serif;font-size:17px;line-height:1.65}
+.wrap{max-width:1480px;margin-inline:auto;padding-inline:clamp(16px,3.5vw,48px);padding-block:40px 56px;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:"IBM Plex Sans Thai","Sarabun","Tahoma",sans-serif;text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(28px,3.4vw,40px);font-weight:700}
+h2{font-size:24px;font-weight:700}
+h3{font-size:18px;font-weight:600}
+p{margin:0}
+.eyebrow{font-size:14px;font-weight:600;letter-spacing:.04em;color:var(--brand)}
+header{display:flex;flex-direction:column;gap:12px}
+.lede{max-width:64ch;font-size:19px;color:var(--muted)}
+.lede strong{color:var(--ink);font-weight:600}
+section{display:flex;flex-direction:column;gap:20px}
+.sec-head{display:flex;flex-direction:column;gap:4px}
+.sec-head p{color:var(--muted);max-width:70ch}
+figure{margin:0;display:flex;flex-direction:column;gap:12px;min-width:0}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+.scroll svg{display:block;width:100%;height:auto;font-family:"Sarabun","IBM Plex Sans Thai","Tahoma",sans-serif}
+#fig1 svg{min-width:1180px}
+#fig2 svg{min-width:720px}
+figcaption{font-size:15px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center}
+.key{display:inline-flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:24px;height:16px;border-radius:4px;border:1.5px solid var(--ink);background:var(--surface)}
+.sw.sys{border-color:var(--brand);background:var(--brand-soft)}
+.sw.alt{border-style:dashed;border-color:var(--muted)}
+.sw.line{border:0;background:var(--line);width:34px;border-radius:9px;color:#fff;font-size:10px;font-weight:700;text-align:center;line-height:16px}
+.day{display:flex;gap:40px;align-items:flex-start}
+.day figure{flex:0 1 60.6%}
+.day aside{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:18px}
+.exc{display:flex;flex-direction:column;gap:6px;padding-top:14px;border-top:1px solid var(--rule)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:15px}
+.chip{padding:2px 12px;border-radius:14px;border:1px solid var(--rule);background:var(--surface);font-weight:600;white-space:nowrap}
+.chip.bad{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+.chip.ok{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+.arr{color:var(--muted);white-space:nowrap}
+.exc p{font-size:15.5px;color:var(--muted)}
+.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 48px}
+.ctl{display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:2px solid var(--brand)}
+.ctl dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:16px}
+.ctl dt{color:var(--muted);font-weight:600}
+.ctl dd{margin:0}
+.note{color:var(--muted);max-width:75ch}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:16px}
+th,td{text-align:left;padding:10px 14px 10px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:14px;font-weight:600;color:var(--muted);letter-spacing:.03em}
+td.n{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap;color:var(--brand)}
+td.f{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;color:var(--muted)}
+footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);padding-top:16px}
+@media (max-width:1100px){.day{flex-direction:column}.day figure{flex:1 1 auto;width:100%}.controls{grid-template-columns:1fr}}
+:root.only-lanes header,:root.only-lanes #controls,:root.only-lanes #demo,:root.only-lanes footer,:root.only-lanes .day aside{display:none}
+:root.only-lanes .wrap{gap:32px;padding-block:24px}
+
+/* swimlane marks */
+.lane-a{fill:var(--surface)} .lane-b{fill:var(--lane)}
+.rail{fill:var(--rule)} .rail-sys{fill:var(--brand)}
+.rule{stroke:var(--rule);stroke-width:1}
+.lane{font-size:16px;font-weight:700;fill:var(--ink)} .lane2{font-size:13.5px;fill:var(--muted)}
+.box{fill:var(--surface);stroke:var(--ink);stroke-width:1.4}
+.sys{fill:var(--brand-soft);stroke:var(--brand);stroke-width:1.6}
+.alt{fill:var(--surface);stroke:var(--muted);stroke-width:1.4;stroke-dasharray:5 4}
+.gate{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.6}
+.t1{font-size:14.5px;font-weight:700;fill:var(--ink)} .t2{font-size:12.5px;fill:var(--muted)}
+.badge{fill:var(--badge)} .no{font-size:12.5px;font-weight:700;fill:var(--badge-ink)}
+.or-bg{fill:var(--surface);stroke:var(--muted);stroke-width:1} .or{font-size:11.5px;font-weight:600;fill:var(--muted)}
+.line-bg{fill:var(--line)} .line-tx{font-size:10px;font-weight:700;fill:#fff;letter-spacing:.04em}
+.link{fill:none;stroke:var(--ink);stroke-width:1.5}
+.link.dash{stroke:var(--muted);stroke-dasharray:5 4}
+.link.warn{stroke:var(--warn);stroke-dasharray:5 4}
+.mk{fill:var(--ink)} .mk-muted{fill:var(--muted)} .mk-warn{fill:var(--warn)}
+.edge{font-size:12.5px;font-weight:600;fill:var(--muted)} .warn-tx{fill:var(--warn)}
+.pill{fill:var(--lane);stroke:var(--rule);stroke-width:1} .st{font-size:13px;font-weight:600;fill:var(--brand)}
+</style>
+<script>if(/[?&]only=swimlane/.test(location.search))document.documentElement.classList.add('only-lanes');</script>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Fameline Dock Queue · ระบบคิวรับ-ส่งสินค้าหน้าคลัง</p>
+  <h1>เส้นทางของคิวหนึ่งคิว ตั้งแต่เอกสารเข้าจนรถออกจากท่า</h1>
+  <p class="lede">คน 4 กลุ่มทำงานต่อกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปหรือสมัครสมาชิก</strong> ใช้ลิงก์ที่ได้รับทาง LINE เท่านั้น ส่วนงานที่ต้องเฝ้า เช่น จัดท่า เรียกคิว แจ้งเตือน ระบบทำให้เอง</p>
+</header>
+
+<section id="before">
+  <div class="sec-head">
+    <h2>ก่อนวันนัด — จากเอกสารถึงใบ DO</h2>
+    <p>คิวได้เลข DO ก็ต่อเมื่อทีมคลังยืนยัน และ SO ใบนั้นผ่านด่านชำระเงินแล้วเท่านั้น</p>
+  </div>
+  <figure id="fig1">
+    <div class="scroll"><svg viewBox="0 0 1748 410" role="img" aria-label="ก่อนวันนัด: ทีมคลังนำเข้าเอกสารและส่งลิงก์ ลูกค้าจองคิว ระบบจองท่า ตรวจการชำระเงินของ SO แล้วทีมคลังยืนยันคิว ระบบออก DO และส่งลิงก์ให้คนขับ"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="ahd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-muted"/></marker><marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-warn"/></marker></defs><rect x="0" y="10" width="1748" height="112" class="lane-a"/><rect x="0" y="10" width="6" height="112" class="rail"/><text x="22" y="61.0" class="lane">ทีมคลัง (สำนักงาน)</text><text x="22" y="83.0" class="lane2">Admin / เจ้าหน้าที่</text><rect x="0" y="122" width="1748" height="112" class="lane-b"/><rect x="0" y="122" width="6" height="112" class="rail"/><text x="22" y="184.0" class="lane">ลูกค้า / Supplier</text><rect x="0" y="234" width="1748" height="112" class="lane-a"/><rect x="0" y="234" width="6" height="112" class="rail-sys"/><text x="22" y="285.0" class="lane">ระบบ</text><text x="22" y="307.0" class="lane2">อัตโนมัติ + LINE</text><line x1="0" y1="10" x2="1748" y2="10" class="rule"/><line x1="0" y1="346" x2="1748" y2="346" class="rule"/><line x1="164" y1="10" x2="164" y2="346" class="rule"/><path d="M335.0,66.0 H359.0" class="link" marker-end="url(#ah)"/><path d="M507.0,66.0 H520.0 V178.0 H531.0" class="link" marker-end="url(#ah)"/><path d="M679.0,178.0 H692.0 V290.0 H703.0" class="link" marker-end="url(#ah)"/><path d="M1195.0,66.0 H1219.0" class="link" marker-end="url(#ah)"/><path d="M1367.0,66.0 H1380.0 V290.0 H1391.0" class="link" marker-end="url(#ah)"/><path d="M1539.0,290.0 H1552.0 V178.0 H1563.0" class="link" marker-end="url(#ah)"/><path d="M851.0,290.0 H880.0" class="link" marker-end="url(#ah)"/><path d="M950.0,248.0 V66.0 H1047.0" class="link warn" marker-end="url(#ahw)"/><text x="960.0" y="183.0" class="edge warn-tx">SO ยังไม่ชำระ</text><path d="M1018.0,290.0 H1294.0 V101.0" class="link" marker-end="url(#ah)"/><text x="1156.0" y="280.0" text-anchor="middle" class="edge">ชำระแล้ว · เครดิต · หรือเป็น PO</text><polygon points="882.0,290.0 950.0,248.0 1018.0,290.0 950.0,332.0" class="gate"/><text x="950.0" y="288.0" text-anchor="middle" class="t1">ด่านชำระเงิน</text><text x="950.0" y="306.0" text-anchor="middle" class="t2">SO เคลียร์แล้ว?</text><rect x="189.0" y="33.0" width="146" height="66" rx="6" class="box"/><text x="262.0" y="62.0" text-anchor="middle" class="t1">นำเข้า SO / PO</text><text x="262.0" y="82.0" text-anchor="middle" class="t2">ไฟล์ CSV หรือกรอกเอง</text><circle cx="189.0" cy="33.0" r="12" class="badge"/><text x="189.0" y="37.5" text-anchor="middle" class="no">1</text><rect x="361.0" y="33.0" width="146" height="66" rx="6" class="box"/><text x="434.0" y="62.0" text-anchor="middle" class="t1">ส่งลิงก์จอง / QR</text><text x="434.0" y="82.0" text-anchor="middle" class="t2">ทาง LINE หรือคัดลอก</text><circle cx="361.0" cy="33.0" r="12" class="badge"/><text x="361.0" y="37.5" text-anchor="middle" class="no">2</text><rect x="465.0" y="24.0" width="36" height="18" rx="9" class="line-bg"/><text x="483.0" y="37.0" text-anchor="middle" class="line-tx">LINE</text><rect x="533.0" y="145.0" width="146" height="66" rx="6" class="box"/><text x="606.0" y="174.0" text-anchor="middle" class="t1">จองคิวจากมือถือ</text><text x="606.0" y="194.0" text-anchor="middle" class="t2">เลือกรถ วัน เวลาที่ว่าง</text><circle cx="533.0" cy="145.0" r="12" class="badge"/><text x="533.0" y="149.5" text-anchor="middle" class="no">3</text><rect x="705.0" y="257.0" width="146" height="66" rx="6" class="sys"/><text x="778.0" y="286.0" text-anchor="middle" class="t1">จองท่า + ออกเลขคิว</text><text x="778.0" y="306.0" text-anchor="middle" class="t2">กันเวลาซ้อนท่าเดียวกัน</text><circle cx="705.0" cy="257.0" r="12" class="badge"/><text x="705.0" y="261.5" text-anchor="middle" class="no">4</text><rect x="809.0" y="248.0" width="36" height="18" rx="9" class="line-bg"/><text x="827.0" y="261.0" text-anchor="middle" class="line-tx">LINE</text><rect x="1049.0" y="33.0" width="146" height="66" rx="6" class="box"/><text x="1122.0" y="62.0" text-anchor="middle" class="t1">บันทึกการชำระเงิน</text><text x="1122.0" y="82.0" text-anchor="middle" class="t2">ชำระแล้ว หรือ เครดิต</text><circle cx="1049.0" cy="33.0" r="12" class="badge"/><text x="1049.0" y="37.5" text-anchor="middle" class="no">5</text><rect x="1153.0" y="24.0" width="36" height="18" rx="9" class="line-bg"/><text x="1171.0" y="37.0" text-anchor="middle" class="line-tx">LINE</text><rect x="1221.0" y="33.0" width="146" height="66" rx="6" class="box"/><text x="1294.0" y="62.0" text-anchor="middle" class="t1">ยืนยันคิว</text><text x="1294.0" y="82.0" text-anchor="middle" class="t2">ระบบออกเลข DO</text><circle cx="1221.0" cy="33.0" r="12" class="badge"/><text x="1221.0" y="37.5" text-anchor="middle" class="no">6</text><rect x="1393.0" y="257.0" width="146" height="66" rx="6" class="sys"/><text x="1466.0" y="286.0" text-anchor="middle" class="t1">ส่ง DO ทาง LINE</text><text x="1466.0" y="306.0" text-anchor="middle" class="t2">พร้อมลิงก์สำหรับคนขับ</text><circle cx="1393.0" cy="257.0" r="12" class="badge"/><text x="1393.0" y="261.5" text-anchor="middle" class="no">7</text><rect x="1497.0" y="248.0" width="36" height="18" rx="9" class="line-bg"/><text x="1515.0" y="261.0" text-anchor="middle" class="line-tx">LINE</text><rect x="1565.0" y="145.0" width="146" height="66" rx="6" class="box"/><text x="1638.0" y="174.0" text-anchor="middle" class="t1">ส่งลิงก์ให้คนขับ</text><text x="1638.0" y="194.0" text-anchor="middle" class="t2">แชร์ต่อใน LINE</text><circle cx="1565.0" cy="145.0" r="12" class="badge"/><text x="1565.0" y="149.5" text-anchor="middle" class="no">8</text><text x="22" y="385" class="lane">สถานะของคิว</text><rect x="189.0" y="366" width="318.0" height="28" rx="14" class="pill"/><text x="348.0" y="385" text-anchor="middle" class="st">เอกสารรอจอง</text><rect x="533.0" y="366" width="662.0" height="28" rx="14" class="pill"/><text x="864.0" y="385" text-anchor="middle" class="st">รอยืนยัน · SO ที่ยังไม่ชำระค้างอยู่ตรงนี้</text><rect x="1221.0" y="366" width="490.0" height="28" rx="14" class="pill"/><text x="1466.0" y="385" text-anchor="middle" class="st">ยืนยันแล้ว · มีเลข DO</text></svg></div>
+    <figcaption>
+      <span class="key"><span class="sw"></span>คนเป็นผู้ทำ</span>
+      <span class="key"><span class="sw sys"></span>ระบบทำเองอัตโนมัติ</span>
+      <span class="key"><span class="sw alt"></span>ทางเลือก</span>
+      <span class="key"><span class="sw line">LINE</span>ขั้นที่มีการแจ้งเตือนทาง LINE</span>
+    </figcaption>
+  </figure>
+</section>
+
+<section id="day">
+  <div class="sec-head">
+    <h2>วันนัด — จากรถมาถึงจนปิดงาน</h2>
+    <p>ท่าว่างเมื่อไร ระบบเรียกคันถัดไปเอง ไม่ต้องมีคนคอยไล่ดูลำดับ</p>
+  </div>
+  <div class="day">
+    <figure id="fig2">
+      <div class="scroll"><svg viewBox="0 0 1060 410" role="img" aria-label="วันนัด: คนขับเปิดลิงก์ดู DO กดเช็คอินเมื่อมาถึงหรือเจ้าหน้าที่เช็คอินให้ที่ประตู ระบบเรียกคิวเมื่อท่าว่าง เจ้าหน้าที่ขึ้นลงของแล้วปิดงาน ระบบเรียกคันถัดไป"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker><marker id="ahd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-muted"/></marker><marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-warn"/></marker></defs><rect x="0" y="10" width="1060" height="112" class="lane-a"/><rect x="0" y="10" width="6" height="112" class="rail-sys"/><text x="22" y="61.0" class="lane">ระบบ</text><text x="22" y="83.0" class="lane2">อัตโนมัติ + LINE</text><rect x="0" y="122" width="1060" height="112" class="lane-b"/><rect x="0" y="122" width="6" height="112" class="rail"/><text x="22" y="184.0" class="lane">คนขับรถ</text><rect x="0" y="234" width="1060" height="112" class="lane-a"/><rect x="0" y="234" width="6" height="112" class="rail"/><text x="22" y="285.0" class="lane">เจ้าหน้าที่หน้างาน</text><text x="22" y="307.0" class="lane2">ประตู / ลานจอด</text><line x1="0" y1="10" x2="1060" y2="10" class="rule"/><line x1="0" y1="346" x2="1060" y2="346" class="rule"/><line x1="164" y1="10" x2="164" y2="346" class="rule"/><path d="M335.0,178.0 H342.0 V290.0 H359.0" class="link dash" marker-end="url(#ahd)"/><path d="M507.0,290.0 H514.0 V66.0 H531.0" class="link dash" marker-end="url(#ahd)"/><path d="M335.0,178.0 H359.0" class="link" marker-end="url(#ah)"/><path d="M507.0,178.0 H520.0 V66.0 H531.0" class="link" marker-end="url(#ah)"/><path d="M679.0,66.0 H692.0 V290.0 H703.0" class="link" marker-end="url(#ah)"/><path d="M851.0,290.0 H864.0 V66.0 H875.0" class="link" marker-end="url(#ah)"/><rect x="189.0" y="145.0" width="146" height="66" rx="6" class="box"/><text x="262.0" y="174.0" text-anchor="middle" class="t1">เปิดลิงก์ ดู DO</text><text x="262.0" y="194.0" text-anchor="middle" class="t2">เห็นท่าและเวลานัด</text><circle cx="189.0" cy="145.0" r="12" class="badge"/><text x="189.0" y="149.5" text-anchor="middle" class="no">9</text><rect x="361.0" y="145.0" width="146" height="66" rx="6" class="box"/><text x="434.0" y="174.0" text-anchor="middle" class="t1">กด “ฉันมาถึงแล้ว”</text><text x="434.0" y="194.0" text-anchor="middle" class="t2">ตรวจ GPS รัศมี 300 ม.</text><circle cx="361.0" cy="145.0" r="12" class="badge"/><text x="361.0" y="149.5" text-anchor="middle" class="no">10</text><rect x="465.0" y="136.0" width="36" height="18" rx="9" class="line-bg"/><text x="483.0" y="149.0" text-anchor="middle" class="line-tx">LINE</text><rect x="361.0" y="257.0" width="146" height="66" rx="6" class="alt"/><text x="434.0" y="286.0" text-anchor="middle" class="t1">เช็คอินให้ที่ประตู</text><text x="434.0" y="306.0" text-anchor="middle" class="t2">ตรวจทะเบียนรถ</text><rect x="347.0" y="246.0" width="36" height="22" rx="11" class="or-bg"/><text x="365.0" y="261.5" text-anchor="middle" class="or">หรือ</text><rect x="465.0" y="248.0" width="36" height="18" rx="9" class="line-bg"/><text x="483.0" y="261.0" text-anchor="middle" class="line-tx">LINE</text><rect x="533.0" y="33.0" width="146" height="66" rx="6" class="sys"/><text x="606.0" y="62.0" text-anchor="middle" class="t1">ท่าว่าง → เรียกคิว</text><text x="606.0" y="82.0" text-anchor="middle" class="t2">จอทีวีลาน + LINE คนขับ</text><circle cx="533.0" cy="33.0" r="12" class="badge"/><text x="533.0" y="37.5" text-anchor="middle" class="no">11</text><rect x="637.0" y="24.0" width="36" height="18" rx="9" class="line-bg"/><text x="655.0" y="37.0" text-anchor="middle" class="line-tx">LINE</text><rect x="705.0" y="257.0" width="146" height="66" rx="6" class="box"/><text x="778.0" y="286.0" text-anchor="middle" class="t1">ขึ้น / ลงของ</text><text x="778.0" y="306.0" text-anchor="middle" class="t2">เสร็จแล้วกดปิดงาน</text><circle cx="705.0" cy="257.0" r="12" class="badge"/><text x="705.0" y="261.5" text-anchor="middle" class="no">12</text><rect x="877.0" y="33.0" width="146" height="66" rx="6" class="sys"/><text x="950.0" y="62.0" text-anchor="middle" class="t1">เรียกคันถัดไป</text><text x="950.0" y="82.0" text-anchor="middle" class="t2">อัตโนมัติเมื่อท่าว่าง</text><circle cx="877.0" cy="33.0" r="12" class="badge"/><text x="877.0" y="37.5" text-anchor="middle" class="no">13</text><text x="22" y="385" class="lane">สถานะของคิว</text><rect x="189.0" y="366" width="146.0" height="28" rx="14" class="pill"/><text x="262.0" y="385" text-anchor="middle" class="st">ยืนยันแล้ว</text><rect x="361.0" y="366" width="146.0" height="28" rx="14" class="pill"/><text x="434.0" y="385" text-anchor="middle" class="st">มาถึงแล้ว</text><rect x="533.0" y="366" width="146.0" height="28" rx="14" class="pill"/><text x="606.0" y="385" text-anchor="middle" class="st">เรียกเข้าท่า</text><rect x="705.0" y="366" width="146.0" height="28" rx="14" class="pill"/><text x="778.0" y="385" text-anchor="middle" class="st">ขึ้น/ลงของ → เสร็จ</text><rect x="877.0" y="366" width="146.0" height="28" rx="14" class="pill"/><text x="950.0" y="385" text-anchor="middle" class="st">ท่าว่าง</text></svg></div>
+      <figcaption>เส้นประ = เจ้าหน้าที่เช็คอินแทนได้ กรณีคนขับไม่ได้กดเองหรือไม่มีสัญญาณ GPS</figcaption>
+    </figure>
+    <aside>
+      <h3>ถ้าไม่เป็นไปตามแผน</h3>
+      <div class="exc">
+        <div class="chain"><span class="chip ok">ยืนยันแล้ว</span><span class="arr">เลยเวลานัด 30 นาที →</span><span class="chip bad">มาสาย</span><span class="arr">เลยอีก 30 นาที →</span><span class="chip bad">ไม่มา</span></div>
+        <p>ระบบปรับสถานะเอง รถที่มาสายยังเช็คอินได้ ครบเวลาแล้วท่าถูกปล่อยให้คันอื่น แจ้ง LINE ลูกค้าและทีมคลัง เวลาผ่อนผันตั้งค่าได้</p>
+      </div>
+      <div class="exc">
+        <div class="chain"><span class="chip ok">เรียกเข้าท่า</span><span class="arr">15 นาทีไม่เข้าท่า →</span><span class="chip bad">ไม่มา</span><span class="arr">→</span><span class="chip">เรียกคันถัดไป</span></div>
+        <p>ก่อนครบเวลา เจ้าหน้าที่กดเรียกซ้ำ หรือยกเลิกการเรียกเพื่อคืนคิวกลับไปรอได้</p>
+      </div>
+      <div class="exc">
+        <div class="chain"><span class="chip">รอยืนยัน / ยืนยันแล้ว</span><span class="arr">→</span><span class="chip bad">ยกเลิก</span></div>
+        <p>ลูกค้ายกเลิกเองได้จากลิงก์จนก่อนรถเช็คอิน ฝั่งคลังยกเลิกต้องระบุเหตุผล และลูกค้าเห็นเหตุผลนั้น แจ้ง LINE ทั้งสองฝ่าย</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section id="controls">
+  <div class="sec-head">
+    <h2>จุดควบคุม 4 จุดที่ระบบบังคับให้</h2>
+    <p>เป็นกติกาที่ระบบไม่ยอมให้ข้าม ไม่ได้อาศัยความจำหรือความระวังของคน</p>
+  </div>
+  <div class="controls">
+    <div class="ctl">
+      <h3>ด่านชำระเงิน — ขั้น 5</h3>
+      <dl>
+        <dt>กันอะไร</dt><dd>รถเข้ามาขึ้นของทั้งที่ SO ยังไม่เคลียร์เงิน</dd>
+        <dt>ระบบทำ</dt><dd>SO ที่ยังไม่ชำระจองคิวได้ แต่ค้างที่ “รอยืนยัน” ออก DO ไม่ได้ จนเจ้าหน้าที่บันทึกว่าชำระแล้วหรือเป็นลูกค้าเครดิต PO ขารับของไม่ถูกตรวจ</dd>
+        <dt>ผลที่ได้</dt><dd>ไม่มีใบ DO หลุดออกไปก่อนเงินเคลียร์ ไม่ว่าใครเป็นคนกดยืนยัน</dd>
+      </dl>
+    </div>
+    <div class="ctl">
+      <h3>กันคิวซ้อนท่า — ขั้น 4 และ 6</h3>
+      <dl>
+        <dt>กันอะไร</dt><dd>รถสองคันได้ท่าเดียวกันในเวลาเดียวกัน</dd>
+        <dt>ระบบทำ</dt><dd>ตรวจเวลาที่ท่า รวมเวลาเผื่อสลับรถ ทั้งตอนจองและตอนยืนยัน คนละท่าเวลาซ้อนกันได้ตามปกติ</dd>
+        <dt>ผลที่ได้</dt><dd>หน้างานไม่ต้องแก้ปัญหารถชนคิวกันหน้าท่า</dd>
+      </dl>
+    </div>
+    <div class="ctl">
+      <h3>เช็คอินด้วยตำแหน่งจริง — ขั้น 10</h3>
+      <dl>
+        <dt>กันอะไร</dt><dd>คนขับกดว่ามาถึงทั้งที่ยังอยู่ระหว่างทาง แล้วแซงคิวคันที่มาถึงจริง</dd>
+        <dt>ระบบทำ</dt><dd>กดได้เฉพาะวันนัด และต้องอยู่ในรัศมี 300 เมตรจากคลัง (ตั้งค่าได้ต่อสาขา) เจ้าหน้าที่ประตูยังตรวจทะเบียนซ้ำได้</dd>
+        <dt>ผลที่ได้</dt><dd>ลำดับเรียกคิวอิงรถที่อยู่หน้าคลังจริง</dd>
+      </dl>
+    </div>
+    <div class="ctl">
+      <h3>ลิงก์เฉพาะเอกสาร — ขั้น 2 และ 7</h3>
+      <dl>
+        <dt>กันอะไร</dt><dd>คนนอกเข้ามาจองหรือเห็นข้อมูลของลูกค้ารายอื่น</dd>
+        <dt>ระบบทำ</dt><dd>หนึ่งลิงก์ผูกกับ SO/PO ใบเดียว มีวันหมดอายุ ออกลิงก์ใหม่แล้วลิงก์เก่าใช้ไม่ได้ทันที คนขับเห็นเฉพาะงานของตัวเอง จอทีวีลานไม่แสดงชื่อหรือเบอร์โทร</dd>
+        <dt>ผลที่ได้</dt><dd>ใช้งานง่ายแบบไม่ต้อง login โดยไม่เปิดข้อมูลเกินจำเป็น</dd>
+      </dl>
+    </div>
+  </div>
+  <p class="note">ทุกการกดในระบบถูกบันทึกว่าใครทำ เมื่อไร เปลี่ยนจากอะไรเป็นอะไร ตรวจย้อนหลังได้ทุกคิว</p>
+</section>
+
+<section id="demo">
+  <div class="sec-head">
+    <h2>แต่ละขั้นดูได้จากหน้าจอไหนในระบบต้นแบบ</h2>
+    <p>ลำดับเดินสาธิต เลขขั้นตรงกับแผนภาพด้านบน</p>
+  </div>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>ขั้น</th><th>หน้าจอ</th><th>ผู้ใช้</th><th>ภาพประกอบ</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1–2</td><td>เอกสาร SO/PO › นำเข้า, ลิงก์จอง + QR</td><td>ทีมคลัง</td><td class="f">02a-documents · 02b-documents-link-qr</td></tr>
+      <tr><td class="n">3</td><td>หน้าจองของลูกค้า 5 ขั้น: รถ › วัน › เวลา › รายละเอียด › ยืนยัน</td><td>ลูกค้า / Supplier</td><td class="f">03a … 05c-book-submitted</td></tr>
+      <tr><td class="n">4</td><td>สถานะคิวฝั่งลูกค้า, รายการคิวรอยืนยันฝั่งคลัง</td><td>ลูกค้า · ทีมคลัง</td><td class="f">05d-book-status · 06h-bookings-pending</td></tr>
+      <tr><td class="n">5</td><td>เอกสาร SO/PO › บันทึกการชำระเงิน</td><td>ทีมคลัง</td><td>สาธิตสดจากระบบ</td></tr>
+      <tr><td class="n">6–7</td><td>รายละเอียดคิว › อนุมัติคิว + ออก DO, ใบ DO</td><td>ทีมคลัง</td><td class="f">06b-booking-drawer · 06e-do-sheet</td></tr>
+      <tr><td class="n">8–10</td><td>หน้าคนขับ: DO ท่า เวลานัด ปุ่ม “ฉันมาถึงแล้ว”</td><td>คนขับ</td><td class="f">08b-driver-full</td></tr>
+      <tr><td class="n">11</td><td>บอร์ดคิววันนี้, จอทีวีลาน, หน้าคนขับตอนถูกเรียก</td><td>เจ้าหน้าที่ · คนขับ</td><td class="f">07-queue-board · 09-display-tv · 08a-driver-called</td></tr>
+      <tr><td class="n">12–13</td><td>บอร์ดคิววันนี้ › เริ่มขึ้น/ลงของ › ปิดงาน</td><td>เจ้าหน้าที่หน้างาน</td><td class="f">07-queue-board</td></tr>
+      <tr><td class="n">หลังจบ</td><td>ประวัติของคิว, แดชบอร์ด, รายงาน</td><td>ผู้บริหาร · ทีมคลัง</td><td class="f">06c-timeline · 10-dashboard · 11-reports</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>จัดทำโดย GoAlong · อ้างอิงระบบต้นแบบ ณ วันที่ 21 กันยายน 2569 · ค่าเวลาผ่อนผัน 30 นาที เวลารอเข้าท่า 15 นาที และรัศมี 300 เมตร เป็นค่าเริ่มต้นที่ปรับได้</footer>
+</div>

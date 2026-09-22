@@ -55,11 +55,12 @@ const fullName = process.argv[4] || process.env.ADMIN_NAME || 'Site Admin';
 const roleCode = process.argv[5] || process.env.ADMIN_ROLE || 'admin';
 
 if (!email || !password) {
-  console.error('Usage: node scripts/create-admin.mjs <email> <password> [fullName] [admin|staff]');
+  console.error('Usage: node scripts/create-admin.mjs <email> <password> [fullName] [roleCode]');
   process.exit(1);
 }
-if (!['admin', 'staff'].includes(roleCode)) {
-  console.error(`Unknown role "${roleCode}" — use admin or staff`);
+// Any code in public.roles works (admin, staff, or a role created from the staff screen).
+if (!/^[a-z][a-z0-9_]{1,31}$/.test(roleCode)) {
+  console.error(`Invalid role code "${roleCode}" — use a-z, 0-9, _ (e.g. admin, staff)`);
   process.exit(1);
 }
 

@@ -16,7 +16,7 @@ import { DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type 
 
 const POLL_MS = 15_000;
 
-type SiteInfo = { auto_call_mode: string; auto_call_last_run_at: string | null };
+type SiteInfo = { auto_call_mode: string; auto_call_last_run_at: string | null; item_minutes_enabled?: boolean; minutes_per_item?: number };
 type PatchResponse = { error?: string; code?: string; data?: { auto_called?: string[]; do_number?: string | null } };
 
 function minutesSince(iso: string | null): number | null {
@@ -219,6 +219,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         saving={busyId !== null}
         onClose={() => setApproveTarget(null)}
         onSubmit={(b, minutes) => { if (approveTarget) void setStatus(b, approveTarget.opt, minutes); }}
+        itemMinutes={site ? { enabled: site.item_minutes_enabled ?? false, minutesPerItem: site.minutes_per_item ?? 10 } : undefined}
       />
     </Stack>
   );

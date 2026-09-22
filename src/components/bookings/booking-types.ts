@@ -42,7 +42,7 @@ export type BookingRow = {
   branches?: { branch_name: string } | null;
   services?: { service_name: string; duration_minutes?: number | null } | null;
   customers?: { full_name: string | null; phone: string | null; partner_type?: string | null; code?: string | null } | null;
-  external_documents?: { doc_no: string; doc_type: 'so' | 'po'; payment_status?: string | null } | null;
+  external_documents?: { doc_no: string; doc_type: 'so' | 'po'; payment_status?: string | null; item_count?: number | null } | null;
 };
 
 /** Vehicle type (`services` row). */

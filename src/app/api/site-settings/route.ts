@@ -19,6 +19,8 @@ const settingsSchema = z
     booking_horizon_days: int(1, 365),
     require_admin_confirm: z.coerce.boolean(),
     driver_self_checkin: z.coerce.boolean(),
+    item_minutes_enabled: z.coerce.boolean(),
+    minutes_per_item: int(1, 240),
     do_number_format: z
       .string()
       .trim()

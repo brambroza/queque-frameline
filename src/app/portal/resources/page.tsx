@@ -1,7 +1,7 @@
 import { DocksCrud } from '@/components/forms/docks-crud';
-import { getPageRoles } from '@/lib/auth/page-roles';
+import { requirePageAccess } from '@/lib/auth/page-roles';
 
 export default async function DocksPage() {
-  const { isAdmin } = await getPageRoles();
+  const { isAdmin } = await requirePageAccess('docks');
   return <DocksCrud isAdmin={isAdmin} />;
 }

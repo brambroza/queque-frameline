@@ -9,6 +9,7 @@ type Settings = {
   grace_minutes: number; early_arrival_minutes: number; auto_call_mode: 'off' | 'dock_free' | 'time' | 'hybrid'; auto_call_lead_minutes: number;
   called_timeout_minutes: number; auto_no_show_after_grace: boolean; booking_token_ttl_days: number; driver_token_ttl_days: number;
   booking_lead_min_hours: number; booking_horizon_days: number; require_admin_confirm: boolean; driver_self_checkin: boolean; do_number_format: string;
+  item_minutes_enabled: boolean; minutes_per_item: number;
   auto_call_last_run_at: string | null;
 };
 
@@ -88,7 +89,7 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <Stack spacing={2}>
-      <PageHeader title="ตั้งค่าระบบคิว" description="กติกาของคลัง: เผื่อเวลามาสาย เรียกคิวอัตโนมัติ ช่วงเวลาที่เปิดจอง ลิงก์ และเลข DO"
+      <PageHeader title="ตั้งค่าระบบคิว" description="กติกาของคลัง: เผื่อเวลามาสาย เรียกคิวอัตโนมัติ เวลาตามรายการสินค้า ช่วงเวลาที่เปิดจอง ลิงก์ และเลข DO"
         action={isAdmin ? <Button variant="contained" onClick={() => void save()} disabled={!s || saving}>{saving ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่า'}</Button> : undefined} />
       {error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void load()}>ลองใหม่</Button>}>{error}</Alert> : null}
       {!isAdmin ? <Alert severity="info">เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ไขได้</Alert> : null}
@@ -114,6 +115,11 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
             <Typography variant="caption" color="text.secondary">
               ตรวจอัตโนมัติล่าสุด: {s.auto_call_last_run_at ? new Date(s.auto_call_last_run_at).toLocaleString('th-TH') : 'ยังไม่เคยทำงาน — ต้องตั้งค่า pg_cron + Vault (ดู README)'}
             </Typography>
+          </Section>
+
+          <Section title="เวลาตามรายการสินค้า" hint="ใช้เป็นค่าแนะนำตอนอนุมัติคิว — นับตามจำนวนรายการ ไม่นับจำนวนชิ้น ถ้าเอกสารไม่มีรายการจะใช้เวลาของประเภทรถ">
+            {toggle('item_minutes_enabled', 'แนะนำเวลาที่ท่าจากจำนวนรายการสินค้าในเอกสาร')}
+            {s.item_minutes_enabled ? num('minutes_per_item', 'นาทีต่อ 1 รายการ', `เช่น 3 รายการ × ${s.minutes_per_item || 10} = ${3 * (s.minutes_per_item || 10)} นาที`, 1, 240) : null}
           </Section>
 
           <Section title="การจองผ่านลิงก์" hint="มีผลกับลูกค้า / Supplier ที่จองเอง ไม่มีผลกับคิวที่เจ้าหน้าที่สร้าง">

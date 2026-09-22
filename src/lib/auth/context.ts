@@ -16,6 +16,11 @@ function ensureRole(userRoles: AppRole[], required: AppRole[]) {
   return required.some((r) => userRoles.includes(r));
 }
 
+/** Narrow a `roles.access_level` value to the app's role tiers. */
+export function isAppRole(v: unknown): v is AppRole {
+  return v === 'admin' || v === 'staff';
+}
+
 /**
  * Keep only the role grants that apply to the shop the caller is acting in.
  * Rows with a null `shop_id` are global grants and always count. When the
@@ -45,7 +50,7 @@ function pickRoleIdsForShop(
  * invited account can use the portal without a manual fix.
  *
  * @param opts.roles Roles allowed to call the route; omit to allow any signed-in user.
- * @returns Session-scoped Supabase client, auth user, tenant profile, role codes and branch scope.
+ * @returns Session-scoped Supabase client, auth user, tenant profile, role tiers (`roles`), raw role codes and branch scope.
  */
 export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   const supabase = await createClient();
@@ -113,14 +118,19 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
 
   const roleIds = pickRoleIdsForShop(roleRows, tenantProfile.shop_id);
   let roles: AppRole[] = [];
+  let roleCodes: string[] = [];
   if (roleIds.length > 0) {
     const { data: roleDefs, error: roleDefsError } = await supabase
       .from('roles')
-      .select('code')
+      .select('code, access_level')
       .in('id', roleIds)
       .eq('is_deleted', false);
     if (roleDefsError) throw new AuthError('Unable to read role definitions', 403);
-    roles = (roleDefs ?? []).map((r) => r.code).filter(Boolean) as AppRole[];
+    const defs = (roleDefs ?? []) as Array<{ code: string | null; access_level: string | null }>;
+    roleCodes = defs.map((r) => r.code).filter((c): c is string => Boolean(c));
+    // Route guards check the access level, so a custom role ("gate", "finance")
+    // acts as the tier it was created with.
+    roles = Array.from(new Set(defs.map((r) => r.access_level).filter(isAppRole)));
   }
 
   if (opts?.roles?.length && !ensureRole(roles, opts.roles)) {
@@ -130,7 +140,7 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   // Branches this caller may read/write. `null` = every branch of the shop.
   const branchScope = await resolveBranchScope(supabase, user.id, tenantProfile.shop_id, roles);
 
-  return { supabase, user, profile: tenantProfile, roles, branchScope };
+  return { supabase, user, profile: tenantProfile, roles, roleCodes, branchScope };
 }
 
 /**

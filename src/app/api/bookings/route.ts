@@ -15,7 +15,7 @@ import { safeCreateNotification } from '@/lib/notifications/createNotification';
 
 /** Columns + joins the portal list, board and drawers render. */
 const BOOKING_SELECT =
-  '*, services(service_name,duration_minutes), customers(full_name,phone,partner_type,code), branches(branch_name), external_documents(doc_no,doc_type,payment_status)';
+  '*, services(service_name,duration_minutes), customers(full_name,phone,partner_type,code), branches(branch_name), external_documents(doc_no,doc_type,payment_status,item_count)';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);

@@ -1,20 +1,9 @@
-import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
 import { PageShell } from '@/components/ui/page-shell';
 import { TranslationsCrud } from '@/components/forms/translations-crud';
+import { requirePageAccess } from '@/lib/auth/page-roles';
 
 export default async function PortalTranslationsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
-
-  const { data: roleRows } = await supabase
-    .from('user_roles')
-    .select('roles(code)')
-    .eq('user_id', user.id)
-    .eq('is_deleted', false);
-  const isAdmin = (roleRows ?? []).some((r) => (r.roles as { code?: string } | null)?.code === 'admin');
-  if (!isAdmin) redirect('/portal/dashboard');
+  await requirePageAccess('translations');
 
   return (
     <PageShell
@@ -25,4 +14,3 @@ export default async function PortalTranslationsPage() {
     </PageShell>
   );
 }
-

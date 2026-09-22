@@ -22,6 +22,8 @@ export type SiteSettings = {
   require_admin_confirm: boolean;
   driver_self_checkin: boolean;
   do_number_format: string;
+  item_minutes_enabled: boolean;
+  minutes_per_item: number;
   auto_call_last_run_at: string | null;
 };
 
@@ -39,6 +41,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   require_admin_confirm: true,
   driver_self_checkin: false,
   do_number_format: 'DO-{YYYYMM}-{NNNN}',
+  item_minutes_enabled: true,
+  minutes_per_item: 10,
   auto_call_last_run_at: null,
 };
 

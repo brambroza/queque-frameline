@@ -1,7 +1,9 @@
+import { requirePageAccess } from '@/lib/auth/page-roles';
 import { PageShell } from '@/components/ui/page-shell';
 import { SettingsCrud } from '@/components/forms/settings-crud';
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  await requirePageAccess('settings');
   return (
     <PageShell title="Settings" description="จัดการโปรไฟล์ร้านค้า การเชื่อมต่อ และค่า config ของระบบ">
       <div className="space-y-4">

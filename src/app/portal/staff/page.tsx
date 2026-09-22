@@ -1,10 +1,12 @@
+import { requirePageAccess } from '@/lib/auth/page-roles';
 import { PageShell } from '@/components/ui/page-shell';
-import { StaffCrud } from '@/components/forms/staff-crud';
+import { StaffPageTabs } from '@/components/forms/staff-page-tabs';
 
-export default function StaffPage() {
+export default async function StaffPage() {
+  const { isAdmin } = await requirePageAccess('staff');
   return (
-    <PageShell title="พนักงาน" description="จัดการพนักงานและสาขาที่รับผิดชอบ">
-      <StaffCrud />
+    <PageShell title="พนักงาน" description="จัดการพนักงาน สาขาที่รับผิดชอบ และสิทธิ์เมนูของแต่ละตำแหน่ง">
+      <StaffPageTabs isAdmin={isAdmin} />
     </PageShell>
   );
 }

@@ -24,6 +24,8 @@ import { PortalNav } from '@/components/layout/portal-nav';
 import { LanguageSwitch } from '@/components/layout/language-switch';
 import { NotificationsMenu } from '@/components/layout/notifications-menu';
 import { TopbarUserMenu } from '@/components/layout/topbar-user-menu';
+import { AccessProvider } from '@/components/layout/access-provider';
+import type { MenuAccess } from '@/lib/auth/menu-registry';
 import { BranchScopeProvider } from '@/components/layout/branch-scope-provider';
 import { BranchSwitch } from '@/components/layout/branch-switch';
 import {
@@ -54,6 +56,8 @@ type PortalFrameProps = {
   fullName?: string | null;
   email?: string | null;
   appVersion: string;
+  /** Menu access resolved by the server layout. */
+  access: MenuAccess;
 };
 
 /**
@@ -63,11 +67,13 @@ type PortalFrameProps = {
  */
 export function PortalFrame(props: PortalFrameProps) {
   return (
-    <BranchScopeProvider>
-      <SidebarCollapseProvider>
-        <PortalFrameInner {...props} />
-      </SidebarCollapseProvider>
-    </BranchScopeProvider>
+    <AccessProvider value={props.access}>
+      <BranchScopeProvider>
+        <SidebarCollapseProvider>
+          <PortalFrameInner {...props} />
+        </SidebarCollapseProvider>
+      </BranchScopeProvider>
+    </AccessProvider>
   );
 }
 
