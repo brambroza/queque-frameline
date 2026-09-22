@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Skeleton, Stack, TextField, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Skeleton, Stack, TextField, Typography,
 } from '@mui/material';
 import { alpha, useTheme, type Theme } from '@mui/material/styles';
 import {
@@ -228,6 +228,66 @@ export function BookingScheduleDialog({ booking, saving, itemMinutes, onClose, o
               <LegendItem sx={{ bgcolor: alpha(theme.palette.success.main, 0.12), border: 1, borderStyle: 'dashed', borderColor: 'success.main' }} label="ว่าง" />
             </Stack>
           </Box>
+
+          {canMove && data && data.docks.length > 0 ? (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
+              <TextField
+                id="schedule-dock"
+                select
+                size="small"
+                label="ท่า"
+                value={data.docks.some((d) => d.id === draft.dockId) ? draft.dockId : ''}
+                onChange={(e) => {
+                  const target = data.docks.find((d) => d.id === e.target.value);
+                  if (!target) return;
+                  const slots = target.slotStarts.map(minutesOfDay);
+                  // Keep the same start when that dock opens it, else the nearest earlier slot, else its first slot.
+                  const s = slots.includes(startMin) ? startMin : snapToSlot(startMin, slots) ?? slots[0];
+                  setDraft((d) => (d ? { ...d, dockId: target.id, start: s !== undefined ? labelOfMinutes(s) : '' } : d));
+                }}
+                sx={{ minWidth: 200 }}
+                helperText="หรือลากบล็อกไปเลนที่ต้องการ"
+              >
+                {data.docks.map((d) => (
+                  <MenuItem key={d.id} value={d.id}>
+                    {d.code ? `${d.code} · ` : ''}{d.name}{d.id === origin.dockId && draft.date === origin.date ? ' (เดิม)' : ''} · ว่าง {d.slotStarts.length} ช่อง
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="caption" fontWeight={700} component="div" sx={{ mb: 0.5 }}>
+                  ช่องเวลาบน{lane?.name ?? 'ท่า'} · {shortThaiDay(draft.date)}
+                  <Typography variant="caption" color="text.secondary" component="span"> — แตะเพื่อเลือกเวลาเริ่ม</Typography>
+                </Typography>
+                {!lane || lane.slotStarts.length === 0 ? (
+                  <Typography variant="caption" color="text.secondary">ไม่มีช่องว่างสำหรับ{booking.services?.service_name ?? 'รถประเภทนี้'}บนท่านี้ในวันนี้</Typography>
+                ) : (
+                  <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.75}>
+                    {lane.slotStarts.map((slot) => {
+                      const s = minutesOfDay(slot);
+                      const selected = s === startMin;
+                      const hit = minutesValid && !selected
+                        ? computeDockDay({ start_time: slot, buffer_minutes: data.self.buffer_minutes, others: lane.others, minutes: draft.minutes }).overlaps[0]
+                        : undefined;
+                      return (
+                        <Chip
+                          key={slot}
+                          size="small"
+                          clickable={!hit}
+                          disabled={Boolean(hit)}
+                          color={selected ? 'primary' : hit ? 'default' : 'success'}
+                          variant={selected ? 'filled' : 'outlined'}
+                          label={hit ? `${labelOfMinutes(s)} · ชน ${hit.queue.queue_number}` : labelOfMinutes(s)}
+                          onClick={hit ? undefined : () => setDraft((d) => (d ? { ...d, dockId: lane.id, start: labelOfMinutes(s) } : d))}
+                          sx={{ fontVariantNumeric: 'tabular-nums' }}
+                        />
+                      );
+                    })}
+                  </Stack>
+                )}
+              </Box>
+            </Stack>
+          ) : null}
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
             <TextField
