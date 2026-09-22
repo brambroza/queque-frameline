@@ -379,6 +379,17 @@ function DockBoard({ data, draft, origin, minutesValid, conflict, canMove, queue
     return null;
   };
   const minuteAt = (el: HTMLElement, clientY: number) => viewOpen + (clientY - el.getBoundingClientRect().top) / PX;
+  /**
+   * Where a dropped block lands: the latest open slot at or before the pointer,
+   * else (no slot there — the lane has none, or the pointer is above the first)
+   * the 30-minute grid, so the block still follows the hand and the verdict
+   * explains that this is not an open slot.
+   */
+  const landAt = (minute: number, slots: number[]) => {
+    const snapped = snapToSlot(minute, slots);
+    if (snapped !== null) return snapped;
+    return Math.max(viewOpen, Math.min(viewClose - 30, Math.floor(minute / 30) * 30));
+  };
 
   const beginDrag = (e: ReactPointerEvent<HTMLElement>, kind: 'move' | 'resize') => {
     if (kind === 'move' && !canMove) return;
@@ -396,8 +407,7 @@ function DockBoard({ data, draft, origin, minutesValid, conflict, canMove, queue
       }
       const hit = laneAt(ev.clientX);
       if (!hit) return;
-      const snapped = snapToSlot(minuteAt(hit.el, ev.clientY) - d.grabOffset, hit.slots);
-      if (snapped !== null) onPlace(hit.lane.id, labelOfMinutes(snapped));
+      onPlace(hit.lane.id, labelOfMinutes(landAt(minuteAt(hit.el, ev.clientY) - d.grabOffset, hit.slots)));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -418,8 +428,7 @@ function DockBoard({ data, draft, origin, minutesValid, conflict, canMove, queue
     if (!canMove) return;
     if (lanesRef.current?.dataset.justDragged) { delete lanesRef.current.dataset.justDragged; return; }
     if ((e.target as HTMLElement).closest('[data-me]')) return;
-    const snapped = snapToSlot(minuteAt(e.currentTarget, e.clientY), slots);
-    if (snapped !== null) onPlace(lane.id, labelOfMinutes(snapped));
+    onPlace(lane.id, labelOfMinutes(landAt(minuteAt(e.currentTarget, e.clientY), slots)));
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -454,7 +463,7 @@ function DockBoard({ data, draft, origin, minutesValid, conflict, canMove, queue
           return (
             <Box key={`h${lane.id}`} sx={{ textAlign: 'center', pb: 0.5, minWidth: 0 }}>
               <Typography variant="body2" fontWeight={700} noWrap>{lane.code ? `${lane.code} · ` : ''}{lane.name}{lane.id === origin.dockId && draft.date === origin.date ? ' (เดิม)' : ''}</Typography>
-              <Typography variant="caption" color="text.secondary" noWrap component="div">{free.length ? `ว่าง ${free.map((w) => `${labelOfMinutes(w.start)}–${labelOfMinutes(w.end)}`).join(', ')}` : 'เต็ม'}</Typography>
+              <Typography variant="caption" color="text.secondary" noWrap component="div">{free.length ? `ว่าง ${free.map((w) => `${labelOfMinutes(w.start)}–${labelOfMinutes(w.end)}`).join(', ')}` : 'เต็ม'}{canMove ? ` · เปิด ${lane.slotStarts.length} ช่อง` : ''}</Typography>
             </Box>
           );
         })}
