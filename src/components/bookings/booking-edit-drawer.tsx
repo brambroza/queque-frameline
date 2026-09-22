@@ -42,19 +42,17 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
  * driver link are handled here because they only concern this drawer.
  */
 export function BookingEditDrawer({
-  booking, isAdmin, saving, siteName, onClose, onStatus, onMove, onChanged, onDuration, onPayment,
+  booking, saving, siteName, onClose, onStatus, onChanged, onSchedule, onPayment,
 }: {
   booking: BookingRow | null;
-  isAdmin: boolean;
   saving: boolean;
   siteName: string;
   onClose: () => void;
   onStatus: (b: BookingRow, status: string, cancelReason?: string) => void;
-  /** Open the "ปรับเวลาที่ท่า" dialog. */
-  onDuration: (b: BookingRow) => void;
+  /** Open the scheduling dialog (day / time / dock / dock time). */
+  onSchedule: (b: BookingRow) => void;
   /** Open the payment dialog for the queue's SO. */
   onPayment: (target: PaymentTarget) => void;
-  onMove: (b: BookingRow) => void;
   /** Something other than status changed (plate) — parent should reload. */
   onChanged: () => void;
 }) {
@@ -244,14 +242,9 @@ export function BookingEditDrawer({
                     />
                   ) : null}
                   <Row k="เลข DO" v={b.do_number ? <b>{b.do_number}</b> : 'ยังไม่ออก'} />
-                  {MOVABLE.has(b.status) && isAdmin ? (
-                    <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onMove(b)}>
-                      เลื่อนวัน / เวลา / ท่า
-                    </Button>
-                  ) : null}
                   {!terminal ? (
-                    <Button size="small" variant="outlined" color="secondary" startIcon={<EditRoundedIcon />} sx={{ mt: 1, ml: MOVABLE.has(b.status) && isAdmin ? 1 : 0 }} disabled={saving} onClick={() => onDuration(b)}>
-                      ปรับเวลาที่ท่า
+                    <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onSchedule(b)}>
+                      {MOVABLE.has(b.status) ? 'จัดตารางคิว — วัน / เวลา / ท่า / เวลาที่ท่า' : 'ปรับเวลาที่ท่า'}
                     </Button>
                   ) : null}
                 </Box>

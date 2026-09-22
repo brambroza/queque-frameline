@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { bookingDurationSchema, bookingStatusPatchSchema, documentPaymentSchema } from './schemas';
+import { bookingDurationSchema, bookingStatusPatchSchema, documentPaymentSchema, rescheduleSchema } from './schemas';
+
+describe('rescheduleSchema', () => {
+  const base = { booking_date: '2026-09-22', start_time: '14:00' };
+  it('accepts a move without minutes (keeps the queue time)', () => {
+    const r = rescheduleSchema.safeParse(base);
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.service_minutes).toBeUndefined();
+  });
+  it('accepts minutes set together with the move, within 5–1440', () => {
+    expect(rescheduleSchema.safeParse({ ...base, service_minutes: 90 }).success).toBe(true);
+    expect(rescheduleSchema.safeParse({ ...base, service_minutes: '90' }).success).toBe(true);
+    expect(rescheduleSchema.safeParse({ ...base, service_minutes: 3 }).success).toBe(false);
+    expect(rescheduleSchema.safeParse({ ...base, service_minutes: 1441 }).success).toBe(false);
+  });
+});
 
 const ID = '11111111-1111-4111-8111-111111111111';
 

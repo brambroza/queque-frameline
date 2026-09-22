@@ -34,6 +34,8 @@ export type DockDayInput = {
   buffer_minutes: number | null;
   /** Every other queue on the same dock that day (released statuses are filtered here). */
   others: DockDayOther[];
+  /** Minutes the queue would hold the dock from `start_time`; drives `overlaps` (omit = not checked). */
+  minutes?: number | null;
   open_time?: string | null;
   close_time?: string | null;
   break_start?: string | null;
@@ -49,6 +51,27 @@ export type DockDayResponse = {
   others: DockDayOther[];
   hours: { open_time: string; close_time: string; break_start: string | null; break_end: string | null } | null;
   /** Server clock in Bangkok local time; the bar draws "now" from this, never from the device. */
+  now: { date: string; time: string };
+};
+
+/** One dock lane of `GET /api/bookings/[id]/dock-board`. */
+export type DockBoardLane = {
+  id: string;
+  name: string;
+  code: string | null;
+  /** Live queues on this dock that day, this queue excluded. */
+  others: DockDayOther[];
+  /** Slot starts (`HH:MM:SS`) `move_dock_booking` would accept on this dock, past ones removed. */
+  slotStarts: string[];
+};
+
+/** Response of `GET /api/bookings/[id]/dock-board`, consumed by `BookingScheduleDialog`. */
+export type DockBoardResponse = {
+  date: string;
+  self: { booking_date: string; start_time: string; end_time: string | null; service_minutes: number | null; buffer_minutes: number | null; resource_id: string | null };
+  /** Docks this queue may use (branch, direction and vehicle type match), in code order. */
+  docks: DockBoardLane[];
+  hours: { open_time: string; close_time: string; break_start: string | null; break_end: string | null } | null;
   now: { date: string; time: string };
 };
 
@@ -69,6 +92,8 @@ export type DockDay = {
   next: DockDayOther | null;
   /** Other queues as blocks, sorted by start. */
   blocks: DockBlock[];
+  /** Blocks this queue would overlap at `start .. start + minutes + buffer` (empty when `minutes` was not given). */
+  overlaps: DockBlock[];
   /** Gaps between blocks (break excluded), ignoring this queue itself. */
   freeWindows: FreeWindow[];
   breakRange: { start: number; end: number } | null;
@@ -125,6 +150,12 @@ export function computeDockDay(input: DockDayInput): DockDay {
   const maxMinutes = Math.max(0, Math.min(1440, hardEnd - startMin));
   const mustEndBefore = nextBlock ? nextBlock.start - bufferMinutes : null;
 
+  // Same overlap test as `is_dock_free`, for a start that may sit anywhere in the day (a move).
+  const minutes = input.minutes ?? null;
+  const overlaps = minutes !== null && Number.isFinite(minutes) && minutes > 0
+    ? blocks.filter((b) => b.start < startMin + minutes + bufferMinutes && b.bufferEnd > startMin)
+    : [];
+
   const breakStart = optionalMinutes(input.break_start);
   const breakEnd = optionalMinutes(input.break_end);
   const breakRange = breakStart !== null && breakEnd !== null && breakEnd > breakStart ? { start: breakStart, end: breakEnd } : null;
@@ -155,5 +186,18 @@ export function computeDockDay(input: DockDayInput): DockDay {
   if (viewClose > cursor) freeWindows.push({ start: cursor, end: viewClose, containsSelf: false });
   for (const w of freeWindows) w.containsSelf = startMin >= w.start && startMin < w.end;
 
-  return { startMin, bufferMinutes, maxMinutes, mustEndBefore, next: nextBlock?.queue ?? null, blocks, freeWindows, breakRange, viewOpen, viewClose };
+  return { startMin, bufferMinutes, maxMinutes, mustEndBefore, next: nextBlock?.queue ?? null, blocks, overlaps, freeWindows, breakRange, viewOpen, viewClose };
+}
+
+/**
+ * The latest slot start at or before a point on the bar — where a dragged
+ * queue lands. `move_dock_booking` only accepts real slot starts, so the UI
+ * never offers anything else. Null when no slot starts at or before the point.
+ */
+export function snapToSlot(minuteOfDay: number, slotStarts: readonly number[]): number | null {
+  let best: number | null = null;
+  for (const s of slotStarts) {
+    if (s <= minuteOfDay && (best === null || s > best)) best = s;
+  }
+  return best;
 }

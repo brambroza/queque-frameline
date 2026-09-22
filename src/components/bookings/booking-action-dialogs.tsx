@@ -37,7 +37,8 @@ function endTimeLabel(start: string, minutes: number): string | null {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function minutesOf(b: BookingRow): number {
+/** Minutes the queue currently holds its dock: stored value, else start→end, else the vehicle type's time. */
+export function minutesOf(b: BookingRow): number {
   if (b.service_minutes) return b.service_minutes;
   if (b.end_time) {
     const [sh, sm] = b.start_time.split(':').map(Number);
@@ -49,7 +50,7 @@ function minutesOf(b: BookingRow): number {
 }
 
 /** Dock time suggested for a queue: item lines x minutes-per-item, else the vehicle type's time. */
-function suggestionOf(b: BookingRow, rule: ItemMinutesRule | undefined): SuggestedMinutes {
+export function suggestionOf(b: BookingRow, rule: ItemMinutesRule | undefined): SuggestedMinutes {
   return suggestServiceMinutes({
     itemCount: b.external_documents?.item_count ?? 0,
     minutesPerItem: rule?.minutesPerItem,
@@ -58,15 +59,15 @@ function suggestionOf(b: BookingRow, rule: ItemMinutesRule | undefined): Suggest
   });
 }
 
-const QUICK_MINUTES = [30, 45, 60, 90, 120, 180];
+export const QUICK_MINUTES = [30, 45, 60, 90, 120, 180];
 
 /** True when `n` minutes would run into the next queue on the dock (only once the day has loaded). */
-function overDockLimit(day: DockDay | null, n: number): boolean {
+export function overDockLimit(day: DockDay | null, n: number): boolean {
   return day !== null && Number.isFinite(n) && n > day.maxMinutes;
 }
 
 /** Minutes valid for the field and, when the dock's day is known, fitting before the next queue. */
-function minutesFit(booking: BookingRow, day: DockDay | null, n: number): boolean {
+export function minutesFit(booking: BookingRow, day: DockDay | null, n: number): boolean {
   return Number.isInteger(n) && n >= 5 && n <= 1440 && Boolean(endTimeLabel(booking.start_time, n)) && !overDockLimit(day, n);
 }
 
@@ -184,33 +185,6 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit, itemMinutes 
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>ปิด</Button>
         <Button variant="contained" disabled={saving || blocked || !valid} onClick={() => onSubmit(booking, n)}>{saving ? 'กำลังอนุมัติ…' : 'อนุมัติ + ออก DO'}</Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
-/** Change the dock time of a queue that is already approved. */
-export function DurationDialog({ booking, saving, onClose, onSubmit, itemMinutes }: {
-  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void; itemMinutes?: ItemMinutesRule;
-}) {
-  const [minutes, setMinutes] = useState('');
-  const [day, setDay] = useState<DockDay | null>(null);
-  useEffect(() => { if (booking) { setMinutes(String(minutesOf(booking))); setDay(null); } }, [booking]);
-  if (!booking) return null;
-  const n = Number(minutes);
-  const valid = minutesFit(booking, day, n);
-  return (
-    <Dialog open onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle>ปรับเวลาที่ท่า</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ pt: 0.5 }}>
-          <Summary b={booking} />
-          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} day={day} onDay={setDay} />
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>ปิด</Button>
-        <Button variant="contained" disabled={saving || !valid || n === minutesOf(booking)} onClick={() => onSubmit(booking, n)}>{saving ? 'กำลังบันทึก…' : 'บันทึกเวลา'}</Button>
       </DialogActions>
     </Dialog>
   );

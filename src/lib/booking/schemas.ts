@@ -138,6 +138,8 @@ export const rescheduleSchema = z.object({
   booking_date: isoDateSchema,
   start_time: slotTimeSchema,
   resource_id: optionalUuid,
+  /** New dock time set together with the move; omitted keeps the queue's current minutes. */
+  service_minutes: serviceMinutesSchema.optional(),
 });
 
 export const bookingResourceSchema = z.object({

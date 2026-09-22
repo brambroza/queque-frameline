@@ -10,10 +10,10 @@ import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { BookingsFilterBar, dateForRange, type BookingsFilter } from '@/components/bookings/bookings-filter-bar';
 import { BookingsTable } from '@/components/bookings/bookings-table';
-import { BookingMoveDialog, type MoveDraft } from '@/components/bookings/booking-move-dialog';
+import { BookingScheduleDialog, type ScheduleChanges, type ScheduleDraft } from '@/components/bookings/booking-schedule-dialog';
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
-import { ApproveDialog, CancelDialog, DurationDialog, PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
+import { ApproveDialog, CancelDialog, PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import type { ItemMinutesRule } from '@/lib/booking/suggest-minutes';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
@@ -77,10 +77,9 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [creating, setCreating] = useState(false);
   const [createResult, setCreateResult] = useState<CreateResult | null>(null);
   const [editTarget, setEditTarget] = useState<BookingRow | null>(null);
-  const [moveTarget, setMoveTarget] = useState<BookingRow | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<BookingRow | null>(null);
   const [approveTarget, setApproveTarget] = useState<BookingRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<BookingRow | null>(null);
-  const [durationTarget, setDurationTarget] = useState<BookingRow | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -198,7 +197,36 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { push(j.error ?? 'ปรับเวลาไม่สำเร็จ', 'error'); return; }
       push(`ปรับเวลาที่ท่าของ ${b.queue_number} เป็น ${serviceMinutes} นาทีแล้ว`);
-      setDurationTarget(null);
+      setScheduleTarget(null);
+      setEditTarget(null);
+      reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** One dialog, two APIs: a move (with or without new minutes) goes to reschedule, minutes alone to duration. */
+  async function submitSchedule(b: BookingRow, draft: ScheduleDraft, changes: ScheduleChanges) {
+    if (!changes.moved) { await submitDuration(b, draft.minutes); return; }
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/reschedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_date: draft.date,
+          start_time: draft.start,
+          resource_id: draft.dockId || null,
+          ...(changes.minutesChanged ? { service_minutes: draft.minutes } : {}),
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { queue_number?: string } };
+      if (!res.ok) { push(j.error ?? t('move_failed', 'เลื่อนคิวไม่สำเร็จ'), 'error'); return; }
+      const renumbered = j.data?.queue_number && j.data.queue_number !== b.queue_number;
+      const minutesNote = changes.minutesChanged ? ` · เวลาที่ท่า ${draft.minutes} นาที` : '';
+      push(renumbered ? `เลื่อนคิวแล้ว — เลขคิวใหม่ ${j.data?.queue_number}${minutesNote} (แจ้งลูกค้าด้วย)` : `เลื่อนคิวแล้ว${minutesNote} — อย่าลืมแจ้งลูกค้า`);
+      setScheduleTarget(null);
       setEditTarget(null);
       reload();
     } finally {
@@ -220,28 +248,6 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       setEditTarget(null);
       setApproveTarget(null);
       setCancelTarget(null);
-      reload();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function submitMove(draft: MoveDraft) {
-    const b = moveTarget;
-    if (!b || saving) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/bookings/${b.id}/reschedule`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ booking_date: draft.date, start_time: draft.time, resource_id: draft.resourceId || null }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { queue_number?: string } };
-      if (!res.ok) { push(j.error ?? t('move_failed', 'เลื่อนคิวไม่สำเร็จ'), 'error'); return; }
-      const renumbered = j.data?.queue_number && j.data.queue_number !== b.queue_number;
-      push(renumbered ? `เลื่อนคิวแล้ว — เลขคิวใหม่ ${j.data?.queue_number} (แจ้งลูกค้าด้วย)` : 'เลื่อนคิวแล้ว — อย่าลืมแจ้งลูกค้า');
-      setMoveTarget(null);
-      setEditTarget(null);
       reload();
     } finally {
       setSaving(false);
@@ -311,20 +317,17 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
       <BookingEditDrawer
         booking={editTarget}
-        isAdmin={isAdmin}
         saving={saving}
         siteName={siteName}
         onClose={() => setEditTarget(null)}
         onStatus={requestStatus}
-        onMove={setMoveTarget}
-        onDuration={setDurationTarget}
+        onSchedule={setScheduleTarget}
         onPayment={setPaymentTarget}
         onChanged={() => { setEditTarget(null); reload(); }}
       />
 
       <ApproveDialog booking={approveTarget} saving={saving} onClose={() => setApproveTarget(null)} onSubmit={(b, m) => void updateStatus(b, 'confirmed', { service_minutes: m })} itemMinutes={itemMinutes} />
       <CancelDialog booking={cancelTarget} saving={saving} onClose={() => setCancelTarget(null)} onSubmit={(b, reason) => void updateStatus(b, 'cancelled', { cancel_reason: reason })} />
-      <DurationDialog booking={durationTarget} saving={saving} onClose={() => setDurationTarget(null)} onSubmit={(b, m) => void submitDuration(b, m)} itemMinutes={itemMinutes} />
       <PaymentDialog
         target={paymentTarget}
         onClose={() => setPaymentTarget(null)}
@@ -336,12 +339,12 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         }}
       />
 
-      <BookingMoveDialog
-        booking={moveTarget}
-        resources={resources}
+      <BookingScheduleDialog
+        booking={scheduleTarget}
         saving={saving}
-        onClose={() => setMoveTarget(null)}
-        onSubmit={(d) => void submitMove(d)}
+        itemMinutes={itemMinutes}
+        onClose={() => setScheduleTarget(null)}
+        onSubmit={(b, d, changes) => void submitSchedule(b, d, changes)}
       />
     </Stack>
   );

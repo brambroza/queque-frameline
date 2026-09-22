@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeDockDay, labelOfMinutes, minutesOfDay, type DockDayOther } from './dock-day';
+import { computeDockDay, labelOfMinutes, minutesOfDay, snapToSlot, type DockDayOther } from './dock-day';
 
 const other = (queue_number: string, start_time: string, end_time: string | null, extra: Partial<DockDayOther> = {}): DockDayOther => ({
   id: queue_number, queue_number, start_time, end_time, buffer_minutes: 10, status: 'confirmed', ...extra,
@@ -14,6 +14,19 @@ describe('minutesOfDay / labelOfMinutes', () => {
     expect(labelOfMinutes(630)).toBe('10:30');
     expect(labelOfMinutes(1440)).toBe('24:00');
     expect(Number.isNaN(minutesOfDay('x'))).toBe(true);
+  });
+});
+
+describe('snapToSlot', () => {
+  const slots = [8 * 60, 8 * 60 + 30, 9 * 60, 14 * 60];
+  it('lands on the latest slot at or before the point', () => {
+    expect(snapToSlot(8 * 60 + 45, slots)).toBe(8 * 60 + 30);
+    expect(snapToSlot(9 * 60, slots)).toBe(9 * 60);
+    expect(snapToSlot(12 * 60, slots)).toBe(9 * 60);
+  });
+  it('gives null before the first slot or with no slots', () => {
+    expect(snapToSlot(7 * 60, slots)).toBeNull();
+    expect(snapToSlot(10 * 60, [])).toBeNull();
   });
 });
 
@@ -79,6 +92,20 @@ describe('computeDockDay', () => {
       { start: 15 * 60 + 10, end: 17 * 60, containsSelf: false },
     ]);
     expect(day.breakRange).toEqual({ start: 12 * 60, end: 13 * 60 });
+  });
+
+  it('reports every block a moved start would overlap, using the is_dock_free rule', () => {
+    const list = [other('R-011', '08:30', '09:30'), other('R-016', '11:30', '12:00')];
+    // start inside R-011
+    expect(computeDockDay({ start_time: '09:00', buffer_minutes: 10, minutes: 30, others: list, ...hours }).overlaps.map((b) => b.queue.queue_number)).toEqual(['R-011']);
+    // start before R-016 but long enough (incl. own buffer) to reach it
+    expect(computeDockDay({ start_time: '10:00', buffer_minutes: 10, minutes: 85, others: list, ...hours }).overlaps.map((b) => b.queue.queue_number)).toEqual(['R-016']);
+    // start right after R-011's buffer, ends before R-016 minus own buffer: clean
+    expect(computeDockDay({ start_time: '09:40', buffer_minutes: 10, minutes: 100, others: list, ...hours }).overlaps).toEqual([]);
+    // other's buffer counts too: 09:35 is inside R-011's 09:30–09:40 buffer
+    expect(computeDockDay({ start_time: '09:35', buffer_minutes: 0, minutes: 30, others: list, ...hours }).overlaps.map((b) => b.queue.queue_number)).toEqual(['R-011']);
+    // no minutes given = not checked
+    expect(computeDockDay({ start_time: '09:00', buffer_minutes: 10, others: list, ...hours }).overlaps).toEqual([]);
   });
 
   it('widens the bar to cover queues outside working hours and falls back without hours', () => {
