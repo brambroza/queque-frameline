@@ -10,6 +10,8 @@ export type BookingRow = {
   end_time?: string | null;
   /** Minutes at the dock for this queue (vehicle type's duration unless the warehouse changed it). */
   service_minutes?: number | null;
+  /** Turnaround kept free after this queue's end (snapshot of the vehicle type's buffer). */
+  buffer_minutes?: number | null;
   status: string;
   direction: BookingDirection;
   service_id?: string | null;

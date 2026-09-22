@@ -166,20 +166,20 @@ def svg_status(fig: Figure) -> list[str]:
 # ---------------------------------------------------------------- figure 1: before the appointment day
 OFFICE, PARTNER, SYS1 = range(3)
 FIG1 = Figure(
-    lanes=["ทีมคลัง (สำนักงาน)\nAdmin / เจ้าหน้าที่", "ลูกค้า / Supplier", "ระบบ\nอัตโนมัติ + LINE"],
+    lanes=["เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ลูกค้า / ผู้ขาย (Supplier)", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
     system_lane=SYS1,
     steps=[
-        Step(0, OFFICE, "1", "นำเข้า SO / PO", "ไฟล์ CSV หรือกรอกเอง"),
-        Step(1, OFFICE, "2", "ส่งลิงก์จอง / QR", "ทาง LINE หรือคัดลอก", line=True),
-        Step(2, PARTNER, "3", "จองคิวจากมือถือ", "เลือกรถ วัน เวลาที่ว่าง"),
-        Step(3, SYS1, "4", "จองท่า + ออกเลขคิว", "กันเวลาซ้อนท่าเดียวกัน", line=True, system=True),
-        Step(5, OFFICE, "5", "บันทึกการชำระเงิน", "ชำระแล้ว หรือ เครดิต", line=True),
-        Step(6, OFFICE, "6", "ยืนยันคิว", "ระบบออกเลข DO"),
-        Step(7, SYS1, "7", "ส่ง DO ทาง LINE", "พร้อมลิงก์สำหรับคนขับ", line=True, system=True),
-        Step(8, PARTNER, "8", "ส่งลิงก์ให้คนขับ", "แชร์ต่อใน LINE"),
+        Step(0, OFFICE, "1", "บันทึกเอกสาร SO / PO", "นำเข้าไฟล์ CSV หรือกรอกเอง"),
+        Step(1, OFFICE, "2", "ส่งลิงก์จองคิว / QR", "ผ่าน LINE หรือช่องทางอื่น", line=True),
+        Step(2, PARTNER, "3", "จองคิวด้วยตนเอง", "เลือกประเภทรถ วัน และเวลา"),
+        Step(3, SYS1, "4", "จัดสรรท่าและออกเลขคิว", "ไม่ให้คิวซ้อนในท่าเดียวกัน", line=True, system=True),
+        Step(5, OFFICE, "5", "บันทึกการชำระเงิน", "ชำระแล้ว หรือลูกค้าเครดิต", line=True),
+        Step(6, OFFICE, "6", "ยืนยันคิว", "ระบบออกเลขใบ DO"),
+        Step(7, SYS1, "7", "ส่งใบ DO ทาง LINE", "พร้อมลิงก์สำหรับคนขับ", line=True, system=True),
+        Step(8, PARTNER, "8", "ส่งลิงก์ให้คนขับ", "ส่งต่อผ่าน LINE"),
     ],
     n_cols=9,
-    status=[(0, 1, "เอกสารรอจอง"), (2, 5, "รอยืนยัน · SO ที่ยังไม่ชำระค้างอยู่ตรงนี้"), (6, 8, "ยืนยันแล้ว · มีเลข DO")],
+    status=[(0, 1, "เอกสารรอจองคิว"), (2, 5, "รอยืนยัน · SO ที่ยังไม่ชำระเงินคงสถานะนี้"), (6, 8, "ยืนยันแล้ว · มีเลขใบ DO")],
     aria="ก่อนวันนัด: ทีมคลังนำเข้าเอกสารและส่งลิงก์ ลูกค้าจองคิว ระบบจองท่า ตรวจการชำระเงินของ SO แล้วทีมคลังยืนยันคิว ระบบออก DO และส่งลิงก์ให้คนขับ",
 )
 
@@ -198,16 +198,16 @@ def build_fig1() -> str:
     out.append(f'<path d="M{box_x(3) + BOX_W},{gate_cy} H{gate_cx - DIAMOND_RX - 2}" class="link" marker-end="url(#ah)"/>')
     # gate -> 5 (SO not yet paid)
     out.append(f'<path d="M{gate_cx},{gate_cy - DIAMOND_RY} V{office_y} H{box_x(5) - 2}" class="link warn" marker-end="url(#ahw)"/>')
-    out.append(f'<text x="{gate_cx + 10}" y="{lane_cy(PARTNER) + 5}" class="edge warn-tx">SO ยังไม่ชำระ</text>')
+    out.append(f'<text x="{gate_cx + 10}" y="{lane_cy(PARTNER) + 5}" class="edge warn-tx">SO ยังไม่ชำระเงิน</text>')
     # gate -> 6 (cleared) enters the confirm box from below
     out.append(f'<path d="M{gate_cx + DIAMOND_RX},{gate_cy} H{col_cx(6)} V{box_y(OFFICE) + BOX_H + 2}" class="link" marker-end="url(#ah)"/>')
-    out.append(f'<text x="{(gate_cx + DIAMOND_RX + col_cx(6)) / 2}" y="{gate_cy - 10}" text-anchor="middle" class="edge">ชำระแล้ว · เครดิต · หรือเป็น PO</text>')
+    out.append(f'<text x="{(gate_cx + DIAMOND_RX + col_cx(6)) / 2}" y="{gate_cy - 10}" text-anchor="middle" class="edge">ชำระแล้ว · ลูกค้าเครดิต · หรือเป็น PO</text>')
 
     # the gate itself
     pts = f"{gate_cx - DIAMOND_RX},{gate_cy} {gate_cx},{gate_cy - DIAMOND_RY} {gate_cx + DIAMOND_RX},{gate_cy} {gate_cx},{gate_cy + DIAMOND_RY}"
     out.append(f'<polygon points="{pts}" class="gate"/>')
-    out.append(f'<text x="{gate_cx}" y="{gate_cy - 2}" text-anchor="middle" class="t1">ด่านชำระเงิน</text>')
-    out.append(f'<text x="{gate_cx}" y="{gate_cy + 16}" text-anchor="middle" class="t2">SO เคลียร์แล้ว?</text>')
+    out.append(f'<text x="{gate_cx}" y="{gate_cy - 2}" text-anchor="middle" class="t1">ตรวจการชำระเงิน</text>')
+    out.append(f'<text x="{gate_cx}" y="{gate_cy + 16}" text-anchor="middle" class="t2">SO ชำระแล้วหรือไม่</text>')
 
     out += svg_boxes(f) + svg_status(f)
     out.append("</svg>")
@@ -217,18 +217,18 @@ def build_fig1() -> str:
 # ---------------------------------------------------------------- figure 2: the appointment day
 SYS2, DRIVER, STAFF = range(3)
 FIG2 = Figure(
-    lanes=["ระบบ\nอัตโนมัติ + LINE", "คนขับรถ", "เจ้าหน้าที่หน้างาน\nประตู / ลานจอด"],
+    lanes=["ระบบ\nอัตโนมัติ + แจ้ง LINE", "คนขับรถ", "เจ้าหน้าที่หน้างาน\nประตู / ลานจอด"],
     system_lane=SYS2,
     steps=[
-        Step(0, DRIVER, "9", "เปิดลิงก์ ดู DO", "เห็นท่าและเวลานัด"),
-        Step(1, DRIVER, "10", "กด “ฉันมาถึงแล้ว”", "ตรวจ GPS รัศมี 300 ม.", line=True),
-        Step(1, STAFF, "", "เช็คอินให้ที่ประตู", "ตรวจทะเบียนรถ", line=True),
-        Step(2, SYS2, "11", "ท่าว่าง → เรียกคิว", "จอทีวีลาน + LINE คนขับ", line=True, system=True),
-        Step(3, STAFF, "12", "ขึ้น / ลงของ", "เสร็จแล้วกดปิดงาน"),
-        Step(4, SYS2, "13", "เรียกคันถัดไป", "อัตโนมัติเมื่อท่าว่าง", system=True),
+        Step(0, DRIVER, "9", "เปิดลิงก์ดูใบ DO", "ทราบท่าและเวลานัด"),
+        Step(1, DRIVER, "10", "เช็คอินเมื่อมาถึง", "ตรวจตำแหน่งในรัศมี 300 ม.", line=True),
+        Step(1, STAFF, "", "เจ้าหน้าที่เช็คอินแทน", "ตรวจทะเบียนรถที่ประตู", line=True),
+        Step(2, SYS2, "11", "เรียกคิวเมื่อท่าว่าง", "จอหน้าลาน + แจ้ง LINE คนขับ", line=True, system=True),
+        Step(3, STAFF, "12", "ขึ้น / ลงสินค้า", "เสร็จแล้วกดปิดงาน"),
+        Step(4, SYS2, "13", "เรียกคิวถัดไป", "อัตโนมัติเมื่อท่าว่าง", system=True),
     ],
     n_cols=5,
-    status=[(0, 0, "ยืนยันแล้ว"), (1, 1, "มาถึงแล้ว"), (2, 2, "เรียกเข้าท่า"), (3, 3, "ขึ้น/ลงของ → เสร็จ"), (4, 4, "ท่าว่าง")],
+    status=[(0, 0, "ยืนยันแล้ว"), (1, 1, "มาถึงแล้ว"), (2, 2, "เรียกเข้าท่า"), (3, 3, "ขึ้น/ลงสินค้า → เสร็จสิ้น"), (4, 4, "ท่าว่าง")],
     aria="วันนัด: คนขับเปิดลิงก์ดู DO กดเช็คอินเมื่อมาถึงหรือเจ้าหน้าที่เช็คอินให้ที่ประตู ระบบเรียกคิวเมื่อท่าว่าง เจ้าหน้าที่ขึ้นลงของแล้วปิดงาน ระบบเรียกคันถัดไป",
 )
 
@@ -315,6 +315,9 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 @media (max-width:1100px){.day{flex-direction:column}.day figure{flex:1 1 auto;width:100%}.controls{grid-template-columns:1fr}}
 :root.only-lanes header,:root.only-lanes #controls,:root.only-lanes #demo,:root.only-lanes footer,:root.only-lanes .day aside{display:none}
 :root.only-lanes .wrap{gap:32px;padding-block:24px}
+:root.only-lanes .day figure{flex:none;width:100%}
+:root.only-lanes #fig2 .scroll{display:flex;justify-content:center}
+:root.only-lanes #fig2 svg{width:60.6%}
 
 /* swimlane marks */
 .lane-a{fill:var(--surface)} .lane-b{fill:var(--lane)}
@@ -342,20 +345,20 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 <header>
   <p class="eyebrow">Fameline Dock Queue · ระบบคิวรับ-ส่งสินค้าหน้าคลัง</p>
   <h1>เส้นทางของคิวหนึ่งคิว ตั้งแต่เอกสารเข้าจนรถออกจากท่า</h1>
-  <p class="lede">คน 4 กลุ่มทำงานต่อกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปหรือสมัครสมาชิก</strong> ใช้ลิงก์ที่ได้รับทาง LINE เท่านั้น ส่วนงานที่ต้องเฝ้า เช่น จัดท่า เรียกคิว แจ้งเตือน ระบบทำให้เอง</p>
+  <p class="lede">ผู้เกี่ยวข้อง 4 กลุ่มทำงานต่อเนื่องกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปพลิเคชันหรือสมัครสมาชิก</strong> ใช้เพียงลิงก์ที่ได้รับทาง LINE ส่วนงานที่ต้องติดตามตลอดเวลา เช่น การจัดสรรท่า การเรียกคิว และการแจ้งเตือน ระบบดำเนินการให้อัตโนมัติ</p>
 </header>
 
 <section id="before">
   <div class="sec-head">
     <h2>ก่อนวันนัด — จากเอกสารถึงใบ DO</h2>
-    <p>คิวได้เลข DO ก็ต่อเมื่อทีมคลังยืนยัน และ SO ใบนั้นผ่านด่านชำระเงินแล้วเท่านั้น</p>
+    <p>คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และใบสั่งขาย (SO) ผ่านการตรวจการชำระเงินแล้ว</p>
   </div>
   <figure id="fig1">
     <div class="scroll">__FIG1__</div>
     <figcaption>
-      <span class="key"><span class="sw"></span>คนเป็นผู้ทำ</span>
-      <span class="key"><span class="sw sys"></span>ระบบทำเองอัตโนมัติ</span>
-      <span class="key"><span class="sw alt"></span>ทางเลือก</span>
+      <span class="key"><span class="sw"></span>ขั้นตอนที่ผู้ใช้ดำเนินการ</span>
+      <span class="key"><span class="sw sys"></span>ระบบดำเนินการอัตโนมัติ</span>
+      <span class="key"><span class="sw alt"></span>ทางเลือกเพิ่มเติม</span>
       <span class="key"><span class="sw line">LINE</span>ขั้นที่มีการแจ้งเตือนทาง LINE</span>
     </figcaption>
   </figure>
@@ -364,26 +367,26 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 <section id="day">
   <div class="sec-head">
     <h2>วันนัด — จากรถมาถึงจนปิดงาน</h2>
-    <p>ท่าว่างเมื่อไร ระบบเรียกคันถัดไปเอง ไม่ต้องมีคนคอยไล่ดูลำดับ</p>
+    <p>เมื่อท่าว่าง ระบบเรียกคิวถัดไปโดยอัตโนมัติ เจ้าหน้าที่ไม่ต้องติดตามลำดับคิวเอง</p>
   </div>
   <div class="day">
     <figure id="fig2">
       <div class="scroll">__FIG2__</div>
-      <figcaption>เส้นประ = เจ้าหน้าที่เช็คอินแทนได้ กรณีคนขับไม่ได้กดเองหรือไม่มีสัญญาณ GPS</figcaption>
+      <figcaption>เส้นประ: เจ้าหน้าที่ประตูเช็คอินแทนได้ กรณีคนขับไม่ได้เช็คอินเองหรือไม่มีสัญญาณ GPS</figcaption>
     </figure>
     <aside>
       <h3>ถ้าไม่เป็นไปตามแผน</h3>
       <div class="exc">
         <div class="chain"><span class="chip ok">ยืนยันแล้ว</span><span class="arr">เลยเวลานัด 30 นาที →</span><span class="chip bad">มาสาย</span><span class="arr">เลยอีก 30 นาที →</span><span class="chip bad">ไม่มา</span></div>
-        <p>ระบบปรับสถานะเอง รถที่มาสายยังเช็คอินได้ ครบเวลาแล้วท่าถูกปล่อยให้คันอื่น แจ้ง LINE ลูกค้าและทีมคลัง เวลาผ่อนผันตั้งค่าได้</p>
+        <p>ระบบปรับสถานะอัตโนมัติ รถที่มาสายยังเช็คอินได้ เมื่อครบเวลาระบบปล่อยท่าให้คิวอื่น และแจ้ง LINE ถึงลูกค้าและทีมคลัง เวลาผ่อนผันตั้งค่าได้</p>
       </div>
       <div class="exc">
         <div class="chain"><span class="chip ok">เรียกเข้าท่า</span><span class="arr">15 นาทีไม่เข้าท่า →</span><span class="chip bad">ไม่มา</span><span class="arr">→</span><span class="chip">เรียกคันถัดไป</span></div>
-        <p>ก่อนครบเวลา เจ้าหน้าที่กดเรียกซ้ำ หรือยกเลิกการเรียกเพื่อคืนคิวกลับไปรอได้</p>
+        <p>ก่อนครบเวลา เจ้าหน้าที่เรียกซ้ำได้ หรือยกเลิกการเรียกเพื่อให้คิวกลับไปรอตามลำดับเดิม</p>
       </div>
       <div class="exc">
         <div class="chain"><span class="chip">รอยืนยัน / ยืนยันแล้ว</span><span class="arr">→</span><span class="chip bad">ยกเลิก</span></div>
-        <p>ลูกค้ายกเลิกเองได้จากลิงก์จนก่อนรถเช็คอิน ฝั่งคลังยกเลิกต้องระบุเหตุผล และลูกค้าเห็นเหตุผลนั้น แจ้ง LINE ทั้งสองฝ่าย</p>
+        <p>ลูกค้ายกเลิกได้เองจากลิงก์จนถึงก่อนรถเช็คอิน ฝ่ายคลังยกเลิกได้โดยต้องระบุเหตุผล ซึ่งลูกค้าจะเห็นเหตุผลนั้น และระบบแจ้ง LINE ทั้งสองฝ่าย</p>
       </div>
     </aside>
   </div>
@@ -392,43 +395,43 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 <section id="controls">
   <div class="sec-head">
     <h2>จุดควบคุม 4 จุดที่ระบบบังคับให้</h2>
-    <p>เป็นกติกาที่ระบบไม่ยอมให้ข้าม ไม่ได้อาศัยความจำหรือความระวังของคน</p>
+    <p>เป็นกติกาที่ระบบบังคับใช้เอง ไม่ต้องอาศัยความจำหรือความระมัดระวังของผู้ใช้</p>
   </div>
   <div class="controls">
     <div class="ctl">
-      <h3>ด่านชำระเงิน — ขั้น 5</h3>
+      <h3>ตรวจการชำระเงิน — ขั้นที่ 5</h3>
       <dl>
-        <dt>กันอะไร</dt><dd>รถเข้ามาขึ้นของทั้งที่ SO ยังไม่เคลียร์เงิน</dd>
-        <dt>ระบบทำ</dt><dd>SO ที่ยังไม่ชำระจองคิวได้ แต่ค้างที่ “รอยืนยัน” ออก DO ไม่ได้ จนเจ้าหน้าที่บันทึกว่าชำระแล้วหรือเป็นลูกค้าเครดิต PO ขารับของไม่ถูกตรวจ</dd>
-        <dt>ผลที่ได้</dt><dd>ไม่มีใบ DO หลุดออกไปก่อนเงินเคลียร์ ไม่ว่าใครเป็นคนกดยืนยัน</dd>
+        <dt>กันอะไร</dt><dd>รถเข้ารับสินค้าทั้งที่ใบสั่งขายยังไม่ได้ชำระเงิน</dd>
+        <dt>ระบบทำ</dt><dd>ใบสั่งขายที่ยังไม่ชำระเงินจองคิวได้ แต่คิวคงสถานะ “รอยืนยัน” และออกใบ DO ไม่ได้ จนกว่าเจ้าหน้าที่จะบันทึกว่าชำระแล้วหรือเป็นลูกค้าเครดิต ส่วนใบสั่งซื้อ (PO) ไม่มีเงื่อนไขนี้</dd>
+        <dt>ผลที่ได้</dt><dd>ไม่มีใบ DO ออกก่อนการชำระเงิน ไม่ว่าผู้ใดเป็นผู้กดยืนยัน</dd>
       </dl>
     </div>
     <div class="ctl">
-      <h3>กันคิวซ้อนท่า — ขั้น 4 และ 6</h3>
+      <h3>ป้องกันคิวซ้อนท่า — ขั้นที่ 4 และ 6</h3>
       <dl>
         <dt>กันอะไร</dt><dd>รถสองคันได้ท่าเดียวกันในเวลาเดียวกัน</dd>
-        <dt>ระบบทำ</dt><dd>ตรวจเวลาที่ท่า รวมเวลาเผื่อสลับรถ ทั้งตอนจองและตอนยืนยัน คนละท่าเวลาซ้อนกันได้ตามปกติ</dd>
-        <dt>ผลที่ได้</dt><dd>หน้างานไม่ต้องแก้ปัญหารถชนคิวกันหน้าท่า</dd>
+        <dt>ระบบทำ</dt><dd>ตรวจสอบเวลาที่ท่ารวมเวลาเผื่อสลับรถ ทั้งตอนจองและตอนยืนยัน ส่วนคนละท่าจองเวลาเดียวกันได้ตามปกติ</dd>
+        <dt>ผลที่ได้</dt><dd>หน้างานไม่ต้องแก้ปัญหารถหลายคันรอท่าเดียวกัน</dd>
       </dl>
     </div>
     <div class="ctl">
-      <h3>เช็คอินด้วยตำแหน่งจริง — ขั้น 10</h3>
+      <h3>เช็คอินด้วยตำแหน่งจริง — ขั้นที่ 10</h3>
       <dl>
-        <dt>กันอะไร</dt><dd>คนขับกดว่ามาถึงทั้งที่ยังอยู่ระหว่างทาง แล้วแซงคิวคันที่มาถึงจริง</dd>
-        <dt>ระบบทำ</dt><dd>กดได้เฉพาะวันนัด และต้องอยู่ในรัศมี 300 เมตรจากคลัง (ตั้งค่าได้ต่อสาขา) เจ้าหน้าที่ประตูยังตรวจทะเบียนซ้ำได้</dd>
-        <dt>ผลที่ได้</dt><dd>ลำดับเรียกคิวอิงรถที่อยู่หน้าคลังจริง</dd>
+        <dt>กันอะไร</dt><dd>คนขับเช็คอินขณะยังอยู่ระหว่างทาง แล้วได้ลำดับก่อนรถที่มาถึงจริง</dd>
+        <dt>ระบบทำ</dt><dd>เช็คอินได้เฉพาะวันนัด และต้องอยู่ในรัศมี 300 เมตรจากคลัง (ตั้งค่าได้ต่อสาขา) เจ้าหน้าที่ประตูยังตรวจทะเบียนซ้ำได้</dd>
+        <dt>ผลที่ได้</dt><dd>ลำดับการเรียกคิวอ้างอิงรถที่อยู่หน้าคลังจริง</dd>
       </dl>
     </div>
     <div class="ctl">
-      <h3>ลิงก์เฉพาะเอกสาร — ขั้น 2 และ 7</h3>
+      <h3>ลิงก์เฉพาะเอกสาร — ขั้นที่ 2 และ 7</h3>
       <dl>
-        <dt>กันอะไร</dt><dd>คนนอกเข้ามาจองหรือเห็นข้อมูลของลูกค้ารายอื่น</dd>
-        <dt>ระบบทำ</dt><dd>หนึ่งลิงก์ผูกกับ SO/PO ใบเดียว มีวันหมดอายุ ออกลิงก์ใหม่แล้วลิงก์เก่าใช้ไม่ได้ทันที คนขับเห็นเฉพาะงานของตัวเอง จอทีวีลานไม่แสดงชื่อหรือเบอร์โทร</dd>
-        <dt>ผลที่ได้</dt><dd>ใช้งานง่ายแบบไม่ต้อง login โดยไม่เปิดข้อมูลเกินจำเป็น</dd>
+        <dt>กันอะไร</dt><dd>บุคคลภายนอกเข้ามาจองหรือเห็นข้อมูลของลูกค้ารายอื่น</dd>
+        <dt>ระบบทำ</dt><dd>หนึ่งลิงก์ผูกกับเอกสาร SO/PO ใบเดียวและมีวันหมดอายุ เมื่อออกลิงก์ใหม่ ลิงก์เดิมใช้ไม่ได้ทันที คนขับเห็นเฉพาะงานของตนเอง จอหน้าลานไม่แสดงชื่อหรือเบอร์โทร</dd>
+        <dt>ผลที่ได้</dt><dd>ใช้งานง่ายโดยไม่ต้องเข้าสู่ระบบ และไม่เปิดเผยข้อมูลเกินจำเป็น</dd>
       </dl>
     </div>
   </div>
-  <p class="note">ทุกการกดในระบบถูกบันทึกว่าใครทำ เมื่อไร เปลี่ยนจากอะไรเป็นอะไร ตรวจย้อนหลังได้ทุกคิว</p>
+  <p class="note">ทุกการดำเนินการในระบบถูกบันทึกว่าผู้ใดทำ เมื่อใด และเปลี่ยนจากสถานะใดเป็นสถานะใด ตรวจสอบย้อนหลังได้ทุกคิว</p>
 </section>
 
 <section id="demo">
@@ -445,16 +448,16 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
       <tr><td class="n">4</td><td>สถานะคิวฝั่งลูกค้า, รายการคิวรอยืนยันฝั่งคลัง</td><td>ลูกค้า · ทีมคลัง</td><td class="f">05d-book-status · 06h-bookings-pending</td></tr>
       <tr><td class="n">5</td><td>เอกสาร SO/PO › บันทึกการชำระเงิน</td><td>ทีมคลัง</td><td>สาธิตสดจากระบบ</td></tr>
       <tr><td class="n">6–7</td><td>รายละเอียดคิว › อนุมัติคิว + ออก DO, ใบ DO</td><td>ทีมคลัง</td><td class="f">06b-booking-drawer · 06e-do-sheet</td></tr>
-      <tr><td class="n">8–10</td><td>หน้าคนขับ: DO ท่า เวลานัด ปุ่ม “ฉันมาถึงแล้ว”</td><td>คนขับ</td><td class="f">08b-driver-full</td></tr>
-      <tr><td class="n">11</td><td>บอร์ดคิววันนี้, จอทีวีลาน, หน้าคนขับตอนถูกเรียก</td><td>เจ้าหน้าที่ · คนขับ</td><td class="f">07-queue-board · 09-display-tv · 08a-driver-called</td></tr>
-      <tr><td class="n">12–13</td><td>บอร์ดคิววันนี้ › เริ่มขึ้น/ลงของ › ปิดงาน</td><td>เจ้าหน้าที่หน้างาน</td><td class="f">07-queue-board</td></tr>
+      <tr><td class="n">8–10</td><td>หน้าคนขับ: ใบ DO ท่า เวลานัด และปุ่มเช็คอิน</td><td>คนขับ</td><td class="f">08b-driver-full</td></tr>
+      <tr><td class="n">11</td><td>บอร์ดคิววันนี้, จอหน้าลาน, หน้าคนขับเมื่อถูกเรียก</td><td>เจ้าหน้าที่ · คนขับ</td><td class="f">07-queue-board · 09-display-tv · 08a-driver-called</td></tr>
+      <tr><td class="n">12–13</td><td>บอร์ดคิววันนี้ › เริ่มขึ้น/ลงสินค้า › ปิดงาน</td><td>เจ้าหน้าที่หน้างาน</td><td class="f">07-queue-board</td></tr>
       <tr><td class="n">หลังจบ</td><td>ประวัติของคิว, แดชบอร์ด, รายงาน</td><td>ผู้บริหาร · ทีมคลัง</td><td class="f">06c-timeline · 10-dashboard · 11-reports</td></tr>
     </tbody>
   </table>
   </div>
 </section>
 
-<footer>จัดทำโดย GoAlong · อ้างอิงระบบต้นแบบ ณ วันที่ 21 กันยายน 2569 · ค่าเวลาผ่อนผัน 30 นาที เวลารอเข้าท่า 15 นาที และรัศมี 300 เมตร เป็นค่าเริ่มต้นที่ปรับได้</footer>
+<footer>จัดทำโดย GoAlong · อ้างอิงระบบต้นแบบ ณ วันที่ 22 กันยายน 2569 · ค่าเวลาผ่อนผัน 30 นาที เวลารอเข้าท่า 15 นาที และรัศมี 300 เมตร เป็นค่าเริ่มต้นที่ปรับได้</footer>
 </div>
 """
 

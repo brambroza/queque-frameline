@@ -6,7 +6,9 @@ import {
 } from '@mui/material';
 import { PAYMENT_BLOCK_MESSAGE, PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentCleared, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { suggestServiceMinutes, type ItemMinutesRule, type SuggestedMinutes } from '@/lib/booking/suggest-minutes';
+import { labelOfMinutes, type DockDay } from '@/lib/booking/dock-day';
 import { customerName, hhmm, type BookingRow } from './booking-types';
+import { DockDayTimeline } from './dock-day-timeline';
 
 /** Payment status of the SO behind a queue; null when the queue is not gated (PO / no document). */
 export function paymentOf(b: Pick<BookingRow, 'external_documents'>): PaymentStatus | null {
@@ -58,17 +60,32 @@ function suggestionOf(b: BookingRow, rule: ItemMinutesRule | undefined): Suggest
 
 const QUICK_MINUTES = [30, 45, 60, 90, 120, 180];
 
+/** True when `n` minutes would run into the next queue on the dock (only once the day has loaded). */
+function overDockLimit(day: DockDay | null, n: number): boolean {
+  return day !== null && Number.isFinite(n) && n > day.maxMinutes;
+}
+
+/** Minutes valid for the field and, when the dock's day is known, fitting before the next queue. */
+function minutesFit(booking: BookingRow, day: DockDay | null, n: number): boolean {
+  return Number.isInteger(n) && n >= 5 && n <= 1440 && Boolean(endTimeLabel(booking.start_time, n)) && !overDockLimit(day, n);
+}
+
 /**
  * Minutes-at-the-dock editor shared by the approve and the adjust dialogs.
- * The vehicle type's duration is only the starting value.
+ * The vehicle type's duration is only the starting value. The dock's day is
+ * drawn underneath so the warehouse sees how far the stay can stretch.
  */
-function MinutesField({ booking, value, onChange, itemMinutes }: { booking: BookingRow; value: string; onChange: (v: string) => void; itemMinutes?: ItemMinutesRule }) {
+function MinutesField({ booking, value, onChange, itemMinutes, day, onDay }: {
+  booking: BookingRow; value: string; onChange: (v: string) => void; itemMinutes?: ItemMinutesRule; day: DockDay | null; onDay: (day: DockDay | null) => void;
+}) {
   const n = Number(value);
   const valid = Number.isInteger(n) && n >= 5 && n <= 1440;
   const end = valid ? endTimeLabel(booking.start_time, n) : null;
+  const over = overDockLimit(day, n);
   const typeDefault = booking.services?.duration_minutes ?? null;
   const suggestion = suggestionOf(booking, itemMinutes);
   const lines = booking.external_documents?.item_count ?? 0;
+  const nextLabel = day?.next ? `ชน ${day.next.queue_number}` : 'เกินสิ้นวัน';
   return (
     <Stack spacing={1}>
       {suggestion.source === 'items' ? (
@@ -76,7 +93,8 @@ function MinutesField({ booking, value, onChange, itemMinutes }: { booking: Book
           size="small"
           color="info"
           variant={n === suggestion.minutes ? 'filled' : 'outlined'}
-          label={`แนะนำตามรายการ: ${lines} รายการ × ${itemMinutes?.minutesPerItem ?? 10} นาที = ${suggestion.minutes} นาที`}
+          disabled={overDockLimit(day, suggestion.minutes)}
+          label={`แนะนำตามรายการ: ${lines} รายการ × ${itemMinutes?.minutesPerItem ?? 10} นาที = ${suggestion.minutes} นาที${overDockLimit(day, suggestion.minutes) ? ` · ${nextLabel}` : ''}`}
           onClick={() => onChange(String(suggestion.minutes))}
           sx={{ alignSelf: 'flex-start' }}
         />
@@ -88,19 +106,32 @@ function MinutesField({ booking, value, onChange, itemMinutes }: { booking: Book
         size="small"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        error={!valid || (valid && !end)}
+        error={!valid || (valid && !end) || over}
         helperText={
           !valid ? 'ใส่ 5–1440 นาที'
             : !end ? 'เวลาสิ้นสุดข้ามวัน — ลดเวลาลง'
-              : `${hhmm(booking.start_time)} – ${end} น.${typeDefault ? ` · ค่าตั้งต้นของ${booking.services?.service_name ?? 'ประเภทรถ'} ${typeDefault} นาที` : ''}`
+              : over && day ? `${nextLabel} — สูงสุด ${day.maxMinutes} นาที (ถึง ${labelOfMinutes(day.startMin + day.maxMinutes)} น.)`
+                : `${hhmm(booking.start_time)} – ${end} น.${typeDefault ? ` · ค่าตั้งต้นของ${booking.services?.service_name ?? 'ประเภทรถ'} ${typeDefault} นาที` : ''}`
         }
         slotProps={{ htmlInput: { min: 5, max: 1440, step: 5 } }}
       />
       <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-        {QUICK_MINUTES.map((m) => (
-          <Chip key={m} size="small" label={`${m} นาที`} variant={n === m ? 'filled' : 'outlined'} color={n === m ? 'primary' : 'default'} onClick={() => onChange(String(m))} />
-        ))}
+        {QUICK_MINUTES.map((m) => {
+          const blocked = overDockLimit(day, m);
+          return (
+            <Chip
+              key={m}
+              size="small"
+              label={blocked ? `${m} นาที · ${nextLabel}` : `${m} นาที`}
+              variant={n === m ? 'filled' : 'outlined'}
+              color={n === m ? 'primary' : 'default'}
+              disabled={blocked}
+              onClick={() => onChange(String(m))}
+            />
+          );
+        })}
       </Stack>
+      <DockDayTimeline bookingId={booking.id} minutes={n} onPick={(m) => onChange(String(m))} onDay={onDay} />
     </Stack>
   );
 }
@@ -121,11 +152,13 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit, itemMinutes 
   booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void; itemMinutes?: ItemMinutesRule;
 }) {
   const [minutes, setMinutes] = useState('');
+  const [day, setDay] = useState<DockDay | null>(null);
   const ruleEnabled = itemMinutes?.enabled ?? false;
   const perItem = itemMinutes?.minutesPerItem;
   // Item lines win over the vehicle-type snapshot, but never over a time somebody already set by hand.
   useEffect(() => {
     if (!booking) return;
+    setDay(null);
     const current = minutesOf(booking);
     const untouched = current === (booking.services?.duration_minutes ?? current);
     const suggestion = suggestionOf(booking, { enabled: ruleEnabled, minutesPerItem: perItem ?? 10 });
@@ -134,7 +167,7 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit, itemMinutes 
   if (!booking) return null;
   const n = Number(minutes);
   const blocked = isPaymentBlocked(booking);
-  const valid = Number.isInteger(n) && n >= 5 && n <= 1440 && Boolean(endTimeLabel(booking.start_time, n));
+  const valid = minutesFit(booking, day, n);
   return (
     <Dialog open onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
       <DialogTitle>อนุมัติคิว + ออก DO</DialogTitle>
@@ -142,9 +175,9 @@ export function ApproveDialog({ booking, saving, onClose, onSubmit, itemMinutes 
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           <Summary b={booking} />
           {blocked ? <Alert severity="error">{PAYMENT_BLOCK_MESSAGE}</Alert> : null}
-          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} />
+          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} day={day} onDay={setDay} />
           <Typography variant="caption" color="text.secondary">
-            {suggestionOf(booking, itemMinutes).source === 'items' ? 'เวลาตามจำนวนรายการสินค้าเป็นค่าเบื้องต้น' : 'เวลาตามประเภทรถเป็นค่าเบื้องต้น'} ปรับตามเวลาหยิบสินค้าจริงได้ — ระบบจะกันท่าตามเวลานี้ และปฏิเสธถ้าชนกับคิวถัดไปของท่าเดียวกัน
+            {suggestionOf(booking, itemMinutes).source === 'items' ? 'เวลาตามจำนวนรายการสินค้าเป็นค่าเบื้องต้น' : 'เวลาตามประเภทรถเป็นค่าเบื้องต้น'} ปรับตามเวลาหยิบสินค้าจริงได้ — ระบบจะกันท่าตามเวลานี้
           </Typography>
         </Stack>
       </DialogContent>
@@ -161,17 +194,18 @@ export function DurationDialog({ booking, saving, onClose, onSubmit, itemMinutes
   booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, serviceMinutes: number) => void; itemMinutes?: ItemMinutesRule;
 }) {
   const [minutes, setMinutes] = useState('');
-  useEffect(() => { if (booking) setMinutes(String(minutesOf(booking))); }, [booking]);
+  const [day, setDay] = useState<DockDay | null>(null);
+  useEffect(() => { if (booking) { setMinutes(String(minutesOf(booking))); setDay(null); } }, [booking]);
   if (!booking) return null;
   const n = Number(minutes);
-  const valid = Number.isInteger(n) && n >= 5 && n <= 1440 && Boolean(endTimeLabel(booking.start_time, n));
+  const valid = minutesFit(booking, day, n);
   return (
     <Dialog open onClose={saving ? undefined : onClose} fullWidth maxWidth="xs">
       <DialogTitle>ปรับเวลาที่ท่า</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 0.5 }}>
           <Summary b={booking} />
-          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} />
+          <MinutesField booking={booking} value={minutes} onChange={setMinutes} itemMinutes={itemMinutes} day={day} onDay={setDay} />
         </Stack>
       </DialogContent>
       <DialogActions>
