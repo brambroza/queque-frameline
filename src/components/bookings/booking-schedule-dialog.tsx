@@ -228,14 +228,14 @@ export function BookingScheduleDialog({ booking, saving, itemMinutes, onClose, o
               <Typography variant="subtitle2" fontWeight={700}>{shortThaiDay(draft.date)} · ท่าที่รับ{booking.services?.service_name ?? 'รถประเภทนี้'}</Typography>
               {canMove ? (
                 <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                  {view === 'grid' ? (
+                {/*   {view === 'grid' ? (
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       <Chip size="small" label={`พอสำหรับ ${minutesValid ? draft.minutes : '…'} นาที`} color={fitOnly ? 'primary' : 'default'} variant={fitOnly ? 'filled' : 'outlined'} onClick={() => changeFit(true)} />
                       <Chip size="small" label="ทุกช่องที่เปิด" color={!fitOnly ? 'primary' : 'default'} variant={!fitOnly ? 'filled' : 'outlined'} onClick={() => changeFit(false)} />
                     </Stack>
                   ) : (
                     <Typography variant="caption" color="text.secondary">ลากบล็อกไปท่า/เวลาที่ว่าง · ลากขอบล่างเพื่อยืด</Typography>
-                  )}
+                  )} */}
                   <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: ScheduleView | null) => { if (v) changeView(v); }} sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1.25, fontSize: 12, textTransform: 'none' } }}>
                     <ToggleButton value="grid">เลือกช่องเวลา</ToggleButton>
                     <ToggleButton value="board">บอร์ด (ลาก)</ToggleButton>
