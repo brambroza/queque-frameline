@@ -244,7 +244,7 @@ export function BookingEditDrawer({
                   <Row k="เลข DO" v={b.do_number ? <b>{b.do_number}</b> : 'ยังไม่ออก'} />
                   {!terminal ? (
                     <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onSchedule(b)}>
-                      {MOVABLE.has(b.status) ? 'จัดตารางคิว — วัน / เวลา / ท่า / เวลาที่ท่า' : 'ปรับเวลาที่ท่า'}
+                      {MOVABLE.has(b.status) ? 'จัดตารางคิว — วัน / เวลา' : 'ปรับเวลาที่ท่า'}
                     </Button>
                   ) : null}
                 </Box>
