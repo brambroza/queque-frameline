@@ -27,16 +27,19 @@ import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import { useI18n } from '@/components/i18n/i18n-provider';
 import { useToast } from '@/components/ui/toast';
 import {
+  FEEDBACK_CC_MAX,
   FEEDBACK_DESCRIPTION_MAX,
   FEEDBACK_DESCRIPTION_MIN,
   FEEDBACK_KIND_LABEL,
   FEEDBACK_NAME_MAX,
+  FEEDBACK_PHONE_MAX,
   FEEDBACK_PRIORITIES,
   FEEDBACK_PRIORITY_COLOR,
   FEEDBACK_PRIORITY_LABEL,
   type FeedbackKind,
   type FeedbackPriority,
 } from '@/lib/feedback/constants';
+import { isEmailAddress, parseEmailList } from '@/lib/feedback/schemas';
 
 export type FeedbackDialogProps = {
   open: boolean;
@@ -49,8 +52,12 @@ export type FeedbackDialogProps = {
   pageLabel: string | null;
   /** Name from the profile, used to prefill the reporter field. */
   defaultName?: string | null;
+  /** Sign-in e-mail, used to prefill the reply-to field. */
+  defaultEmail?: string | null;
   branchId?: string | null;
 };
+
+type MeProfile = { data?: { phone?: string | null } };
 
 type SubmitResponse = { data?: { id: string; emailed: boolean; screenshot_saved: boolean }; error?: string };
 
@@ -58,12 +65,15 @@ type SubmitResponse = { data?: { id: string; emailed: boolean; screenshot_saved:
  * Form of the floating feedback button: kind, reporter name, priority,
  * description and the screenshot preview. Posts to `/api/feedback`.
  */
-export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel, defaultName, branchId }: FeedbackDialogProps) {
+export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel, defaultName, defaultEmail, branchId }: FeedbackDialogProps) {
   const { t, lang } = useI18n();
   const { push } = useToast();
   const [kind, setKind] = useState<FeedbackKind>('bug');
   const [priority, setPriority] = useState<FeedbackPriority>('medium');
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [cc, setCc] = useState('');
+  const [phone, setPhone] = useState('');
   const [description, setDescription] = useState('');
   const [attach, setAttach] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,14 +88,36 @@ export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel,
     setKind('bug');
     setPriority('medium');
     setName(defaultName?.trim() ?? '');
+    setEmail(defaultEmail?.trim() ?? '');
+    setCc('');
+    setPhone('');
     setDescription('');
     setAttach(Boolean(screenshot));
     setError(null);
     setTouched(false);
     setSaving(false);
-  }, [open, defaultName, screenshot]);
+
+    // Phone lives on users_profile only; fetch it lazily so the button itself
+    // never costs a request. Best-effort — the field stays editable either way.
+    let cancelled = false;
+    fetch('/api/me-profile', { cache: 'no-store' })
+      .then((r) => (r.ok ? (r.json() as Promise<MeProfile>) : null))
+      .then((j) => {
+        if (!cancelled && j?.data?.phone) setPhone((prev) => prev || j.data?.phone || '');
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, defaultName, defaultEmail, screenshot]);
 
   const nameError = touched && !name.trim();
+  const emailTrimmed = email.trim();
+  const emailError = touched && emailTrimmed.length > 0 && !isEmailAddress(emailTrimmed);
+  const ccParsed = parseEmailList(cc);
+  const ccError = touched && (ccParsed.invalid.length > 0 || ccParsed.emails.length > FEEDBACK_CC_MAX);
+  const phoneTrimmed = phone.trim();
+  const phoneError = touched && phoneTrimmed.length > 0 && !/^[0-9+()\-\s]{6,}$/.test(phoneTrimmed);
   const descTrimmed = description.trim();
   const descError = touched && descTrimmed.length < FEEDBACK_DESCRIPTION_MIN;
 
@@ -93,6 +125,9 @@ export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel,
     if (saving) return;
     setTouched(true);
     if (!name.trim() || descTrimmed.length < FEEDBACK_DESCRIPTION_MIN) return;
+    if (emailTrimmed && !isEmailAddress(emailTrimmed)) return;
+    if (ccParsed.invalid.length > 0 || ccParsed.emails.length > FEEDBACK_CC_MAX) return;
+    if (phoneTrimmed && !/^[0-9+()\-\s]{6,}$/.test(phoneTrimmed)) return;
     setSaving(true);
     setError(null);
     try {
@@ -103,6 +138,9 @@ export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel,
           kind,
           priority,
           reporter_name: name.trim(),
+          contact_email: emailTrimmed || null,
+          cc: ccParsed.emails.join(', ') || null,
+          contact_phone: phoneTrimmed || null,
           description: descTrimmed,
           page_path: pagePath,
           page_label: pageLabel,
@@ -181,6 +219,50 @@ export function FeedbackDialog({ open, onClose, screenshot, pagePath, pageLabel,
             error={nameError}
             helperText={nameError ? t('feedback.err_name', 'กรุณากรอกชื่อผู้แจ้ง') : ' '}
             autoComplete="name"
+          />
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              id="feedback-email"
+              size="small"
+              fullWidth
+              type="email"
+              label={t('feedback.contact_email', 'อีเมลติดต่อกลับ')}
+              value={email}
+              onChange={(e) => setEmail(e.target.value.slice(0, 200))}
+              error={emailError}
+              helperText={emailError ? t('feedback.err_email', 'รูปแบบอีเมลไม่ถูกต้อง') : ' '}
+              autoComplete="email"
+            />
+            <TextField
+              id="feedback-phone"
+              size="small"
+              fullWidth
+              type="tel"
+              label={t('feedback.contact_phone', 'เบอร์โทรติดต่อกลับ')}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value.slice(0, FEEDBACK_PHONE_MAX))}
+              error={phoneError}
+              helperText={phoneError ? t('feedback.err_phone', 'รูปแบบเบอร์โทรไม่ถูกต้อง') : ' '}
+              autoComplete="tel"
+            />
+          </Stack>
+
+          <TextField
+            id="feedback-cc"
+            size="small"
+            label={t('feedback.cc', 'CC อีเมล (ไม่บังคับ)')}
+            placeholder="a@example.com, b@example.com"
+            value={cc}
+            onChange={(e) => setCc(e.target.value.slice(0, 1000))}
+            error={ccError}
+            helperText={
+              ccError
+                ? ccParsed.invalid.length > 0
+                  ? `${t('feedback.err_cc', 'อีเมลไม่ถูกต้อง')}: ${ccParsed.invalid.join(', ')}`
+                  : t('feedback.err_cc_max', `CC ได้ไม่เกิน ${FEEDBACK_CC_MAX} อีเมล`)
+                : t('feedback.cc_hint', 'มีมากกว่า 1 อีเมล คั่นด้วยเครื่องหมายจุลภาค (,)')
+            }
           />
 
           <FormControl>

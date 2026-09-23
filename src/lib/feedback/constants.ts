@@ -39,6 +39,9 @@ export const FEEDBACK_SCREENSHOT_MAX_BYTES = 2.5 * 1024 * 1024;
 export const FEEDBACK_DESCRIPTION_MIN = 5;
 export const FEEDBACK_DESCRIPTION_MAX = 2000;
 export const FEEDBACK_NAME_MAX = 120;
+export const FEEDBACK_PHONE_MAX = 30;
+/** Maximum extra recipients one report may copy. */
+export const FEEDBACK_CC_MAX = 5;
 
 export function isFeedbackKind(v: unknown): v is FeedbackKind {
   return typeof v === 'string' && (FEEDBACK_KINDS as readonly string[]).includes(v);

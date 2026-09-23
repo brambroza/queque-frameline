@@ -366,7 +366,7 @@ function PortalFrameInner({
       </Box>
 
       {/* Fixed-position; lives outside the content column so it never affects layout. */}
-      <FeedbackFab fullName={fullName} />
+      <FeedbackFab fullName={fullName} email={email} />
     </Box>
   );
 }

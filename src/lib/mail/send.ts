@@ -18,6 +18,7 @@ export type MailAttachment = {
 
 export type MailMessage = {
   to: string | string[];
+  cc?: string[];
   subject: string;
   text: string;
   html?: string;
@@ -91,6 +92,7 @@ export async function sendMail(message: MailMessage): Promise<{ messageId: strin
   const info = await transporter.sendMail({
     from: cfg.from,
     to: message.to,
+    cc: message.cc?.length ? message.cc : undefined,
     subject: message.subject,
     text: message.text,
     html: message.html,

@@ -15,6 +15,10 @@ export type FeedbackEmailReport = {
   kind: FeedbackKind;
   priority: FeedbackPriority;
   reporter_name: string;
+  /** Reply-to address from the form (null = sign-in e-mail). */
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  cc_emails?: string[] | null;
   description: string;
   page_path: string;
   page_label?: string | null;
@@ -84,7 +88,10 @@ export function buildFeedbackEmail(report: FeedbackEmailReport, ctx: FeedbackEma
     ['ประเภท', kindTh],
     ['ความสำคัญ', prioTh],
     ['ผู้แจ้ง', report.reporter_name],
-    ['อีเมลผู้ใช้', ctx.reporterEmail ?? '-'],
+    ['อีเมลติดต่อกลับ', report.contact_email ?? ctx.reporterEmail ?? '-'],
+    ['เบอร์โทร', report.contact_phone ?? '-'],
+    ['CC', report.cc_emails?.length ? report.cc_emails.join(', ') : '-'],
+    ['บัญชีที่ login', ctx.reporterEmail ?? '-'],
     ['สิทธิ์', ctx.reporterRole ?? '-'],
     ['เมนู', page],
     ['URL', url],
@@ -103,7 +110,7 @@ export function buildFeedbackEmail(report: FeedbackEmailReport, ctx: FeedbackEma
     'รายละเอียด:',
     report.description,
     '',
-    ctx.screenshotCid ? 'ภาพหน้าจอแนบมากับอีเมลนี้ (screenshot.jpg)' : 'ไม่มีภาพหน้าจอแนบ',
+    ctx.screenshotCid ? 'ภาพหน้าจอแนบมากับอีเมลนี้ (ไฟล์ screenshot)' : 'ไม่มีภาพหน้าจอแนบ',
   ].join('\n');
 
   const tableRows = rows

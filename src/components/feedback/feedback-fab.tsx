@@ -23,7 +23,7 @@ const FAB_Z_INDEX = 1450;
  * portal page, reachable even while a dialog or drawer is open. Captures the
  * current screen first (with itself hidden), then opens the form.
  */
-export function FeedbackFab({ fullName }: { fullName?: string | null }) {
+export function FeedbackFab({ fullName, email }: { fullName?: string | null; email?: string | null }) {
   const { t } = useI18n();
   const pathname = usePathname();
   const { branchId } = useBranchScope();
@@ -87,6 +87,7 @@ export function FeedbackFab({ fullName }: { fullName?: string | null }) {
         pagePath={pagePath}
         pageLabel={pageLabel}
         defaultName={fullName}
+        defaultEmail={email}
         branchId={branchId || null}
       />
     </>

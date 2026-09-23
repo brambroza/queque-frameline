@@ -40,6 +40,9 @@ export async function POST(req: Request) {
         reporter_name: input.reporter_name,
         reporter_email: user.email ?? null,
         reporter_role: reporterRole,
+        contact_email: input.contact_email,
+        contact_phone: input.contact_phone,
+        cc_emails: input.cc,
         page_path: input.page_path,
         page_label: input.page_label ?? null,
         page_url: pageUrl(env.appUrl, input.page_path),
@@ -92,6 +95,9 @@ export async function POST(req: Request) {
           kind: input.kind,
           priority: input.priority,
           reporter_name: input.reporter_name,
+          contact_email: input.contact_email,
+          contact_phone: input.contact_phone,
+          cc_emails: input.cc,
           description: input.description,
           page_path: input.page_path,
           page_label: input.page_label,
@@ -108,12 +114,14 @@ export async function POST(req: Request) {
           appVersion,
         }
       );
+      const replyTo = input.contact_email ?? user.email ?? undefined;
       const sent = await safeSendMail({
         to,
+        cc: input.cc,
         subject: mail.subject,
         text: mail.text,
         html: mail.html,
-        replyTo: user.email ?? undefined,
+        replyTo,
         attachments: screenshot
           ? [{ filename: `screenshot.${screenshot.ext}`, content: screenshot.buffer, contentType: screenshot.mime, cid: SCREENSHOT_CID }]
           : undefined,

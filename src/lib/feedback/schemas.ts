@@ -6,13 +6,46 @@
  */
 import { z } from 'zod';
 import {
+  FEEDBACK_CC_MAX,
   FEEDBACK_DESCRIPTION_MAX,
   FEEDBACK_DESCRIPTION_MIN,
   FEEDBACK_KINDS,
   FEEDBACK_NAME_MAX,
+  FEEDBACK_PHONE_MAX,
   FEEDBACK_PRIORITIES,
   FEEDBACK_SCREENSHOT_MAX_BYTES,
 } from './constants';
+
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+
+/** True for a plausible single e-mail address (no spaces, one `@`, a dot in the domain). */
+export function isEmailAddress(v: string): boolean {
+  return EMAIL_RE.test(v);
+}
+
+/**
+ * Split a comma/semicolon/newline separated list of e-mail addresses.
+ * Trims, lower-cases, de-duplicates and keeps input order. Returns `invalid`
+ * entries separately so the form can point at the bad one.
+ */
+export function parseEmailList(value: string | null | undefined): { emails: string[]; invalid: string[] } {
+  const emails: string[] = [];
+  const invalid: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of (value ?? '').split(/[,;\n]/)) {
+    const item = raw.trim();
+    if (!item) continue;
+    if (!isEmailAddress(item)) {
+      invalid.push(item);
+      continue;
+    }
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    emails.push(key);
+  }
+  return { emails, invalid };
+}
 
 const DATA_URL_RE = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/]+={0,2})$/;
 
@@ -50,6 +83,34 @@ export const feedbackReportSchema = z.object({
   kind: z.enum(FEEDBACK_KINDS),
   priority: z.enum(FEEDBACK_PRIORITIES),
   reporter_name: z.string().trim().min(1).max(FEEDBACK_NAME_MAX),
+  /** Reply-to address typed in the form; empty = use the sign-in e-mail. */
+  contact_email: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v.toLowerCase() : null))
+    .refine((v) => !v || isEmailAddress(v), 'contact_email must be an e-mail address'),
+  /** Comma-separated CC list; parsed into `cc_emails`. */
+  cc: z
+    .string()
+    .trim()
+    .max(1000)
+    .optional()
+    .nullable()
+    .transform((v) => parseEmailList(v))
+    .refine((r) => r.invalid.length === 0, 'cc contains an invalid e-mail address')
+    .refine((r) => r.emails.length <= FEEDBACK_CC_MAX, `cc may list at most ${FEEDBACK_CC_MAX} addresses`)
+    .transform((r) => r.emails),
+  contact_phone: z
+    .string()
+    .trim()
+    .max(FEEDBACK_PHONE_MAX)
+    .optional()
+    .nullable()
+    .transform((v) => v || null)
+    .refine((v) => !v || /^[0-9+()\-\s]{6,}$/.test(v), 'contact_phone must be a phone number'),
   description: z.string().trim().min(FEEDBACK_DESCRIPTION_MIN).max(FEEDBACK_DESCRIPTION_MAX),
   page_path: portalPath,
   page_label: z.string().trim().max(120).optional().nullable(),

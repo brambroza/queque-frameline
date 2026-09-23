@@ -47,14 +47,24 @@ describe('buildFeedbackEmail', () => {
   it('renders every context row in text and escapes the html body', () => {
     const { text, html } = buildFeedbackEmail(report, ctx);
     expect(text).toContain('ผู้แจ้ง: สมชาย');
-    expect(text).toContain('อีเมลผู้ใช้: somchai@fameline.co.th');
+    expect(text).toContain('อีเมลติดต่อกลับ: somchai@fameline.co.th');
+    expect(text).toContain('บัญชีที่ login: somchai@fameline.co.th');
+    expect(text).toContain('เบอร์โทร: -');
+    expect(text).toContain('CC: -');
     expect(text).toContain('URL: https://q.example.com/portal/bookings?tab=pending');
     expect(text).toContain('Report ID: 11111111-2222-3333-4444-555555555555');
     expect(text).toContain('(Asia/Bangkok)');
-    expect(text).toContain('screenshot.jpg');
+    expect(text).toContain('ภาพหน้าจอแนบมากับอีเมลนี้');
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('src="cid:shot"');
+  });
+
+  it('prefers the typed contact e-mail and lists cc / phone', () => {
+    const { text } = buildFeedbackEmail({ ...report, contact_email: 'reply@x.com', contact_phone: '0812345678', cc_emails: ['a@x.com', 'b@x.com'] }, ctx);
+    expect(text).toContain('อีเมลติดต่อกลับ: reply@x.com');
+    expect(text).toContain('เบอร์โทร: 0812345678');
+    expect(text).toContain('CC: a@x.com, b@x.com');
   });
 
   it('says so when no screenshot is attached', () => {

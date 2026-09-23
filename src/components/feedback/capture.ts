@@ -34,9 +34,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Re-encode a data URL as JPEG no wider than `maxWidth`. Quality steps down
- * until the result is under the size cap; returns null when even the lowest
- * quality is too large.
+ * Re-encode a data URL no wider than `maxWidth`. PNG (lossless, crisp UI text)
+ * is preferred; when the PNG exceeds the size cap the image falls back to JPEG
+ * with quality stepping down. Returns null when nothing fits.
  */
 export async function downscaleDataUrl(dataUrl: string, maxWidth = 1600): Promise<string | null> {
   const img = await loadImage(dataUrl);
@@ -49,6 +49,8 @@ export async function downscaleDataUrl(dataUrl: string, maxWidth = 1600): Promis
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(img, 0, 0, width, height);
+  const png = canvas.toDataURL('image/png');
+  if (estimateDataUrlBytes(png) <= FEEDBACK_SCREENSHOT_MAX_BYTES) return png;
   for (const quality of [0.8, 0.65, 0.5, 0.35]) {
     const out = canvas.toDataURL('image/jpeg', quality);
     if (estimateDataUrlBytes(out) <= FEEDBACK_SCREENSHOT_MAX_BYTES) return out;
@@ -57,17 +59,16 @@ export async function downscaleDataUrl(dataUrl: string, maxWidth = 1600): Promis
 }
 
 /**
- * Capture the visible document as a JPEG data URL, skipping elements marked
- * with `data-feedback-ignore`. Resolves to null when the browser cannot render
- * the page (tainted canvas, blocked fonts, unsupported API) so the caller can
- * continue without an image.
+ * Capture the visible document as a PNG data URL (JPEG only when the PNG is
+ * over the size cap), skipping elements marked with `data-feedback-ignore`.
+ * Resolves to null when the browser cannot render the page (tainted canvas,
+ * blocked fonts, unsupported API) so the caller can continue without an image.
  */
 export async function captureScreenshot(): Promise<string | null> {
   try {
-    const { toJpeg } = await import('html-to-image');
+    const { toPng } = await import('html-to-image');
     const target = document.body;
-    const raw = await toJpeg(target, {
-      quality: 0.85,
+    const raw = await toPng(target, {
       pixelRatio: 1,
       cacheBust: true,
       backgroundColor: '#ffffff',

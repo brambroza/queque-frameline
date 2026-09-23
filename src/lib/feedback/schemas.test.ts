@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { base64ByteLength, feedbackReportSchema, parseScreenshotDataUrl } from './schemas';
+import { base64ByteLength, feedbackReportSchema, isEmailAddress, parseEmailList, parseScreenshotDataUrl } from './schemas';
 import { FEEDBACK_SCREENSHOT_MAX_BYTES } from './constants';
 
 const tinyJpeg = `data:image/jpeg;base64,${Buffer.from('jpegbytes').toString('base64')}`;
@@ -46,6 +46,42 @@ describe('parseScreenshotDataUrl', () => {
   it('rejects images above the size cap without decoding them', () => {
     const tooBig = 'A'.repeat(Math.ceil((FEEDBACK_SCREENSHOT_MAX_BYTES + 1024) / 3) * 4);
     expect(parseScreenshotDataUrl(`data:image/jpeg;base64,${tooBig}`)).toBeNull();
+  });
+});
+
+describe('parseEmailList / isEmailAddress', () => {
+  it('splits on comma / semicolon / newline, trims, lower-cases and de-duplicates', () => {
+    expect(parseEmailList(' A@x.com, b@y.co.th;a@X.com\n c@z.io ,, ')).toEqual({
+      emails: ['a@x.com', 'b@y.co.th', 'c@z.io'],
+      invalid: [],
+    });
+    expect(parseEmailList(null)).toEqual({ emails: [], invalid: [] });
+  });
+
+  it('reports the invalid entries', () => {
+    expect(parseEmailList('ok@x.com, not-an-email, two@@x.com')).toEqual({ emails: ['ok@x.com'], invalid: ['not-an-email', 'two@@x.com'] });
+    expect(isEmailAddress('a b@x.com')).toBe(false);
+    expect(isEmailAddress('a@x')).toBe(false);
+  });
+});
+
+describe('feedbackReportSchema contact fields', () => {
+  it('parses cc into an array and lower-cases the contact e-mail', () => {
+    const r = feedbackReportSchema.safeParse({ ...valid, contact_email: 'Me@Fameline.co.th', cc: 'boss@x.com, it@x.com', contact_phone: '081-234-5678' });
+    expect(r.success && r.data.contact_email).toBe('me@fameline.co.th');
+    expect(r.success && r.data.cc).toEqual(['boss@x.com', 'it@x.com']);
+    expect(r.success && r.data.contact_phone).toBe('081-234-5678');
+  });
+
+  it('treats blanks as empty and rejects bad addresses / phones / too many cc', () => {
+    const r = feedbackReportSchema.safeParse({ ...valid, contact_email: '', cc: '', contact_phone: '' });
+    expect(r.success && r.data.contact_email).toBeNull();
+    expect(r.success && r.data.cc).toEqual([]);
+    expect(r.success && r.data.contact_phone).toBeNull();
+    expect(feedbackReportSchema.safeParse({ ...valid, contact_email: 'nope' }).success).toBe(false);
+    expect(feedbackReportSchema.safeParse({ ...valid, cc: 'a@x.com, bad' }).success).toBe(false);
+    expect(feedbackReportSchema.safeParse({ ...valid, cc: Array.from({ length: 6 }, (_, i) => `u${i}@x.com`).join(',') }).success).toBe(false);
+    expect(feedbackReportSchema.safeParse({ ...valid, contact_phone: 'call me' }).success).toBe(false);
   });
 });
 
