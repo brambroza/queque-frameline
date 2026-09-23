@@ -8,6 +8,7 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
@@ -17,6 +18,7 @@ import { QrCode } from '@/components/ui/qr-code';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { useToast } from '@/components/ui/toast';
 import { PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
+import { STATUS_LABEL as BOOKING_STATUS_LABEL, hhmm } from '@/components/bookings/booking-types';
 import { PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
@@ -34,8 +36,19 @@ function paymentStatusOf(d: Pick<DocRow, 'payment_status'>): PaymentStatus {
   return isPaymentStatus(d.payment_status) ? d.payment_status : 'unpaid';
 }
 
+/** `GET /api/documents/[id]` — the row plus its partner and every queue raised on it. */
+type DocDetail = {
+  id: string; doc_type: DocType; doc_no: string; branch_id: string | null; branches?: { branch_name?: string | null; code?: string | null } | null;
+  partner_id: string | null; partner_code: string | null; partner_name: string | null; doc_date: string | null; due_date: string | null;
+  status: DocRow['status']; source: string; items: Array<{ sku?: string; name: string; qty: number; uom?: string }>; total_qty: number | null; remark: string | null;
+  booking_token_expires_at: string | null; imported_at: string | null; updated_at: string | null;
+  customers?: { full_name?: string | null; phone?: string | null; email?: string | null; code?: string | null } | null;
+  bookings: Array<{ id: string; queue_number: string | null; booking_date: string; start_time: string | null; end_time: string | null; status: string; plate_number: string | null; plate_number_actual: string | null; resource_name: string | null; do_number: string | null; services?: { service_name?: string | null } | null }>;
+};
+
 type PartnerOption = { id: string; code: string | null; full_name: string; phone: string | null };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
+type DocForm = { doc_no: string; branch_id: string; partner_code: string; partner_name: string; partner_phone: string; doc_date: string; due_date: string; remark: string; payment_status: string };
 type ImportSummary = {
   rows: number; documents: number; created: number; updated: number; truncated: boolean;
   errors: Array<{ line: number; doc_no: string | null; message: string }>;
@@ -54,8 +67,10 @@ const TYPE_META: Record<DocType, { label: string; partner: string; hint: string 
   po: { label: 'Purchase Order (Supplier ส่งสินค้า)', partner: 'Supplier', hint: 'ส่งลิงก์ให้ Supplier เลือกวันเวลามาส่งสินค้า' },
 };
 const EMPTY_ITEM: ItemDraft = { sku: '', name: '', qty: '1', uom: '' };
+const EMPTY_FORM: DocForm = { doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', doc_date: '', due_date: '', remark: '', payment_status: 'unpaid' };
+const SOURCE_LABEL: Record<string, string> = { api: 'ERP', csv: 'CSV', manual: 'กรอกเอง' };
 
-/** SO / PO: import, create by hand, hand out the self-booking link, close or cancel. */
+/** SO / PO: import, create or edit by hand, view detail, hand out the self-booking link, close or cancel. */
 export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
@@ -77,8 +92,13 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [linkBusy, setLinkBusy] = useState(false);
   const [sendingLine, setSendingLine] = useState(false);
 
+  const [viewDoc, setViewDoc] = useState<DocRow | null>(null);
+  const [detail, setDetail] = useState<DocDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState({ doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '', payment_status: 'unpaid' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<DocForm>(EMPTY_FORM);
   const [importBranch, setImportBranch] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
   const [saving, setSaving] = useState(false);
@@ -213,9 +233,71 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     await load();
   }
 
-  // ── manual create ──────────────────────────────────────────────────────────
+  // ── detail ─────────────────────────────────────────────────────────────────
+  /** One document with partner and queues; the list row is shown while it loads. */
+  async function fetchDetail(id: string): Promise<DocDetail | null> {
+    const res = await fetch(`/api/documents/${id}`, { cache: 'no-store' });
+    const j = (await res.json().catch(() => ({}))) as { data?: DocDetail; error?: string };
+    if (!res.ok || !j.data) throw new Error(j.error ?? 'โหลดเอกสารไม่สำเร็จ');
+    return j.data;
+  }
+
+  async function openDetail(doc: DocRow) {
+    setViewDoc(doc);
+    setDetail(null);
+    setDetailError(null);
+    try {
+      setDetail(await fetchDetail(doc.id));
+    } catch (e) {
+      setDetailError(e instanceof Error ? e.message : 'โหลดเอกสารไม่สำเร็จ');
+    }
+  }
+
+  // ── manual create / edit ───────────────────────────────────────────────────
   const needBranch = branches.length > 1;
   const formValid = form.doc_no.trim() && form.partner_name.trim() && (!needBranch || form.branch_id);
+  const defaultBranch = scopedBranch || (branches.length === 1 ? branches[0].id : '');
+
+  function openCreate() {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM, branch_id: defaultBranch });
+    setItems([{ ...EMPTY_ITEM }]);
+    setPickedPartner(null);
+    setPartnerOptions([]);
+    setFormOpen(true);
+  }
+
+  /** Prefill the form from the server row so a save never drops a field the list does not carry (phone, doc_date). */
+  async function openEdit(doc: DocRow) {
+    let d: DocDetail | null = detail && detail.id === doc.id ? detail : null;
+    if (!d) {
+      try {
+        d = await fetchDetail(doc.id);
+      } catch (e) {
+        push(e instanceof Error ? e.message : 'โหลดเอกสารไม่สำเร็จ', 'error');
+        return;
+      }
+    }
+    if (!d) return;
+    setEditingId(d.id);
+    setForm({
+      doc_no: d.doc_no,
+      branch_id: d.branch_id ?? defaultBranch,
+      partner_code: d.partner_code ?? d.customers?.code ?? '',
+      partner_name: d.partner_name ?? d.customers?.full_name ?? '',
+      partner_phone: d.customers?.phone ?? '',
+      doc_date: d.doc_date ?? '',
+      due_date: d.due_date ?? '',
+      remark: d.remark ?? '',
+      payment_status: paymentStatusOf(doc),
+    });
+    setItems(d.items.length > 0 ? d.items.map((i) => ({ sku: i.sku ?? '', name: i.name, qty: String(i.qty), uom: i.uom ?? '' })) : [{ ...EMPTY_ITEM }]);
+    setPickedPartner(null);
+    setPartnerOptions([]);
+    setViewDoc(null);
+    setFormOpen(true);
+  }
+
   async function saveDoc() {
     if (!formValid || saving) return;
     setSaving(true);
@@ -228,16 +310,20 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
           doc_no: form.doc_no,
           branch_id: form.branch_id || null,
           partner: { code: form.partner_code, name: form.partner_name, phone: form.partner_phone },
+          doc_date: form.doc_date,
           due_date: form.due_date,
           remark: form.remark,
           ...(docType === 'so' ? { payment_status: form.payment_status } : {}),
           items: items.filter((i) => i.name.trim()).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty || '1', uom: i.uom })),
         }),
       });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { created?: boolean } };
+      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { created?: boolean; warnings?: string[] } };
       if (!res.ok) { push(j.error ?? 'บันทึกไม่สำเร็จ', 'error'); return; }
-      push(j.data?.created ? 'เพิ่มเอกสารแล้ว' : 'อัปเดตเอกสารเดิมแล้ว (เลขที่ซ้ำ)');
+      if (j.data?.warnings?.includes('payment_downgrade_ignored')) push('เอกสารมีคิวที่อนุมัติแล้ว จึงเปลี่ยนกลับเป็นยังไม่ชำระไม่ได้ — ส่วนอื่นบันทึกแล้ว', 'error');
+      else if (editingId) push('บันทึกการแก้ไขแล้ว');
+      else push(j.data?.created ? 'เพิ่มเอกสารแล้ว' : 'อัปเดตเอกสารเดิมแล้ว (เลขที่ซ้ำ)');
       setFormOpen(false);
+      setEditingId(null);
       await load();
     } finally {
       setSaving(false);
@@ -281,7 +367,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         action={isAdmin ? (
           <Stack direction="row" spacing={1}>
             <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportBranch(scopedBranch || (branches.length === 1 ? branches[0].id : '')); setImportOpen(true); }}>นำเข้า CSV</Button>
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setForm({ doc_no: '', branch_id: scopedBranch || (branches.length === 1 ? branches[0].id : ''), partner_code: '', partner_name: '', partner_phone: '', due_date: '', remark: '', payment_status: 'unpaid' }); setItems([{ ...EMPTY_ITEM }]); setPickedPartner(null); setPartnerOptions([]); setFormOpen(true); }}>เพิ่ม {docType.toUpperCase()}</Button>
+            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>เพิ่ม {docType.toUpperCase()}</Button>
           </Stack>
         ) : undefined}
       />
@@ -325,7 +411,10 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                   const live = d.status === 'open' || d.status === 'booked';
                   return (
                     <TableRow key={d.id} hover>
-                      <TableCell><Typography variant="body2" fontWeight={700}>{d.doc_no}</Typography><Typography variant="caption" color="text.secondary">{d.source}</Typography></TableCell>
+                      <TableCell>
+                        <Typography component="button" type="button" variant="body2" fontWeight={700} onClick={() => void openDetail(d)} sx={{ p: 0, border: 0, bgcolor: 'transparent', color: 'primary.main', cursor: 'pointer', textAlign: 'left', '&:hover': { textDecoration: 'underline' } }}>{d.doc_no}</Typography>
+                        <Typography variant="caption" color="text.secondary" display="block">{SOURCE_LABEL[d.source] ?? d.source}</Typography>
+                      </TableCell>
                       <TableCell sx={{ maxWidth: 260 }}><Typography variant="body2" noWrap>{d.partner_name ?? '-'}</Typography><Typography variant="caption" color="text.secondary">{d.partner_code ?? ''}</Typography></TableCell>
                       <TableCell>{d.branches?.branch_name ?? <Typography variant="caption" color="text.disabled">ค่าเริ่มต้น</Typography>}</TableCell>
                       <TableCell>{d.due_date ? formatDateDMY(d.due_date) : '-'}</TableCell>
@@ -348,6 +437,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         {docType === 'so' && live && paymentStatusOf(d) === 'unpaid' ? <Button size="small" color="success" variant="outlined" sx={{ mr: 0.5 }} onClick={() => setPaymentTarget(d)}>บันทึกชำระเงิน</Button> : null}
                         {isAdmin && live ? <Button size="small" variant={d.has_link ? 'text' : 'contained'} startIcon={<QrCode2RoundedIcon />} onClick={() => void openLink(d)}>{d.has_link ? 'ดูลิงก์' : 'ส่งลิงก์จอง'}</Button> : null}
+                        {isAdmin && live ? <Tooltip title="แก้ไข"><IconButton size="small" onClick={() => void openEdit(d)} aria-label="แก้ไข"><EditRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
                         {isAdmin && live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'completed')}>ปิด</Button> : null}
                         {isAdmin && live ? <Button size="small" color="error" onClick={() => void setDocStatus(d, 'cancelled')}>ยกเลิก</Button> : null}
                         {isAdmin && !live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'open')}>เปิดใหม่</Button> : null}
@@ -397,23 +487,25 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         </DialogActions>
       </Dialog>
 
-      {/* Manual create */}
+      {/* Manual create / edit */}
       <Dialog open={formOpen} onClose={saving ? undefined : () => setFormOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>เพิ่ม {meta.label}</DialogTitle>
+        <DialogTitle>{editingId ? `แก้ไข ${docType.toUpperCase()} ${form.doc_no}` : `เพิ่ม ${meta.label}`}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField select required={needBranch} size="small" label="สาขา / คลังที่รับ-ส่งสินค้า" value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))} helperText="ลูกค้าจะเห็นเฉพาะท่าและเวลาทำการของสาขานี้">
+            {editingId && detail?.source === 'api' ? <Alert severity="warning">เอกสารนี้มาจาก ERP — ค่าที่แก้ที่นี่จะถูกทับเมื่อ ERP ส่งเอกสารเลขนี้มาอีกครั้ง</Alert> : null}
+            <TextField select required={needBranch} size="small" label="สาขา / คลังที่รับ-ส่งสินค้า" value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))} helperText={editingId ? 'เปลี่ยนสาขาไม่ได้ขณะมีคิวที่ยังไม่ปิด' : 'ลูกค้าจะเห็นเฉพาะท่าและเวลาทำการของสาขานี้'}>
               {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}{b.active === false ? ' (ปิด)' : ''}</MenuItem>)}
             </TextField>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField autoFocus required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} helperText="เลขที่ซ้ำ = อัปเดตเอกสารเดิม" />
+              <TextField autoFocus={!editingId} required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} disabled={Boolean(editingId)} helperText={editingId ? 'เปลี่ยนเลขที่ไม่ได้' : 'เลขที่ซ้ำ = อัปเดตเอกสารเดิม'} />
+              <TextField fullWidth size="small" type="date" label="วันที่เอกสาร" value={form.doc_date} onChange={(e) => setForm((p) => ({ ...p, doc_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
-              {docType === 'so' ? (
-                <TextField id="doc-payment-status" select fullWidth size="small" label="สถานะการชำระเงิน" value={form.payment_status} onChange={(e) => setForm((p) => ({ ...p, payment_status: e.target.value }))} helperText="ยังไม่ชำระ = ลูกค้าจองได้ แต่อนุมัติคิวไม่ได้">
-                  {PAYMENT_STATUSES.map((p) => <MenuItem key={p} value={p}>{PAYMENT_LABEL[p]}</MenuItem>)}
-                </TextField>
-              ) : null}
             </Stack>
+            {docType === 'so' ? (
+              <TextField id="doc-payment-status" select fullWidth size="small" label="สถานะการชำระเงิน" value={form.payment_status} onChange={(e) => setForm((p) => ({ ...p, payment_status: e.target.value }))} helperText={editingId ? 'เปลี่ยนกลับเป็นยังไม่ชำระได้เฉพาะเมื่อยังไม่มีคิวที่อนุมัติแล้ว' : 'ยังไม่ชำระ = ลูกค้าจองได้ แต่อนุมัติคิวไม่ได้'}>
+                {PAYMENT_STATUSES.map((p) => <MenuItem key={p} value={p}>{PAYMENT_LABEL[p]}</MenuItem>)}
+              </TextField>
+            ) : null}
             <Autocomplete<PartnerOption, false, false, true>
               freeSolo
               fullWidth
@@ -480,7 +572,101 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setFormOpen(false)} disabled={saving}>ปิด</Button>
-          <Button variant="contained" onClick={() => void saveDoc()} disabled={!formValid || saving}>{saving ? 'กำลังบันทึก…' : 'บันทึกเอกสาร'}</Button>
+          <Button variant="contained" onClick={() => void saveDoc()} disabled={!formValid || saving}>{saving ? 'กำลังบันทึก…' : editingId ? 'บันทึกการแก้ไข' : 'บันทึกเอกสาร'}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Detail */}
+      <Dialog open={Boolean(viewDoc)} onClose={() => setViewDoc(null)} fullWidth maxWidth="md">
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+            <span>{viewDoc?.doc_type.toUpperCase()} {viewDoc?.doc_no}</span>
+            {viewDoc ? <Chip size="small" color={STATUS[viewDoc.status].color} variant={viewDoc.status === 'open' ? 'outlined' : 'filled'} label={STATUS[viewDoc.status].label} /> : null}
+            {viewDoc?.doc_type === 'so' ? <Chip size="small" color={PAYMENT_COLOR[paymentStatusOf(viewDoc)]} variant="outlined" label={PAYMENT_LABEL[paymentStatusOf(viewDoc)]} /> : null}
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          {detailError ? <Alert severity="error" action={viewDoc ? <Button color="inherit" size="small" onClick={() => void openDetail(viewDoc)}>ลองใหม่</Button> : undefined}>{detailError}</Alert> : null}
+          {!detail && !detailError ? <Stack spacing={1} sx={{ pt: 1 }}>{[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={40} />)}</Stack> : null}
+          {detail ? (
+            <Stack spacing={2} sx={{ pt: 1 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 1.5 }}>
+                {([
+                  [viewDoc ? TYPE_META[viewDoc.doc_type].partner : 'คู่ค้า', detail.partner_name ?? detail.customers?.full_name ?? '-'],
+                  ['รหัสคู่ค้า', detail.partner_code ?? detail.customers?.code ?? '-'],
+                  ['เบอร์โทร', detail.customers?.phone ?? '-'],
+                  ['อีเมล', detail.customers?.email ?? '-'],
+                  ['สาขา', detail.branches?.branch_name ?? 'ค่าเริ่มต้น'],
+                  ['ที่มา', SOURCE_LABEL[detail.source] ?? detail.source],
+                  ['วันที่เอกสาร', detail.doc_date ? formatDateDMY(detail.doc_date) : '-'],
+                  ['กำหนดส่ง', detail.due_date ? formatDateDMY(detail.due_date) : '-'],
+                  ['อัปเดตล่าสุด', detail.updated_at ? formatDateTimeDMY(detail.updated_at) : detail.imported_at ? formatDateTimeDMY(detail.imported_at) : '-'],
+                  ['ลิงก์จองใช้ได้ถึง', detail.booking_token_expires_at ? formatDateTimeDMY(detail.booking_token_expires_at) : 'ยังไม่ออกลิงก์'],
+                ] as Array<[string, string]>).map(([label, value]) => (
+                  <Box key={label}>
+                    <Typography variant="caption" color="text.secondary" display="block">{label}</Typography>
+                    <Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>{value}</Typography>
+                  </Box>
+                ))}
+              </Box>
+              {detail.remark ? (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" display="block">หมายเหตุ</Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{detail.remark}</Typography>
+                </Box>
+              ) : null}
+
+              <Typography variant="subtitle2" fontWeight={700}>รายการสินค้า ({detail.items.length}){detail.total_qty != null ? ` · รวม ${detail.total_qty.toLocaleString('th-TH')}` : ''}</Typography>
+              {detail.items.length === 0 ? <Typography variant="body2" color="text.secondary">ไม่มีรายการสินค้า</Typography> : (
+                <TableContainer sx={{ maxHeight: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead><TableRow><TableCell>#</TableCell><TableCell>รหัส</TableCell><TableCell>ชื่อสินค้า</TableCell><TableCell align="right">จำนวน</TableCell><TableCell>หน่วย</TableCell></TableRow></TableHead>
+                    <TableBody>
+                      {detail.items.map((it, i) => (
+                        <TableRow key={`${it.sku ?? ''}-${i}`}>
+                          <TableCell>{i + 1}</TableCell>
+                          <TableCell>{it.sku || '-'}</TableCell>
+                          <TableCell>{it.name}</TableCell>
+                          <TableCell align="right">{Number(it.qty).toLocaleString('th-TH')}</TableCell>
+                          <TableCell>{it.uom || '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              <Typography variant="subtitle2" fontWeight={700}>คิว ({detail.bookings.length})</Typography>
+              {detail.bookings.length === 0 ? <Typography variant="body2" color="text.secondary">ยังไม่มีคิวจากเอกสารนี้</Typography> : (
+                <TableContainer sx={{ maxHeight: 220, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead><TableRow><TableCell>คิว</TableCell><TableCell>วัน / เวลา</TableCell><TableCell>ท่า</TableCell><TableCell>ทะเบียน</TableCell><TableCell>DO</TableCell><TableCell>สถานะ</TableCell></TableRow></TableHead>
+                    <TableBody>
+                      {detail.bookings.map((b) => (
+                        <TableRow key={b.id} hover>
+                          <TableCell><Button size="small" href={`/portal/bookings?doc=${detail.id}`}>{b.queue_number ?? '-'}</Button></TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateDMY(b.booking_date)} {hhmm(b.start_time)}{b.end_time ? `–${hhmm(b.end_time)}` : ''}</TableCell>
+                          <TableCell>{b.resource_name ?? '-'}{b.services?.service_name ? <Typography variant="caption" color="text.secondary" display="block">{b.services.service_name}</Typography> : null}</TableCell>
+                          <TableCell>{b.plate_number_actual ?? b.plate_number ?? '-'}</TableCell>
+                          <TableCell>{b.do_number ?? '-'}</TableCell>
+                          <TableCell><Chip size="small" variant="outlined" label={(BOOKING_STATUS_LABEL as Record<string, string>)[b.status] ?? b.status} /></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+          <Button color="inherit" onClick={() => setViewDoc(null)}>ปิด</Button>
+          {viewDoc && isAdmin && (viewDoc.status === 'open' || viewDoc.status === 'booked') ? (
+            <>
+              <Button startIcon={<QrCode2RoundedIcon />} onClick={() => { const d = viewDoc; setViewDoc(null); void openLink(d); }}>{viewDoc.has_link ? 'ดูลิงก์จอง' : 'ส่งลิงก์จอง'}</Button>
+              <Button variant="contained" startIcon={<EditRoundedIcon />} disabled={!detail} onClick={() => void openEdit(viewDoc)}>แก้ไข</Button>
+            </>
+          ) : null}
         </DialogActions>
       </Dialog>
 
