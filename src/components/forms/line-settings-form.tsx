@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Box, Button, Card, CardContent, Chip, FormControlLabel, Skeleton, Stack, Switch, TextField, Typography } from '@mui/material';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import { PageHeader } from '@/components/shared/page-header';
+import { CopyField } from '@/components/ui/copy-field';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 
@@ -23,17 +23,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
       {hint ? <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{hint}</Typography> : <Box sx={{ mb: 2 }} />}
       <Stack spacing={2}>{children}</Stack>
     </CardContent></Card>
-  );
-}
-
-function CopyField({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  const { push } = useToast();
-  return (
-    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-      <TextField fullWidth size="small" label={label} value={value} helperText={hint} slotProps={{ input: { readOnly: true } }} />
-      <Button size="small" startIcon={<ContentCopyRoundedIcon />} sx={{ flexShrink: 0, alignSelf: { xs: 'flex-start', sm: 'center' } }}
-        onClick={() => { void navigator.clipboard.writeText(value).then(() => push('คัดลอกแล้ว')).catch(() => push('คัดลอกไม่สำเร็จ', 'error')); }}>คัดลอก</Button>
-    </Stack>
   );
 }
 

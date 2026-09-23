@@ -1,0 +1,36 @@
+{
+  "documents": [
+    {
+      "doc_no": "PO-2026-000501",
+      "partner": { "code": "V00310", "name": "บริษัท วัตถุดิบไทย จำกัด", "phone": "0812345678" },
+      "doc_date": "2026-09-21",
+      "due_date": "2026-09-26",
+      "branch": "HQ",
+      "status": "open",
+      "remark": "รถ 6 ล้อ มีเครน",
+      "erp_status": "Backorder",
+      "ax": { "PurchStatus": 1, "DocumentState": 40, "InventLocationId": "RM" },
+      "items": [
+        { "sku": "RM-AL-6063", "name": "Aluminium billet 6063", "qty": 12, "uom": "TON", "ax": { "LineNum": 1, "PurchQty": 20 } },
+        { "sku": "RM-PWD-GR7", "name": "ผงสีพ่น เทา RAL7035", "qty": 400, "uom": "KG" }
+      ]
+    },
+    {
+      "doc_no": "PO-2026-000502",
+      "partner": { "code": "V00022", "name": "Global Fasteners Co., Ltd." },
+      "due_date": "2026-09-30",
+      "branch": "HQ",
+      "status": "open",
+      "items": [
+        { "sku": "HW-SCR-M6", "name": "สกรู M6x20 สแตนเลส", "qty": 50000, "uom": "PCS" }
+      ]
+    },
+    {
+      "doc_no": "PO-2026-000450",
+      "partner": { "code": "V00310", "name": "บริษัท วัตถุดิบไทย จำกัด" },
+      "branch": "WH-NOPE",
+      "status": "open",
+      "items": [{ "sku": "X", "name": "สาขาไม่ตรง — ควรได้ unknown_branch", "qty": 1 }]
+    }
+  ]
+}

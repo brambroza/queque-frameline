@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Skeleton, Stack, TextField, Typography,
+  Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import { alpha, useTheme, type Theme } from '@mui/material/styles';
 import {
@@ -26,6 +26,25 @@ const LANE_MIN_WIDTH = 132;
 const MAX_BOARD_HEIGHT = 520;
 const MINUTES_MIN = 5;
 const MINUTES_MAX = 1440;
+/** Grid rows are 30-minute steps; docks' real slot interval may be finer, those starts are added on top. */
+const GRID_STEP = 30;
+
+type ScheduleView = 'grid' | 'board';
+const VIEW_KEY = 'fameline.schedule.view';
+const FIT_KEY = 'fameline.schedule.fitOnly';
+
+/** Per-browser preference; storage may be missing or throw (private window), so fall back silently. */
+function readPref<T extends string>(key: string, fallback: T, ok: (v: string) => v is T): T {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v !== null && ok(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writePref(key: string, value: string) {
+  try { window.localStorage.setItem(key, value); } catch { /* preference only */ }
+}
 
 function useDockBoard(bookingId: string | null, date: string) {
   const [data, setData] = useState<DockBoardResponse | null>(null);
@@ -87,7 +106,12 @@ export function BookingScheduleDialog({ booking, saving, itemMinutes, onClose, o
   const origin = useMemo(() => (booking ? originOf(booking) : null), [booking]);
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
   const [minutesText, setMinutesText] = useState('');
+  // Which picker the warehouse prefers; remembered per browser only (a convenience, never state).
+  const [view, setView] = useState<ScheduleView>(() => readPref(VIEW_KEY, 'grid', (v): v is ScheduleView => v === 'grid' || v === 'board'));
+  const [fitOnly, setFitOnly] = useState<boolean>(() => readPref(FIT_KEY, 'true', (v): v is 'true' | 'false' => v === 'true' || v === 'false') === 'true');
   useEffect(() => { if (origin) { setDraft(origin); setMinutesText(String(origin.minutes)); } }, [origin]);
+  const changeView = (v: ScheduleView) => { setView(v); writePref(VIEW_KEY, v); };
+  const changeFit = (f: boolean) => { setFitOnly(f); writePref(FIT_KEY, String(f)); };
 
   const board = useDockBoard(booking?.id ?? null, draft?.date ?? '');
   const days = useAvailableDays(booking, canMove);
@@ -200,14 +224,41 @@ export function BookingScheduleDialog({ booking, saving, itemMinutes, onClose, o
           )}
 
           <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0.75 }} flexWrap="wrap" useFlexGap>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }} flexWrap="wrap" useFlexGap spacing={1}>
               <Typography variant="subtitle2" fontWeight={700}>{shortThaiDay(draft.date)} · ท่าที่รับ{booking.services?.service_name ?? 'รถประเภทนี้'}</Typography>
-              <Typography variant="caption" color="text.secondary">{canMove ? 'ลากบล็อกไปท่า/เวลาที่ว่าง (ขีด = ช่องที่เปิด) · ลากขอบล่างเพื่อยืด' : 'ลากขอบล่างเพื่อยืด/หด'}</Typography>
+              {canMove ? (
+                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                  {view === 'grid' ? (
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Chip size="small" label={`พอสำหรับ ${minutesValid ? draft.minutes : '…'} นาที`} color={fitOnly ? 'primary' : 'default'} variant={fitOnly ? 'filled' : 'outlined'} onClick={() => changeFit(true)} />
+                      <Chip size="small" label="ทุกช่องที่เปิด" color={!fitOnly ? 'primary' : 'default'} variant={!fitOnly ? 'filled' : 'outlined'} onClick={() => changeFit(false)} />
+                    </Stack>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">ลากบล็อกไปท่า/เวลาที่ว่าง · ลากขอบล่างเพื่อยืด</Typography>
+                  )}
+                  <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v: ScheduleView | null) => { if (v) changeView(v); }} sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1.25, fontSize: 12, textTransform: 'none' } }}>
+                    <ToggleButton value="grid">เลือกช่องเวลา</ToggleButton>
+                    <ToggleButton value="board">บอร์ด (ลาก)</ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
+              ) : (
+                <Typography variant="caption" color="text.secondary">ลากขอบล่างเพื่อยืด/หด</Typography>
+              )}
             </Stack>
             {board.error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={board.retry}>ลองใหม่</Button>}>โหลดตารางท่าไม่สำเร็จ</Alert> : null}
             {board.loading ? <Skeleton variant="rounded" height={320} /> : null}
             {data && data.docks.length === 0 ? <Alert severity="warning">ไม่มีท่าที่รับประเภทรถนี้ในสาขา — ตรวจการตั้งค่าท่า</Alert> : null}
-            {data && data.docks.length > 0 ? (
+            {data && data.docks.length > 0 && canMove && view === 'grid' ? (
+              <SlotGrid
+                data={data}
+                draft={draft}
+                origin={origin}
+                minutesValid={minutesValid}
+                fitOnly={fitOnly}
+                onPlace={(dockId, start) => setDraft((d) => (d ? { ...d, dockId, start } : d))}
+              />
+            ) : null}
+            {data && data.docks.length > 0 && (!canMove || view === 'board') ? (
               <DockBoard
                 data={data}
                 draft={draft}
@@ -220,74 +271,16 @@ export function BookingScheduleDialog({ booking, saving, itemMinutes, onClose, o
                 onMinutes={setMinutes}
               />
             ) : null}
-            <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ fontSize: 11, color: 'text.secondary', mt: 0.75 }}>
-              <LegendItem sx={{ bgcolor: 'primary.main' }} label="ตำแหน่งใหม่" />
-              <LegendItem sx={{ border: 2, borderStyle: 'dashed', borderColor: alpha(theme.palette.primary.main, 0.5) }} label="ตำแหน่งเดิม" />
-              <LegendItem sx={{ bgcolor: theme.palette.grey[200], border: 1, borderColor: 'divider' }} label="คิวอื่น" />
-              <LegendItem sx={{ background: hatch(theme), border: 1, borderColor: 'divider' }} label={`เผื่อ turnaround ${data?.self.buffer_minutes ?? 0}′`} />
-              <LegendItem sx={{ bgcolor: alpha(theme.palette.success.main, 0.12), border: 1, borderStyle: 'dashed', borderColor: 'success.main' }} label="ว่าง" />
-            </Stack>
+            {data && data.docks.length > 0 && (!canMove || view === 'board') ? (
+              <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ fontSize: 11, color: 'text.secondary', mt: 0.75 }}>
+                <LegendItem sx={{ bgcolor: 'primary.main' }} label="ตำแหน่งใหม่" />
+                <LegendItem sx={{ border: 2, borderStyle: 'dashed', borderColor: alpha(theme.palette.primary.main, 0.5) }} label="ตำแหน่งเดิม" />
+                <LegendItem sx={{ bgcolor: theme.palette.grey[200], border: 1, borderColor: 'divider' }} label="คิวอื่น" />
+                <LegendItem sx={{ background: hatch(theme), border: 1, borderColor: 'divider' }} label={`เผื่อ turnaround ${data?.self.buffer_minutes ?? 0}′`} />
+                <LegendItem sx={{ bgcolor: alpha(theme.palette.success.main, 0.12), border: 1, borderStyle: 'dashed', borderColor: 'success.main' }} label="ว่าง" />
+              </Stack>
+            ) : null}
           </Box>
-
-          {canMove && data && data.docks.length > 0 ? (
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
-              <TextField
-                id="schedule-dock"
-                select
-                size="small"
-                label="ท่า"
-                value={data.docks.some((d) => d.id === draft.dockId) ? draft.dockId : ''}
-                onChange={(e) => {
-                  const target = data.docks.find((d) => d.id === e.target.value);
-                  if (!target) return;
-                  const slots = target.slotStarts.map(minutesOfDay);
-                  // Keep the same start when that dock opens it, else the nearest earlier slot, else its first slot.
-                  const s = slots.includes(startMin) ? startMin : snapToSlot(startMin, slots) ?? slots[0];
-                  setDraft((d) => (d ? { ...d, dockId: target.id, start: s !== undefined ? labelOfMinutes(s) : '' } : d));
-                }}
-                sx={{ minWidth: 200 }}
-                helperText="หรือลากบล็อกไปเลนที่ต้องการ"
-              >
-                {data.docks.map((d) => (
-                  <MenuItem key={d.id} value={d.id}>
-                    {d.code ? `${d.code} · ` : ''}{d.name}{d.id === origin.dockId && draft.date === origin.date ? ' (เดิม)' : ''} · ว่าง {d.slotStarts.length} ช่อง
-                  </MenuItem>
-                ))}
-              </TextField>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="caption" fontWeight={700} component="div" sx={{ mb: 0.5 }}>
-                  ช่องเวลาบน{lane?.name ?? 'ท่า'} · {shortThaiDay(draft.date)}
-                  <Typography variant="caption" color="text.secondary" component="span"> — แตะเพื่อเลือกเวลาเริ่ม</Typography>
-                </Typography>
-                {!lane || lane.slotStarts.length === 0 ? (
-                  <Typography variant="caption" color="text.secondary">ไม่มีช่องว่างสำหรับ{booking.services?.service_name ?? 'รถประเภทนี้'}บนท่านี้ในวันนี้</Typography>
-                ) : (
-                  <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.75}>
-                    {lane.slotStarts.map((slot) => {
-                      const s = minutesOfDay(slot);
-                      const selected = s === startMin;
-                      const hit = minutesValid && !selected
-                        ? computeDockDay({ start_time: slot, buffer_minutes: data.self.buffer_minutes, others: lane.others, minutes: draft.minutes }).overlaps[0]
-                        : undefined;
-                      return (
-                        <Chip
-                          key={slot}
-                          size="small"
-                          clickable={!hit}
-                          disabled={Boolean(hit)}
-                          color={selected ? 'primary' : hit ? 'default' : 'success'}
-                          variant={selected ? 'filled' : 'outlined'}
-                          label={hit ? `${labelOfMinutes(s)} · ชน ${hit.queue.queue_number}` : labelOfMinutes(s)}
-                          onClick={hit ? undefined : () => setDraft((d) => (d ? { ...d, dockId: lane.id, start: labelOfMinutes(s) } : d))}
-                          sx={{ fontVariantNumeric: 'tabular-nums' }}
-                        />
-                      );
-                    })}
-                  </Stack>
-                )}
-              </Box>
-            </Stack>
-          ) : null}
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'flex-start' }}>
             <TextField
@@ -556,6 +549,118 @@ function DiffCard({ origin, draft, lanes, originDockName }: { origin: ScheduleDr
         );
       })}
       {draft.date !== origin.date ? <><Box /><Typography variant="caption" color="warning.main">ย้ายข้ามวัน = ได้เลขคิวใหม่ของวันนั้น · แจ้งลูกค้าด้วย</Typography></> : null}
+    </Box>
+  );
+}
+
+type CellState = 'selected' | 'origin' | 'free' | 'short' | 'other' | 'break' | 'closed';
+type Cell = { state: CellState; title: string; sub: string; dockId: string; other?: string };
+
+/**
+ * Time × dock grid: one tap per open slot, no dragging. Rows are 30-minute
+ * steps of the day plus every real slot start; a cell says whether the queue
+ * can start there for the typed minutes ("ว่าง"), fits only shorter ("ได้แค่"),
+ * or is taken. Same data as the board, so both views always agree.
+ */
+function SlotGrid({ data, draft, origin, minutesValid, fitOnly, onPlace }: {
+  data: DockBoardResponse;
+  draft: ScheduleDraft;
+  origin: ScheduleDraft;
+  minutesValid: boolean;
+  fitOnly: boolean;
+  onPlace: (dockId: string, start: string) => void;
+}) {
+  const theme = useTheme();
+  const buffer = Math.max(0, data.self.buffer_minutes ?? 0);
+  const startMin = draft.start ? minutesOfDay(draft.start) : Number.NaN;
+  const originStart = minutesOfDay(origin.start);
+  const sameDayAsOrigin = draft.date === origin.date;
+
+  const lanes = useMemo(() => data.docks.map((lane) => ({
+    lane,
+    slots: new Set(lane.slotStarts.map(minutesOfDay)),
+    day: computeDockDay({ start_time: data.self.start_time, buffer_minutes: buffer, others: lane.others, open_time: data.hours?.open_time, close_time: data.hours?.close_time, break_start: data.hours?.break_start, break_end: data.hours?.break_end }),
+  })), [data, buffer]);
+
+  // Rows: the day on a 30-minute step, plus every real slot start (finer intervals stay reachable).
+  const rows = useMemo(() => {
+    const open = Math.min(...lanes.map((l) => l.day.viewOpen));
+    const close = Math.max(...lanes.map((l) => l.day.viewClose));
+    const set = new Set<number>();
+    for (let t = open; t < close; t += GRID_STEP) set.add(t);
+    lanes.forEach((l) => l.slots.forEach((s) => set.add(s)));
+    return [...set].sort((a, b) => a - b);
+  }, [lanes]);
+
+  const cellOf = (t: number, l: (typeof lanes)[number]): Cell => {
+    const dockId = l.lane.id;
+    if (dockId === draft.dockId && t === startMin) return { state: 'selected', title: labelOfMinutes(t), sub: minutesValid ? `เลือกแล้ว · ถึง ${labelOfMinutes(t + draft.minutes)}` : 'เลือกแล้ว', dockId };
+    if (sameDayAsOrigin && dockId === origin.dockId && t === originStart) return { state: 'origin', title: labelOfMinutes(t), sub: 'เวลาเดิม', dockId };
+    if (l.day.breakRange && t >= l.day.breakRange.start && t < l.day.breakRange.end) return { state: 'break', title: '', sub: 'พัก', dockId };
+    const other = l.day.blocks.find((b) => t < b.bufferEnd && t + GRID_STEP > b.start);
+    if (other) return { state: 'other', title: '', sub: other.queue.queue_number, dockId, other: `${other.queue.queue_number} ${labelOfMinutes(other.start)}–${labelOfMinutes(other.end)}` };
+    if (!l.slots.has(t)) return { state: 'closed', title: '', sub: 'ไม่เปิด', dockId };
+    const at = computeDockDay({ start_time: labelOfMinutes(t), buffer_minutes: buffer, others: l.lane.others, minutes: minutesValid ? draft.minutes : null });
+    if (at.overlaps.length > 0) return { state: 'short', title: labelOfMinutes(t), sub: `ได้แค่ ${at.maxMinutes}′ · ชน ${at.overlaps[0].queue.queue_number}`, dockId };
+    return { state: 'free', title: labelOfMinutes(t), sub: at.next ? `ว่าง · ถึง ${labelOfMinutes(t + at.maxMinutes)}` : 'ว่าง', dockId };
+  };
+
+  const grid = rows
+    .map((t) => ({ t, cells: lanes.map((l) => cellOf(t, l)) }))
+    .filter((r) => !fitOnly || r.cells.some((c) => c.state === 'free' || c.state === 'selected' || c.state === 'origin'));
+
+  const palette: Record<CellState, { bg: string; border: string; color: string }> = {
+    selected: { bg: theme.palette.primary.main, border: theme.palette.primary.main, color: theme.palette.primary.contrastText },
+    origin: { bg: alpha(theme.palette.primary.main, 0.1), border: theme.palette.primary.main, color: theme.palette.primary.dark },
+    free: { bg: alpha(theme.palette.success.main, 0.12), border: theme.palette.success.main, color: theme.palette.text.primary },
+    short: { bg: alpha(theme.palette.warning.main, 0.14), border: theme.palette.warning.main, color: theme.palette.warning.dark },
+    other: { bg: theme.palette.grey[200], border: theme.palette.divider, color: theme.palette.text.secondary },
+    break: { bg: `repeating-linear-gradient(135deg, ${theme.palette.grey[100]} 0 6px, ${theme.palette.grey[300]} 6px 12px)`, border: theme.palette.divider, color: theme.palette.text.secondary },
+    closed: { bg: 'transparent', border: theme.palette.divider, color: theme.palette.text.disabled },
+  };
+
+  return (
+    <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: MAX_BOARD_HEIGHT, pb: 0.5 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: `52px repeat(${lanes.length}, minmax(${LANE_MIN_WIDTH}px, 1fr))`, gap: 0.5, minWidth: 52 + lanes.length * LANE_MIN_WIDTH, alignItems: 'stretch' }}>
+        <Box sx={{ position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 1 }} />
+        {lanes.map(({ lane, slots }) => (
+          <Box key={`h${lane.id}`} sx={{ position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 1, textAlign: 'center', pb: 0.5, minWidth: 0 }}>
+            <Typography variant="body2" fontWeight={700} noWrap>{lane.code ? `${lane.code} · ` : ''}{lane.name}{lane.id === origin.dockId && sameDayAsOrigin ? ' (เดิม)' : ''}</Typography>
+            <Typography variant="caption" color="text.secondary" component="div">เปิด {slots.size} ช่อง</Typography>
+          </Box>
+        ))}
+        {grid.length === 0 ? (
+          <Box sx={{ gridColumn: `1 / span ${lanes.length + 1}` }}>
+            <Alert severity="warning">{fitOnly ? `ไม่มีช่องที่พอสำหรับ ${draft.minutes} นาทีในวันนี้ — ลดเวลา หรือดู "ทุกช่องที่เปิด"` : 'ไม่มีช่องเปิดในวันนี้'}</Alert>
+          </Box>
+        ) : null}
+        {grid.map(({ t, cells }) => (
+          <Box key={t} sx={{ display: 'contents' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', pr: 0.75, fontVariantNumeric: 'tabular-nums' }}>{labelOfMinutes(t)}</Typography>
+            {cells.map((c) => {
+              const p = palette[c.state];
+              const pick = c.state === 'free';
+              return (
+                <ButtonBase
+                  key={`${t}-${c.dockId}`}
+                  disabled={!pick}
+                  onClick={pick ? () => onPlace(c.dockId, labelOfMinutes(t)) : undefined}
+                  title={c.other}
+                  sx={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', minHeight: 40, px: 1, py: 0.5,
+                    borderRadius: 1, border: 1, borderStyle: c.state === 'origin' ? 'dashed' : 'solid', borderColor: p.border, background: p.bg, color: p.color,
+                    textAlign: 'left', fontFamily: 'inherit', '&.Mui-disabled': { opacity: c.state === 'closed' ? 0.5 : 1 },
+                    '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1 },
+                  }}
+                >
+                  {c.title ? <Box component="span" sx={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{c.title}</Box> : null}
+                  <Box component="span" sx={{ fontSize: 11, opacity: c.state === 'selected' ? 0.9 : 1 }}>{c.sub}</Box>
+                </ButtonBase>
+              );
+            })}
+          </Box>
+        ))}
+      </Box>
     </Box>
   );
 }

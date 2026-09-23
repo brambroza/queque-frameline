@@ -13,7 +13,7 @@ import type { AppRole } from '@/types/db';
 export type MenuKey =
   | 'dashboard' | 'dock_queues' | 'documents' | 'calendar' | 'queue_board' | 'queue_display' | 'notifications'
   | 'branches' | 'vehicle_types' | 'docks' | 'working_hours' | 'holidays' | 'staff' | 'partners'
-  | 'reports' | 'site_settings' | 'line_settings' | 'settings' | 'translations';
+  | 'reports' | 'site_settings' | 'line_settings' | 'api_keys' | 'settings' | 'translations';
 
 export type MenuGroupKey = 'overview' | 'group_site' | 'group_insights';
 
@@ -51,6 +51,7 @@ export const MENU_ITEMS: MenuItemDef[] = [
   { key: 'reports', href: '/portal/reports', labelKey: 'menu.reports', fallback: 'รายงาน', group: 'group_insights', adminOnly: true },
   { key: 'site_settings', href: '/portal/site-settings', labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', group: 'group_insights' },
   { key: 'line_settings', href: '/portal/line-settings', labelKey: 'menu.line_settings', fallback: 'เชื่อมต่อ LINE', group: 'group_insights', adminOnly: true },
+  { key: 'api_keys', href: '/portal/api-keys', labelKey: 'menu.api_keys', fallback: 'เชื่อมต่อ ERP', group: 'group_insights', adminOnly: true },
   { key: 'settings', href: '/portal/settings', labelKey: 'menu.settings', fallback: 'ข้อมูลคลัง', group: 'group_insights' },
   { key: 'translations', href: '/portal/translations', labelKey: 'menu.translations', fallback: 'การแปลภาษา', group: 'group_insights', adminOnly: true },
 ];

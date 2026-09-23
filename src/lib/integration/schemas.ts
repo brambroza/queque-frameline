@@ -46,6 +46,26 @@ export const documentUpsertSchema = z.object({
 export type DocumentUpsert = z.infer<typeof documentUpsertSchema>;
 export type DocumentItem = z.infer<typeof documentItemSchema>;
 
+/** `2026-09-22T00:00:00` (what .NET / AX serialisers emit) → `2026-09-22`; anything else passes through. */
+const dateTimeToDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v) ? v.slice(0, 10) : v);
+
+/**
+ * Stricter shape for the ERP push API. The ERP is the master of partner codes
+ * and warehouses, so both are required there: matching a partner by name would
+ * fork the partner the day the ERP renames a customer, and a document without a
+ * branch would silently land on the site's first branch.
+ */
+export const apiDocumentUpsertSchema = documentUpsertSchema.extend({
+  partner: documentPartnerSchema.extend({ code: z.string().trim().min(1).max(60) }),
+  branch: z.string().trim().min(1).max(80),
+  doc_date: z.preprocess((v) => dateTimeToDate(blankToUndefined(v)), isoDate.optional()),
+  due_date: z.preprocess((v) => dateTimeToDate(blankToUndefined(v)), isoDate.optional()),
+  /** Free-text ERP status (e.g. AX SalesStatus name). Kept in `raw` for support; not interpreted. */
+  erp_status: optText(40),
+});
+
+export type ApiDocumentUpsert = z.infer<typeof apiDocumentUpsertSchema>;
+
 /** Sum of item quantities, or null when there are no items. */
 export function totalQty(items: DocumentItem[]): number | null {
   if (items.length === 0) return null;

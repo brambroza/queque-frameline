@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { documentPaymentSchema } from '@/lib/booking/schemas';
-import { isPaymentCleared, PAYMENT_LABEL } from '@/lib/booking/payment';
+import { isPaymentCleared } from '@/lib/booking/payment';
 import { writeAuditLog } from '@/lib/audit/activity-log';
-import { safeCreateNotification } from '@/lib/notifications/createNotification';
-import { safeNotifyStaffGroup } from '@/lib/line/notify';
+import { notifyPaymentCleared } from '@/lib/booking/payment-notify';
 
 /**
  * Record the payment status of a Sales Order (admin + warehouse staff).
@@ -70,27 +69,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     // Tell the team which queues are now waiting for approval.
     let unlocked: string[] = [];
     if (!isPaymentCleared('so', prev) && isPaymentCleared('so', next)) {
-      const { data: pending } = await admin
-        .from('bookings')
-        .select('id,queue_number')
-        .eq('shop_id', profile.shop_id)
-        .eq('document_id', id)
-        .eq('is_deleted', false)
-        .eq('status', 'pending');
-      unlocked = (pending ?? []).map((b) => String(b.queue_number));
-      if (pending && pending.length > 0) {
-        await safeCreateNotification(admin, {
-          companyId: profile.company_id, shopId: profile.shop_id, branchId: (doc.branch_id as string | null) ?? null,
-          type: 'payment_cleared', category: 'bookings', priority: 'high',
-          title: `${doc.doc_no} ${PAYMENT_LABEL[next]} — รออนุมัติคิว`,
-          message: `คิว ${unlocked.join(', ')} ของ ${doc.partner_name ?? '-'} อนุมัติได้แล้ว`,
-          relatedType: 'booking', relatedId: pending[0].id as string, actionUrl: '/portal/bookings', icon: 'Paid', color: '#0B7A4B',
-        });
-        await safeNotifyStaffGroup(admin, {
-          shopId: profile.shop_id, bookingId: pending[0].id as string,
-          event: { kind: 'payment_cleared', docNo: String(doc.doc_no), partner: String(doc.partner_name ?? '-'), queues: unlocked, status: PAYMENT_LABEL[next] },
-        });
-      }
+      unlocked = await notifyPaymentCleared(
+        admin,
+        { companyId: profile.company_id, shopId: profile.shop_id },
+        { id, doc_no: String(doc.doc_no), partner_name: (doc.partner_name as string | null) ?? null, branch_id: (doc.branch_id as string | null) ?? null },
+        next,
+      );
     }
 
     return NextResponse.json({ data: { ok: true, payment_status: next, unlocked_queues: unlocked } });

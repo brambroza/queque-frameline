@@ -29,6 +29,7 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
+import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
 import { useRouter } from 'next/navigation';
@@ -57,6 +58,7 @@ const MENU_ICONS: Record<MenuKey, React.ReactNode> = {
   reports: <InsightsRoundedIcon fontSize="small" />,
   site_settings: <TuneRoundedIcon fontSize="small" />,
   line_settings: <ChatRoundedIcon fontSize="small" />,
+  api_keys: <KeyRoundedIcon fontSize="small" />,
   settings: <SettingsRoundedIcon fontSize="small" />,
   translations: <TranslateRoundedIcon fontSize="small" />,
 };

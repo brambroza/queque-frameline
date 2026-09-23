@@ -89,6 +89,19 @@ supabase status      # ดู URL / anon key / service role key ใส่ใน 
 supabase db reset    # replay migration chain ใหม่ทั้งหมด
 ```
 
+## เชื่อมต่อ ERP (Dynamics AX push)
+
+1. Apply migration `supabase/migrations/202609230001_integration_api.sql` (ตาราง `integration_logs` + คอลัมน์เพิ่มของ `api_keys`)
+2. Admin สร้าง API key ที่ `/portal/api-keys` — ค่าเต็มแสดงครั้งเดียว ส่งให้ทีม IT ของ Fameline ทางช่องทางที่ปลอดภัย
+3. ฝั่ง AX ตั้ง `branches.code` ให้ตรง `InventSiteId` (`/portal/branches`) แล้วส่ง JSON ตาม [docs/integration/ERP-API-v1.md](docs/integration/ERP-API-v1.md)
+4. ทดสอบจากเครื่องตัวเอง:
+
+```bash
+APP_URL=https://<โดเมน> API_KEY=flq_... scripts/dev/erp-push-sample.sh both   # health → dry run → push ตัวอย่าง
+```
+
+ประวัติทุกคำขอ (นับใหม่/อัปเดต/ไม่สำเร็จ + เอกสารที่ตก) ดูได้ในหน้าเดียวกัน เก็บ 90 วัน
+
 ## Quality gate
 
 ```bash

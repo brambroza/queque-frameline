@@ -1,0 +1,47 @@
+{
+  "documents": [
+    {
+      "doc_no": "SO-2026-000123",
+      "partner": { "code": "C00042", "name": "บริษัท ตัวอย่างการค้า จำกัด", "phone": "021234567", "email": "ap@example.co.th" },
+      "doc_date": "2026-09-22T09:15:00",
+      "due_date": "2026-09-25",
+      "branch": "HQ",
+      "status": "open",
+      "payment_status": "credit",
+      "remark": "ลูกค้ารับเองที่คลัง",
+      "erp_status": "Backorder",
+      "ax": { "SalesStatus": 1, "DocumentStatus": 1, "InventLocationId": "FG", "DlvMode": "PICKUP", "modifiedDateTime": "2026-09-22T02:15:00Z" },
+      "items": [
+        { "sku": "FL-1001", "name": "Aluminium Louver 600x600", "qty": 120, "uom": "PCS", "ax": { "LineNum": 1, "SalesQty": 120 } },
+        { "sku": "FL-2210", "name": "ระแนงอะลูมิเนียม สีเทา 3 ม.", "qty": 45.5, "uom": "M", "ax": { "LineNum": 2, "SalesQty": 60 } }
+      ]
+    },
+    {
+      "doc_no": "SO-2026-000124",
+      "partner": { "code": "C00077", "name": "หจก. รุ่งเรืองก่อสร้าง" },
+      "doc_date": "2026-09-22",
+      "due_date": "2026-09-24",
+      "branch": "HQ",
+      "status": "open",
+      "payment_status": "unpaid",
+      "erp_status": "Backorder",
+      "items": [
+        { "sku": "FL-3300", "name": "ฝ้าอะลูมิเนียม 300x300", "qty": 800, "uom": "PCS" }
+      ]
+    },
+    {
+      "doc_no": "SO-2026-000099",
+      "partner": { "code": "C00042", "name": "บริษัท ตัวอย่างการค้า จำกัด" },
+      "branch": "HQ",
+      "status": "cancelled",
+      "erp_status": "Canceled",
+      "items": []
+    },
+    {
+      "doc_no": "SO-BAD-000001",
+      "partner": { "name": "ไม่มีรหัสลูกค้า" },
+      "branch": "HQ",
+      "items": [{ "name": "ทดสอบ", "qty": 1 }]
+    }
+  ]
+}
