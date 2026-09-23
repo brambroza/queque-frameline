@@ -1,8 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { docLabel, hhmm } from '@/lib/display/format';
 
-type Item = { id: string; queue_number: string; status: string; direction: 'inbound' | 'outbound'; start_time: string; plate: string; do_number: string | null; called_at: string | null; call_count: number | null; dock_id: string | null };
+type Item = {
+  id: string; queue_number: string; status: string; direction: 'inbound' | 'outbound'; start_time: string; plate: string; do_number: string | null;
+  called_at: string | null; call_count: number | null; dock_id: string | null;
+  service_name: string | null; doc_no: string | null; doc_type: 'so' | 'po' | null; customer_name: string | null; driver_name: string | null;
+};
 type DockView = { id: string; code: string | null; name: string; direction: 'inbound' | 'outbound' | null; current: Item | null };
 type Feed = { site: { name: string }; docks: DockView[]; waiting: Item[]; server_time: string };
 
@@ -10,7 +15,20 @@ const POLL_MS = 5000;
 
 /** Reads a plate so Thai TTS pronounces it: letters spaced, digits one by one. */
 function speakablePlate(plate: string): string {
-  return plate.split('').join(' ');
+  return plate.replace(/[\s\-]+/g, '').split('').join(' ');
+}
+
+/** Empty / missing value on the TV. */
+const dash = (v: string | null | undefined): string => (v && v.trim() ? v : '-');
+
+/** Label + value pair inside a dock tile. */
+function Meta({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
+      <dt className="text-[11px] uppercase tracking-wider text-slate-500">{label}</dt>
+      <dd className="truncate text-base font-semibold" title={value}>{value}</dd>
+    </div>
+  );
 }
 
 /**
@@ -96,6 +114,13 @@ export function DockDisplay({ displayKey }: { displayKey: string }) {
                     <p className="mt-3 text-sm font-semibold uppercase tracking-wide text-slate-300">{calling ? 'เชิญเข้าท่า' : 'กำลังขึ้น/ลงของ'}</p>
                     <p className="text-6xl font-extrabold leading-tight">{c.queue_number}</p>
                     <p className="mt-1 text-4xl font-bold text-amber-300">{c.plate || '-'}</p>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-400/25 pt-2.5">
+                      <Meta label="ประเภทรถ" value={dash(c.service_name)} />
+                      <Meta label="เวลานัด" value={dash(hhmm(c.start_time))} />
+                      <Meta label={c.doc_type === 'po' ? 'PO' : 'SO'} value={dash(docLabel(c.doc_type, c.doc_no))} />
+                      <Meta label="คนขับ" value={dash(c.driver_name)} />
+                      <Meta label={c.direction === 'inbound' ? 'ผู้ส่ง' : 'ลูกค้า'} value={dash(c.customer_name)} wide />
+                    </dl>
                     <p className="mt-2 text-sm text-slate-400">{c.do_number ?? ''}</p>
                   </>
                 ) : (
@@ -111,10 +136,21 @@ export function DockDisplay({ displayKey }: { displayKey: string }) {
         <h2 className="mb-3 text-xl font-semibold text-slate-300">มาถึงแล้ว · รอเรียก ({feed?.waiting.length ?? 0})</h2>
         <div className="flex flex-wrap gap-3">
           {(feed?.waiting ?? []).slice(0, 24).map((w) => (
-            <div key={w.id} className="rounded-xl bg-slate-800 px-4 py-2">
-              <span className="text-2xl font-bold">{w.queue_number}</span>
-              <span className="ml-3 text-xl text-amber-300">{w.plate || '-'}</span>
-              <span className="ml-3 text-sm text-slate-400">{String(w.start_time).slice(0, 5)}</span>
+            <div key={w.id} className="min-w-0 rounded-xl bg-slate-800 px-4 py-2">
+              <div className="flex items-baseline gap-3">
+                <span className="text-2xl font-bold">{w.queue_number}</span>
+                <span className="text-xl text-amber-300">{w.plate || '-'}</span>
+                <span className="text-sm text-slate-400">{hhmm(w.start_time)}</span>
+              </div>
+              <div className="mt-0.5 flex flex-wrap gap-x-2 text-[13px] text-slate-400">
+                <span>{dash(w.service_name)}</span>
+                <span className="text-slate-600">·</span>
+                <span className="font-semibold text-slate-300">{dash(docLabel(w.doc_type, w.doc_no))}</span>
+                <span className="text-slate-600">·</span>
+                <span>{dash(w.customer_name)}</span>
+                <span className="text-slate-600">·</span>
+                <span>{dash(w.driver_name)}</span>
+              </div>
             </div>
           ))}
           {feed && feed.waiting.length === 0 ? <p className="text-slate-500">ไม่มีรถรอเรียก</p> : null}

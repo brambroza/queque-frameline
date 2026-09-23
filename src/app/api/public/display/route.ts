@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { toBangkokStamp } from '@/lib/booking/slot-time';
-import { effectivePlate } from '@/lib/booking/plate';
+import { displayPlate } from '@/lib/display/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +15,16 @@ function keyOk(req: Request): boolean {
   return got.length === expected.length && timingSafeEqual(got, expected);
 }
 
+/** One embedded row (`services`, `customers`, `external_documents`) as PostgREST returns it. */
+function one<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+
 /**
  * Yard TV feed: per dock who is being called / served, plus the waiting line.
- * Exposes queue number, plate, dock and DO number only — no names or phones.
+ * Exposes queue number, plate (laid out per vehicle type), vehicle type, time,
+ * SO/PO number, customer/partner name, driver name, dock and DO number.
+ * Phone numbers are never included — the page is public.
  */
 export async function GET(req: Request) {
   if (!keyOk(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -31,7 +38,7 @@ export async function GET(req: Request) {
       admin.from('booking_resources').select('id,resource_code,resource_name,direction').eq('shop_id', shop.id).eq('resource_type', 'dock').eq('active', true).eq('is_deleted', false).order('resource_code', { ascending: true }),
       admin
         .from('bookings')
-        .select('id,queue_number,status,direction,start_time,resource_id,plate_number,plate_number_actual,do_number,called_at,call_count')
+        .select('id,queue_number,status,direction,start_time,resource_id,plate_number,plate_number_actual,do_number,called_at,call_count,driver_name,services(service_name,plate_format),customers(full_name),external_documents(doc_no,doc_type,partner_name)')
         .eq('shop_id', shop.id)
         .eq('booking_date', today)
         .eq('is_deleted', false)
@@ -39,10 +46,20 @@ export async function GET(req: Request) {
         .order('start_time', { ascending: true }),
     ]);
 
-    const slim = (b: NonNullable<typeof rows>[number]) => ({
-      id: b.id, queue_number: b.queue_number, status: b.status, direction: b.direction, start_time: b.start_time,
-      plate: effectivePlate(b), do_number: b.do_number, called_at: b.called_at, call_count: b.call_count, dock_id: b.resource_id,
-    });
+    const slim = (b: NonNullable<typeof rows>[number]) => {
+      const service = one(b.services);
+      const doc = one(b.external_documents);
+      const customer = one(b.customers);
+      return {
+        id: b.id, queue_number: b.queue_number, status: b.status, direction: b.direction, start_time: b.start_time,
+        plate: displayPlate(b, service?.plate_format), do_number: b.do_number, called_at: b.called_at, call_count: b.call_count, dock_id: b.resource_id,
+        service_name: service?.service_name ?? null,
+        doc_no: doc?.doc_no ?? null,
+        doc_type: doc?.doc_type ?? null,
+        customer_name: customer?.full_name || doc?.partner_name || null,
+        driver_name: b.driver_name || null,
+      };
+    };
     const live = rows ?? [];
     return NextResponse.json({
       data: {
