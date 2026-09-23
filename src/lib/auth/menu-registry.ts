@@ -95,10 +95,14 @@ export function resolveMenuAccess(roles: Array<{ access_level: AppRole; menu_key
   return { level, menuKeys: MENU_KEYS.filter((k) => union.has(k)) };
 }
 
+/** Menu entry that owns a portal path (`/portal/bookings/abc` → the `dock_queues` item), or null. */
+export function menuItemForPath(pathname: string): MenuItemDef | null {
+  return MENU_ITEMS.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`)) ?? null;
+}
+
 /** Menu key that owns a portal path (`/portal/bookings/abc` → `dock_queues`), or null. */
 export function menuKeyForPath(pathname: string): MenuKey | null {
-  const hit = MENU_ITEMS.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
-  return hit?.key ?? null;
+  return menuItemForPath(pathname)?.key ?? null;
 }
 
 /** First menu the user may open, in sidebar order, or the no-access page. */

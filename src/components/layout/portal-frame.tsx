@@ -36,6 +36,7 @@ import {
 } from '@/components/layout/sidebar-collapse-context';
 import { useI18n } from '@/components/i18n/i18n-provider';
 import { PORTAL_APPBAR_HEIGHT_VAR } from '@/components/layout/sticky-offset';
+import { FeedbackFab } from '@/components/feedback/feedback-fab';
 
 /** Shared width/margin transition for the desktop sidebar and app bar. */
 const sidebarTransition = (theme: Theme) =>
@@ -363,6 +364,9 @@ function PortalFrameInner({
           </Container>
         </Box>
       </Box>
+
+      {/* Fixed-position; lives outside the content column so it never affects layout. */}
+      <FeedbackFab fullName={fullName} />
     </Box>
   );
 }

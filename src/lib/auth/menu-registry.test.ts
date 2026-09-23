@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MENU_KEYS, NO_ACCESS_PATH, firstAllowedHref, menuKeyForPath, menuKeysForLevel, menuKeysOfRole, resolveMenuAccess, validateRoleMenuKeys,
+  MENU_KEYS, NO_ACCESS_PATH, firstAllowedHref, menuItemForPath, menuKeyForPath, menuKeysForLevel, menuKeysOfRole, resolveMenuAccess, validateRoleMenuKeys,
 } from './menu-registry';
 
 describe('menuKeysForLevel', () => {
@@ -54,6 +54,12 @@ describe('menuKeyForPath / firstAllowedHref', () => {
     expect(menuKeyForPath('/portal/bookings')).toBe('dock_queues');
     expect(menuKeyForPath('/portal/bookings/abc')).toBe('dock_queues');
     expect(menuKeyForPath('/portal/nope')).toBeNull();
+  });
+
+  it('returns the whole menu entry for a path so callers can label it', () => {
+    expect(menuItemForPath('/portal/bookings/abc')?.fallback).toBe('คิวรับ-ส่งสินค้า');
+    expect(menuItemForPath('/portal/bookingsx')).toBeNull();
+    expect(menuItemForPath('/portal')).toBeNull();
   });
 
   it('lands on the first allowed menu, else the no-access page', () => {

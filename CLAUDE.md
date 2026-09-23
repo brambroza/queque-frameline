@@ -271,6 +271,13 @@ import { xxx } from '../../lib/...';  // ผิด
 - **Hard limits:** ห้าม log token/secret, ห้ามเชื่อ `line_user_id` จาก request (ต้องมาจาก ID token เท่านั้น), push ทุกจุดต้องผ่าน `safeNotify*`
 - ค่าใช้จ่าย: แผนฟรี 200 ข้อความ/เดือน (push + กลุ่ม) — reply ไม่นับ
 
+## Feedback / แจ้งปัญหา (2026-09-24, `202609240001_feedback_reports`)
+
+- ปุ่มลอยมุมขวาล่าง **ทุกหน้า portal** (`FeedbackFab` mount ครั้งเดียวใน `PortalFrameInner`, z-index 1150 ใต้ drawer/dialog) → แคปหน้าจอด้วย `html-to-image` (dynamic import, ตัด element ที่มี `data-feedback-ignore` = ปุ่ม/toast, ย่อ ≤ 1600px JPEG ≤ 2.5 MB — `src/components/feedback/capture.ts`) → `FeedbackDialog`: ประเภท bug|suggestion, ชื่อผู้แจ้ง (prefill), ความสำคัญ low|medium|high|urgent, รายละเอียด 5–2000, preview + ติ๊กแนบรูป, เมนู (จาก `menuItemForPath`) + path
+- `POST /api/feedback` (admin+staff): zod `feedbackReportSchema` (`src/lib/feedback/schemas.ts`, path ต้องเป็น `/portal…`) → insert `feedback_reports` (RLS insert own) → upload bucket private `feedback-screenshots/<shop_id>/<id>.jpg` ผ่าน service role → `safeSendMail` ไป env `FEEDBACK_TO_EMAIL` (subject `[site][BUG|แนะนำ][ความสำคัญ] เมนู — สรุป`, แนบรูป inline cid; builder pure `src/lib/feedback/email.ts` + vitest) → stamp `screenshot_path` / `email_sent_at` / `email_error` (`mail_not_configured` | `smtp_failed`) → audit `feedback_submitted`; Storage/SMTP พังไม่ทำให้ request ล้ม (แถวยังอยู่, toast บอกว่าส่งเมลไม่สำเร็จ)
+- Mail helper กลาง `src/lib/mail/send.ts` (`getSmtpConfig` / `safeSendMail`, nodemailer, ไม่ log credential) — ใช้ต่อกับ DO/ลิงก์ได้; SMTP ครึ่ง ๆ (ขาด host/user/pass) = ปิด
+- `feedback_reports.status` (new|acknowledged|in_progress|done|rejected) + RLS อ่าน/แก้เฉพาะ admin เตรียมไว้สำหรับหน้า `/portal/feedback` ในอนาคต (ยังไม่มี UI)
+
 ## Notification System
 
 `safeCreateNotification(supabase, {...})` (`src/lib/notifications/createNotification.ts`) = notification center ของ **staff/admin** เท่านั้น ไม่ throw
@@ -290,7 +297,8 @@ import { xxx } from '../../lib/...';  // ผิด
 | `TOKEN_SECRET` | แนะนำ | HMAC สำหรับ derive ลิงก์จอง/คนขับ (ไม่ตั้ง = ใช้ service role key); เปลี่ยน = ลิงก์เดิมตายทั้งหมด |
 | `CRON_SECRET` | auto-call | Bearer สำหรับ `/api/cron/*` (ค่าเดียวกับ Vault `cron_secret`) |
 | `DISPLAY_KEY` | optional | บังคับ `/display?key=` |
-| `SMTP_*` | optional | ส่ง DO / ลิงก์ทางอีเมล |
+| `SMTP_*` | optional | อีเมลขาออก (feedback; DO / ลิงก์ในอนาคต) — Gmail: `smtp.gmail.com` 587 + App Password |
+| `FEEDBACK_TO_EMAIL` | feedback | ผู้รับรายงาน bug/ข้อเสนอแนะจากปุ่มลอย (ไม่ตั้ง = เก็บ DB อย่างเดียว) |
 
 ---
 
@@ -334,6 +342,7 @@ Quality gate ก่อน commit: `npm run typecheck && npm run lint && npm run 
 - **ค้าง (ต้องทำก่อน UAT):**
   - E2E กับ Supabase จริง/ local stack (`supabase start`) — SQL ทดสอบบน Postgres 16 แล้ว, API/UI ผ่านแค่ typecheck + build
   - Integration API + หน้า API keys โค้ดเสร็จ 2026-09-23 (ดู section Integration) — ค้าง: รัน migration `202609230001` บน Supabase จริง, joint test กับ X++ job ของ Fameline, ยืนยัน `branches.code` = `InventSiteId` และกติกา paid ก่อน invoice กับ finance
+  - Feedback FAB โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240001` (ตาราง + bucket) บน Supabase จริง, ตั้ง `SMTP_*` + `FEEDBACK_TO_EMAIL`, ทดสอบแคปหน้าจอบนเบราว์เซอร์จริง
   - Dashboard / Reports / Calendar ยังเป็นของ Queue (ใช้ได้ แต่ยังไม่มี KPI ตามท่า / direction, ยังอ้าง `customers.nickname`)
   - Dock lane view บนบอร์ดคิว, i18n keys ใหม่ (ตอนนี้ใช้ fallback ไทยในโค้ด), ลบคอลัมน์/ตารางมรดกที่ไม่ใช้
   - Vault secrets `cron_app_url` + `cron_secret` บน Supabase จริง (ไม่ตั้ง = auto-call ทำงานเฉพาะ event path)
