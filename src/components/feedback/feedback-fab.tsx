@@ -10,12 +10,18 @@ import { menuItemForPath } from '@/lib/auth/menu-registry';
 import { captureScreenshot, FEEDBACK_IGNORE_ATTR } from './capture';
 import { FeedbackDialog } from './feedback-dialog';
 
-/** Below MUI's drawer (1200) / modal (1300) so open panels always cover the button. */
-const FAB_Z_INDEX = 1150;
+/**
+ * Above MUI's drawer (1200) / modal (1300) and the Tailwind CRUD drawers (1201)
+ * so the button stays clickable while a dialog or drawer is open — a bug seen
+ * inside a dialog is exactly what people need to report. Kept below tooltip
+ * (1500) and the toast stack (1600).
+ */
+const FAB_Z_INDEX = 1450;
 
 /**
- * Floating "report a problem / suggest" button shown on every portal page.
- * Captures the current screen first (with itself hidden), then opens the form.
+ * Floating "report a problem / suggest" button pinned bottom-left on every
+ * portal page, reachable even while a dialog or drawer is open. Captures the
+ * current screen first (with itself hidden), then opens the form.
  */
 export function FeedbackFab({ fullName }: { fullName?: string | null }) {
   const { t } = useI18n();
@@ -50,12 +56,12 @@ export function FeedbackFab({ fullName }: { fullName?: string | null }) {
 
   return (
     <>
-      <Tooltip title={tooltip} placement="left" arrow>
+      <Tooltip title={tooltip} placement="right" arrow>
         <span
           {...{ [FEEDBACK_IGNORE_ATTR]: '' }}
           style={{
             position: 'fixed',
-            right: 20,
+            left: 'calc(20px + env(safe-area-inset-left, 0px))',
             bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
             zIndex: FAB_Z_INDEX,
             // Hidden while rendering so the button never shows up in its own screenshot.
