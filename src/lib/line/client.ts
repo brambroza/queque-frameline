@@ -36,3 +36,61 @@ export async function getGroupSummary(token: string, groupId: string): Promise<{
 export async function getBotInfo(token: string): Promise<{ userId: string; basicId: string; displayName: string; pictureUrl?: string }> {
   return (await call(token, '/info')).json() as Promise<{ userId: string; basicId: string; displayName: string; pictureUrl?: string }>;
 }
+
+// ───────────────────────────── rich menu ─────────────────────────────
+
+/** Rich menu image upload goes through the data host, not api.line.me. */
+const API_DATA = 'https://api-data.line.me/v2/bot';
+
+/** Create a rich menu (areas + size); returns the new `richMenuId`. The image is uploaded separately. */
+export async function createRichMenu(token: string, body: object): Promise<string> {
+  const json = (await (await call(token, '/richmenu', { method: 'POST', body: JSON.stringify(body) })).json()) as { richMenuId?: string };
+  if (!json.richMenuId) throw new Error('LINE /richmenu: no richMenuId in response');
+  return json.richMenuId;
+}
+
+/** Upload the PNG for a rich menu (must match the declared size, ≤ 1 MB). */
+export async function uploadRichMenuImage(token: string, richMenuId: string, png: Uint8Array): Promise<void> {
+  const res = await fetch(`${API_DATA}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png', Authorization: `Bearer ${token}` },
+    body: new Blob([png as BlobPart], { type: 'image/png' }),
+  });
+  if (!res.ok) throw new Error(`LINE /richmenu/content ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+/** Show this menu to every user without a per-user menu. */
+export async function setDefaultRichMenu(token: string, richMenuId: string): Promise<void> {
+  await call(token, `/user/all/richmenu/${encodeURIComponent(richMenuId)}`, { method: 'POST' });
+}
+
+/** Remove the default menu. 404 = there was none. */
+export async function clearDefaultRichMenu(token: string): Promise<void> {
+  try {
+    await call(token, '/user/all/richmenu', { method: 'DELETE' });
+  } catch (e) {
+    if (e instanceof Error && / 404:/.test(e.message)) return;
+    throw e;
+  }
+}
+
+/** Delete a rich menu. 404 = already gone. */
+export async function deleteRichMenu(token: string, richMenuId: string): Promise<void> {
+  try {
+    await call(token, `/richmenu/${encodeURIComponent(richMenuId)}`, { method: 'DELETE' });
+  } catch (e) {
+    if (e instanceof Error && / 404:/.test(e.message)) return;
+    throw e;
+  }
+}
+
+/** Id of the current default menu, or null when none is set (LINE answers 404). */
+export async function getDefaultRichMenuId(token: string): Promise<string | null> {
+  try {
+    const json = (await (await call(token, '/user/all/richmenu')).json()) as { richMenuId?: string };
+    return json.richMenuId ?? null;
+  } catch (e) {
+    if (e instanceof Error && / 404:/.test(e.message)) return null;
+    throw e;
+  }
+}

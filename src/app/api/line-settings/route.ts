@@ -20,7 +20,7 @@ const schema = z.object({
 
 /** Public shape: secrets are reported as present/absent only. */
 async function view(client: Parameters<typeof getLineConfig>[0], shopId: string) {
-  const { data: row } = await client.from('line_config').select('channel_access_token,channel_secret,login_channel_id,liff_id,oa_basic_id,staff_group_id,staff_group_name,notify_customer,notify_driver,notify_staff_group,webhook_verified_at,updated_at').eq('shop_id', shopId).maybeSingle();
+  const { data: row } = await client.from('line_config').select('channel_access_token,updated_at').eq('shop_id', shopId).maybeSingle();
   const cfg = await getLineConfig(client, shopId);
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
   return {
@@ -36,6 +36,8 @@ async function view(client: Parameters<typeof getLineConfig>[0], shopId: string)
     notify_driver: cfg.notify_driver,
     notify_staff_group: cfg.notify_staff_group,
     webhook_verified_at: cfg.webhook_verified_at,
+    rich_menu_id: cfg.rich_menu_id,
+    rich_menu_published_at: cfg.rich_menu_published_at,
     webhook_url: `${appUrl}/api/line/webhook`,
     liff_endpoint_url: `${appUrl}/`,
     sample_liff_url: liffUrl(cfg, '/book/<token>'),

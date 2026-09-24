@@ -8,10 +8,13 @@
  * production. Driver links and booking links are issued and printed.
  *
  * Usage:
- *   node scripts/dev/seed-test-data.mjs [--date=YYYY-MM-DD] [--code=C002] [--reset] [--dry-run]
+ *   node scripts/dev/seed-test-data.mjs [--date=YYYY-MM-DD] [--code=C002] [--tag=E2E] [--reset] [--dry-run] [--json]
  *
  *   --date     Appointment day (default: today if a working day with free slots, else the next one)
  *   --code     Customer code (default C002)
+ *   --tag      Extra tag in the document numbers (SO-TEST-<code>-<tag>-nnn) so sets can coexist; --reset only touches that tag
+ *   --json     Also print a machine-readable trailer (__SEED_JSON__[...]) for test scripts
+ *   --allow-past  Today: also use slots that already passed (for automated flows that move the queue anyway)
  *   --reset    Remove queues + documents created earlier by this script for that code, then seed again
  *   --dry-run  Print the plan, write nothing
  *
@@ -66,7 +69,12 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => {
 const CODE = String(args.code || 'C002').toUpperCase();
 const DRY = Boolean(args['dry-run']);
 const RESET = Boolean(args.reset);
-const DOC_PREFIX = `SO-TEST-${CODE}-`;
+/** Optional extra tag so several independent sets can coexist for one customer (e.g. --tag=E2E). */
+const TAG = args.tag ? String(args.tag).toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+const JSON_OUT = Boolean(args.json);
+/** Test runs may book slots that already passed today (the flow moves them anyway). */
+const ALLOW_PAST = Boolean(args['allow-past']);
+const DOC_PREFIX = `SO-TEST-${CODE}-${TAG ? `${TAG}-` : ''}`;
 
 // ───────────────────────── helpers (mirror src/lib/tokens.ts + driver-link.ts) ─────────────────────────
 
@@ -238,7 +246,7 @@ async function main() {
     const slots = must(await admin.rpc('get_dock_slots', { p_shop_id: site.shopId, p_branch_id: branch.id, p_direction: 'outbound', p_service_id: service.id, p_date: date }), 'get_dock_slots');
     const free = slots.filter((s) => s.remaining_capacity > 0).map((s) => String(s.slot_time).slice(0, 5));
     // Today: only slots at least 15 minutes ahead so check-in / auto-call can be exercised.
-    const usable = date === today ? free.filter((t) => t > bangkokTime(new Date(Date.now() + 15 * 60_000))) : free;
+    const usable = date === today && !ALLOW_PAST ? free.filter((t) => t > bangkokTime(new Date(Date.now() + 15 * 60_000))) : free;
     return usable[0] ?? null;
   }
 
@@ -300,7 +308,9 @@ async function main() {
     console.log(`  ลูกค้า: ${r.ลิงก์จอง}`);
     if (r.ลิงก์คนขับ !== '-') console.log(`  คนขับ: ${r.ลิงก์คนขับ}`);
   }
-  console.log(DRY ? '\n(dry-run: ไม่ได้เขียนอะไร)' : `\nเสร็จ — ล้างแล้วสร้างชุดใหม่: node scripts/dev/seed-test-data.mjs --code=${CODE} --reset`);
+  console.log(DRY ? '\n(dry-run: ไม่ได้เขียนอะไร)' : `\nเสร็จ — ล้างแล้วสร้างชุดใหม่: node scripts/dev/seed-test-data.mjs --code=${CODE}${TAG ? ` --tag=${TAG}` : ''} --reset`);
+  // Machine-readable trailer for test scripts (single line, after a marker).
+  if (JSON_OUT) console.log(`\n__SEED_JSON__${JSON.stringify(results.map((r) => ({ case: r.กรณี, vehicle: r.ประเภทรถ, doc_no: r.เอกสาร, queue_number: r.คิว, start: r.เวลา, dock: r.ท่า, do_number: r.DO, driver_url: r.ลิงก์คนขับ, booking_url: r.ลิงก์จอง })))}`);
 }
 
 main().catch((e) => {

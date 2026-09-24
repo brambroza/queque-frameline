@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Card, CardContent, Chip, FormControlLabel, Skeleton, Stack, Switch, TextField, Typography } from '@mui/material';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
@@ -8,12 +8,30 @@ import { PageHeader } from '@/components/shared/page-header';
 import { CopyField } from '@/components/ui/copy-field';
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { RICH_MENU_SIZE, RICH_MENU_TILES } from '@/lib/line/rich-menu';
+import { blobToBase64, drawRichMenu, ensureFontsLoaded, renderRichMenuPng, resolveFontStack } from './rich-menu-canvas';
 
 type View = {
   has_token: boolean; has_secret: boolean; token_from_env: boolean; login_channel_id: string | null; liff_id: string | null; oa_basic_id: string | null;
   staff_group_id: string | null; staff_group_name: string | null; notify_customer: boolean; notify_driver: boolean; notify_staff_group: boolean;
-  webhook_verified_at: string | null; webhook_url: string; liff_endpoint_url: string; sample_liff_url: string | null;
+  webhook_verified_at: string | null; rich_menu_id: string | null; rich_menu_published_at: string | null; webhook_url: string; liff_endpoint_url: string; sample_liff_url: string | null;
 };
+
+/** Live preview of the menu image, drawn once the portal font is ready. */
+function RichMenuPreview() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const font = resolveFontStack();
+    void ensureFontsLoaded(font).then(() => { if (!cancelled && ref.current) drawRichMenu(ref.current, font); });
+    return () => { cancelled = true; };
+  }, []);
+  return (
+    <Box sx={{ borderRadius: 2, overflow: 'hidden', border: 1, borderColor: 'divider', maxWidth: 720, aspectRatio: `${RICH_MENU_SIZE.width} / ${RICH_MENU_SIZE.height}` }}>
+      <canvas ref={ref} style={{ width: '100%', height: '100%', display: 'block' }} aria-label="ตัวอย่าง rich menu" />
+    </Box>
+  );
+}
 type Check = { key: string; label: string; ok: boolean; detail: string };
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
@@ -35,6 +53,7 @@ export function LineSettingsForm() {
   const [form, setForm] = useState({ channel_access_token: '', channel_secret: '', login_channel_id: '', liff_id: '', oa_basic_id: '' });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [checks, setChecks] = useState<Check[] | null>(null);
 
   const load = useCallback(async () => {
@@ -90,6 +109,43 @@ export function LineSettingsForm() {
     if (ok) await patch({ clear_staff_group: true }, 'ยกเลิกกลุ่มแล้ว');
   }
 
+  /** Draw the menu in the browser, then let the server create / upload / set it as the OA's default menu. */
+  async function publishRichMenu() {
+    const ok = await confirm({
+      tone: 'primary', title: view?.rich_menu_id ? 'เผยแพร่ Rich menu ใหม่?' : 'เผยแพร่ Rich menu?',
+      description: 'ทุกคนที่เป็นเพื่อนกับ OA จะเห็นเมนูนี้ที่ด้านล่างห้องแชท (เมนูเดิมที่ตั้งจาก OA Manager จะถูกแทนที่)', confirmLabel: 'เผยแพร่',
+    });
+    if (!ok) return;
+    setPublishing(true);
+    try {
+      const png = await renderRichMenuPng();
+      const res = await fetch('/api/line-settings/rich-menu', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_base64: await blobToBase64(png) }) });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { push(j.error ?? 'เผยแพร่ไม่สำเร็จ', 'error'); return; }
+      push('เผยแพร่ Rich menu แล้ว — ลูกค้าปิด/เปิดห้องแชทใหม่จะเห็นเมนู');
+      await load();
+    } catch (e) {
+      push(e instanceof Error ? e.message : 'เผยแพร่ไม่สำเร็จ', 'error');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function removeRichMenu() {
+    const ok = await confirm({ tone: 'warning', title: 'ลบ Rich menu ออกจาก OA?', description: 'ลูกค้าจะไม่มีปุ่ม "คิวของฉัน / สถานะ SO" จนกว่าจะเผยแพร่ใหม่ (ยังพิมพ์คำว่า "คิว" หรือ "SO" ถามได้)', confirmLabel: 'ลบเมนู' });
+    if (!ok) return;
+    setPublishing(true);
+    try {
+      const res = await fetch('/api/line-settings/rich-menu', { method: 'DELETE' });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { push(j.error ?? 'ลบไม่สำเร็จ', 'error'); return; }
+      push('ลบ Rich menu แล้ว');
+      await load();
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   return (
     <Stack spacing={2}>
       <PageHeader title="เชื่อมต่อ LINE" description="ส่งลิงก์จองและแจ้งสถานะให้ลูกค้า Supplier และคนขับทาง LINE OA และแจ้งทีมคลังเข้ากลุ่ม LINE"
@@ -139,7 +195,27 @@ export function LineSettingsForm() {
             ) : <Chip variant="outlined" color="warning" icon={<ErrorOutlineRoundedIcon />} label="ยังไม่ลงทะเบียนกลุ่ม" />}
           </Section>
 
-          <Section title="4. เปิด/ปิดการแจ้งเตือน">
+          <Section title="4. Rich menu ของลูกค้า (ปุ่มเช็คคิว / สถานะ SO ด้านล่างห้องแชท)" hint="ระบบวาดภาพเมนูให้และตั้งเป็นเมนูเริ่มต้นของ OA ผ่าน Messaging API — ลูกค้า Supplier และคนขับที่เคยเปิดลิงก์ผ่าน LINE จะกดดูคิวและสถานะ SO ของตัวเองได้ทันที (ตอบกลับไม่นับโควตาข้อความ)">
+            <RichMenuPreview />
+            <Stack spacing={0.5}>
+              {RICH_MENU_TILES.map((t) => (
+                <Typography key={t.action} variant="body2" color="text.secondary">
+                  <b>{t.label}</b> — {t.action === 'my_queues' ? 'คิวที่กำลังดำเนินการ (วันนี้เป็นต้นไป) พร้อมสถานะ ท่า และเลข DO' : t.action === 'my_docs' ? 'SO / PO ที่เปิดอยู่ สถานะการชำระเงิน คิวของแต่ละใบ และปุ่มจองคิว' : 'เบอร์โทรและที่อยู่ของแต่ละสาขา'}
+                </Typography>
+              ))}
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              {view.rich_menu_id ? (
+                <Chip color="success" icon={<CheckCircleRoundedIcon />} label={`เผยแพร่แล้ว${view.rich_menu_published_at ? ` ${new Date(view.rich_menu_published_at).toLocaleString('th-TH')}` : ''}`} />
+              ) : <Chip variant="outlined" color="warning" icon={<ErrorOutlineRoundedIcon />} label="ยังไม่ได้เผยแพร่" />}
+              <Button variant="contained" onClick={() => void publishRichMenu()} disabled={publishing || !view.has_token}>{publishing ? 'กำลังส่งไป LINE…' : view.rich_menu_id ? 'เผยแพร่ใหม่' : 'เผยแพร่ Rich menu'}</Button>
+              {view.rich_menu_id ? <Button color="inherit" onClick={() => void removeRichMenu()} disabled={publishing}>ลบเมนู</Button> : null}
+            </Stack>
+            {!view.has_token ? <Typography variant="caption" color="text.secondary">ต้องบันทึก Channel access token ก่อน</Typography> : null}
+            {!view.liff_id ? <Alert severity="info">ยังไม่ได้ใส่ LIFF ID — ปุ่มในเมนูยังใช้ได้ แต่ลิงก์ &ldquo;ดูรายละเอียด / จองคิว&rdquo; จะเปิดเป็นเว็บแทนการเปิดใน LINE</Alert> : null}
+          </Section>
+
+          <Section title="5. เปิด/ปิดการแจ้งเตือน">
             <FormControlLabel control={<Switch checked={view.notify_customer} disabled={saving} onChange={(e) => void patch({ notify_customer: e.target.checked }, 'บันทึกแล้ว')} />} label="แจ้งลูกค้า / Supplier (รับคำขอ, ยืนยัน + DO, เรียกคิว, เลื่อน, ยกเลิก, ไม่มา)" />
             <FormControlLabel control={<Switch checked={view.notify_driver} disabled={saving} onChange={(e) => void patch({ notify_driver: e.target.checked }, 'บันทึกแล้ว')} />} label="แจ้งคนขับ (ใบงาน, ถึงคิวแล้ว)" />
             <FormControlLabel control={<Switch checked={view.notify_staff_group} disabled={saving} onChange={(e) => void patch({ notify_staff_group: e.target.checked }, 'บันทึกแล้ว')} />} label="แจ้งกลุ่มทีมคลัง" />

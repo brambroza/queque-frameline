@@ -273,14 +273,202 @@ export function staffGroupText(e: StaffEvent): Text {
   }
 }
 
+// ───────────────────────────── rich menu replies (self-service) ─────────────────────────────
+
+/** Customer-facing label per queue status (mirrors `PUBLIC_STATUS` on the web page). */
+export const QUEUE_STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  pending: { label: 'รอเจ้าหน้าที่ยืนยัน', color: COLOR.warn },
+  confirmed: { label: 'ยืนยันแล้ว', color: COLOR.out },
+  late: { label: 'เลยเวลานัด', color: COLOR.warn },
+  checked_in: { label: 'มาถึงแล้ว · รอเรียก', color: COLOR.in },
+  called: { label: 'เชิญเข้าท่า', color: COLOR.call },
+  serving: { label: 'กำลังขึ้น/ลงของ', color: COLOR.out },
+  completed: { label: 'เสร็จสิ้น', color: COLOR.muted },
+  cancelled: { label: 'ยกเลิกแล้ว', color: COLOR.bad },
+  no_show: { label: 'ไม่มาตามนัด', color: COLOR.bad },
+};
+
+/** Status chip text for a queue; an unpaid SO in `pending` reads "รอชำระเงิน". */
+export function queueStatusLabel(status: string, paymentPending?: boolean): { label: string; color: string } {
+  if (paymentPending && status === 'pending') return { label: 'รอชำระเงิน', color: COLOR.warn };
+  return QUEUE_STATUS_LABEL[status] ?? { label: status, color: COLOR.muted };
+}
+
+/** One queue in the "คิวของฉัน" answer. `url` = LIFF/web page for that queue (null = no link available). */
+export type MyQueueItem = {
+  queueNo: string; status: string; direction: BookingDirection; date: string; startTime: string; endTime?: string | null;
+  dock: string | null; plate: string; doNo: string | null; docNo: string | null; url: string | null;
+  /** How this LINE user relates to the queue: booked it (partner) or drives it. */
+  role: 'partner' | 'driver';
+  paymentPending?: boolean;
+};
+
+/** Flex carousel can carry at most 12 bubbles; keep room for the "more" note. */
+export const REPLY_LIST_LIMIT = 10;
+
+function statusChip(s: { label: string; color: string }) {
+  return {
+    type: 'box', layout: 'vertical', backgroundColor: `${s.color}1A`, cornerRadius: 'md', paddingAll: '6px', paddingStart: '10px', paddingEnd: '10px',
+    contents: [{ type: 'text', text: s.label, size: 'xs', weight: 'bold', color: s.color, align: 'center' }],
+  };
+}
+
+function bubble(opts: { header: string; headerColor: string; sub?: string; body: unknown[]; footer?: unknown[] }) {
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: opts.headerColor, paddingAll: '12px',
+      contents: [
+        { type: 'text', text: opts.header, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+        ...(opts.sub ? [{ type: 'text', text: opts.sub, size: 'xs', color: '#FFFFFFCC', wrap: true }] : []),
+      ],
+    },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: opts.body },
+    ...(opts.footer && opts.footer.length > 0 ? { footer: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '10px', contents: opts.footer } } : {}),
+  };
+}
+
+function carousel(altText: string, bubbles: unknown[]): Flex {
+  return { type: 'flex', altText, contents: { type: 'carousel', contents: bubbles } };
+}
+
+/** "คิวของฉัน": one bubble per live queue, today first. Empty list = use `noQueuesText`. */
+export function myQueuesFlex(items: MyQueueItem[]): Flex {
+  const shown = items.slice(0, REPLY_LIST_LIMIT);
+  const bubbles = shown.map((q) => {
+    const st = queueStatusLabel(q.status, q.paymentPending);
+    return bubble({
+      header: `คิว ${q.queueNo}`,
+      headerColor: dirColor(q.direction),
+      sub: `${dirLabel(q.direction)}${q.role === 'driver' ? ' · คุณเป็นคนขับ' : ''}`,
+      body: [
+        statusChip(st),
+        row('วันเวลา', `${thaiDate(q.date)} · ${hhmm(q.startTime)}${q.endTime ? `–${hhmm(q.endTime)}` : ''} น.`, { bold: true }),
+        row('ท่า', q.dock ?? 'แจ้งเมื่อมาถึง', { color: q.status === 'called' ? COLOR.call : COLOR.ink, bold: q.status === 'called' }),
+        row('ทะเบียน', q.plate),
+        ...(q.docNo ? [row(q.direction === 'outbound' ? 'SO' : 'PO', q.docNo)] : []),
+        row('เลข DO', q.doNo ?? 'รอยืนยัน', { bold: Boolean(q.doNo) }),
+      ],
+      footer: q.url ? [button(q.role === 'driver' ? 'เปิดหน้าคิว' : 'ดูรายละเอียด', q.url, 'secondary')] : [],
+    });
+  });
+  const more = items.length - shown.length;
+  const alt = `คิวของคุณ ${shown.map((q) => `${q.queueNo} ${queueStatusLabel(q.status, q.paymentPending).label}`).join(', ')}${more > 0 ? ` และอีก ${more} คิว` : ''}`;
+  return carousel(alt.slice(0, 400), bubbles);
+}
+
+/** One SO / PO in the "สถานะ SO" answer. */
+export type MyDocItem = {
+  docNo: string; docType: 'so' | 'po'; partnerName: string | null; status: string; dueDate: string | null; itemCount: number;
+  /** SO only: null for PO (no payment gate). */
+  paymentStatus: 'unpaid' | 'paid' | 'credit' | null;
+  /** Live queues of this document, soonest first. */
+  queues: Array<{ queueNo: string; status: string; date: string; startTime: string }>;
+  /** Self-booking page (LIFF/web); null = link not available. */
+  url: string | null;
+};
+
+const DOC_STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  open: { label: 'ยังไม่จองคิว', color: COLOR.warn },
+  booked: { label: 'จองคิวแล้ว', color: COLOR.out },
+  completed: { label: 'รับ-ส่งเสร็จแล้ว', color: COLOR.muted },
+  cancelled: { label: 'ยกเลิกเอกสาร', color: COLOR.bad },
+};
+
+const PAYMENT_LABEL: Record<string, { label: string; color: string }> = {
+  unpaid: { label: 'รอชำระเงิน', color: COLOR.warn },
+  paid: { label: 'ชำระแล้ว', color: COLOR.out },
+  credit: { label: 'เครดิต', color: COLOR.out },
+};
+
+/** "สถานะ SO": one bubble per open document with payment + its queues. Empty list = use `noDocsText`. */
+export function myDocsFlex(docs: MyDocItem[]): Flex {
+  const shown = docs.slice(0, REPLY_LIST_LIMIT);
+  const bubbles = shown.map((d) => {
+    const direction: BookingDirection = d.docType === 'so' ? 'outbound' : 'inbound';
+    const docStatus = DOC_STATUS_LABEL[d.status] ?? { label: d.status, color: COLOR.muted };
+    const pay = d.paymentStatus ? PAYMENT_LABEL[d.paymentStatus] ?? { label: d.paymentStatus, color: COLOR.muted } : null;
+    const paymentPending = d.paymentStatus === 'unpaid';
+    const queueLines = d.queues.slice(0, 3).map((q) => {
+      const st = queueStatusLabel(q.status, paymentPending);
+      return {
+        type: 'box', layout: 'horizontal', spacing: 'sm',
+        contents: [
+          { type: 'text', text: q.queueNo, size: 'sm', weight: 'bold', color: COLOR.ink, flex: 2 },
+          { type: 'text', text: `${thaiDate(q.date)} ${hhmm(q.startTime)}`, size: 'xs', color: COLOR.muted, flex: 5, wrap: true },
+          { type: 'text', text: st.label, size: 'xs', color: st.color, flex: 4, wrap: true, align: 'end' },
+        ],
+      };
+    });
+    return bubble({
+      header: d.docNo,
+      headerColor: dirColor(direction),
+      sub: `${d.docType === 'so' ? 'ใบสั่งขาย · รับสินค้า' : 'ใบสั่งซื้อ · ส่งสินค้า'}${d.partnerName ? ` · ${d.partnerName}` : ''}`,
+      body: [
+        { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [statusChip(docStatus), ...(pay ? [statusChip(pay)] : [])] },
+        ...(d.dueDate ? [row('กำหนดส่ง', thaiDate(d.dueDate))] : []),
+        row('รายการ', d.itemCount > 0 ? `${d.itemCount} รายการ` : '-'),
+        ...(queueLines.length > 0
+          ? [{ type: 'separator', margin: 'md', color: COLOR.line }, { type: 'text', text: 'คิว', size: 'xs', color: COLOR.muted, margin: 'md' }, ...queueLines]
+          : [{ type: 'text', text: paymentPending ? 'ยังไม่มีคิว · จองได้ แต่จะยืนยันหลังชำระเงิน' : 'ยังไม่มีคิว', size: 'xs', color: COLOR.muted, wrap: true, margin: 'md' }]),
+        ...(d.queues.length > 3 ? [{ type: 'text', text: `และอีก ${d.queues.length - 3} คิว`, size: 'xs', color: COLOR.muted }] : []),
+      ],
+      footer: d.url ? [button(d.status === 'open' ? 'จองคิว' : 'ดูรายละเอียด / จองเพิ่ม', d.url, d.status === 'open' ? 'primary' : 'secondary', d.status === 'open' ? dirColor(direction) : undefined)] : [],
+    });
+  });
+  const more = docs.length - shown.length;
+  const alt = `เอกสารของคุณ ${shown.map((d) => `${d.docNo} ${(DOC_STATUS_LABEL[d.status] ?? { label: d.status }).label}`).join(', ')}${more > 0 ? ` และอีก ${more} รายการ` : ''}`;
+  return carousel(alt.slice(0, 400), bubbles);
+}
+
+/** Text after a carousel when the list was cut at `REPLY_LIST_LIMIT`. */
+export function moreItemsText(hidden: number, what: 'คิว' | 'เอกสาร'): Text {
+  return { type: 'text', text: `แสดง ${REPLY_LIST_LIMIT} ${what}ล่าสุด ยังมีอีก ${hidden} ${what} — เปิดลิงก์ของแต่ละเอกสารเพื่อดูทั้งหมด` };
+}
+
+export function noQueuesText(): Text {
+  return { type: 'text', text: 'ยังไม่มีคิวที่กำลังดำเนินการ\nกด "สถานะ SO" เพื่อดูเอกสารที่เปิดอยู่และจองคิว หรือใช้ลิงก์จองที่ได้รับจากเจ้าหน้าที่' };
+}
+
+export function noDocsText(): Text {
+  return { type: 'text', text: 'ไม่มี SO / PO ที่เปิดอยู่ในตอนนี้\nเมื่อเจ้าหน้าที่ส่งลิงก์จองคิวเอกสารใหม่ให้ เปิดผ่าน LINE นี้แล้วจะเห็นที่เมนูนี้' };
+}
+
+/** The LINE user is not attached to any partner / booking yet. */
+export function notLinkedText(siteName: string): Text {
+  return { type: 'text', text: `ยังไม่พบข้อมูลของคุณในระบบคิว ${siteName}\n\nเปิดลิงก์จองคิว (หรือลิงก์งานคนขับ) ที่ได้รับจากเจ้าหน้าที่ผ่าน LINE นี้ 1 ครั้ง ระบบจะจำบัญชีของคุณ หลังจากนั้นกดเมนูด้านล่างเพื่อดูคิวและสถานะ SO ได้ทันที` };
+}
+
+export type ContactInput = { siteName: string; branches: Array<{ name: string; phone: string | null; address: string | null }>; phone: string | null; address: string | null };
+
+/** "ติดต่อคลัง": site / branch phones and addresses. */
+export function contactText(c: ContactInput): Text {
+  const lines: string[] = [`ติดต่อคลัง ${c.siteName}`];
+  const branches = c.branches.filter((b) => b.phone || b.address);
+  if (branches.length > 0) {
+    for (const b of branches) {
+      lines.push('', b.name);
+      if (b.phone) lines.push(`โทร ${b.phone}`);
+      if (b.address) lines.push(b.address);
+    }
+  } else {
+    if (c.phone) lines.push(`โทร ${c.phone}`);
+    if (c.address) lines.push(c.address);
+    if (!c.phone && !c.address) lines.push('ยังไม่ได้ระบุเบอร์โทร กรุณาติดต่อฝ่ายขายที่ดูแลคุณ');
+  }
+  lines.push('', 'เวลาทำการตามที่คลังกำหนด · แจ้งเลขคิวที่ป้อมยามเมื่อมาถึง');
+  return { type: 'text', text: lines.join('\n') };
+}
+
 // ───────────────────────────── webhook replies ─────────────────────────────
 
 export function welcomeText(siteName: string): Text {
-  return { type: 'text', text: `ยินดีต้อนรับสู่ระบบคิวรับ-ส่งสินค้า ${siteName}\n\nเมื่อได้รับลิงก์จองคิวหรือลิงก์งานคนขับ ให้เปิดผ่าน LINE นี้ ระบบจะแจ้งเตือนสถานะคิวให้อัตโนมัติ\n\nบัญชีนี้ไม่รับข้อความสอบถาม กรุณาติดต่อเจ้าหน้าที่คลังโดยตรง` };
+  return { type: 'text', text: `ยินดีต้อนรับสู่ระบบคิวรับ-ส่งสินค้า ${siteName}\n\nเมื่อได้รับลิงก์จองคิวหรือลิงก์งานคนขับ ให้เปิดผ่าน LINE นี้ ระบบจะแจ้งเตือนสถานะคิวให้อัตโนมัติ และกดเมนูด้านล่างเพื่อดูคิวของคุณและสถานะ SO ได้ตลอดเวลา\n\nบัญชีนี้ไม่รับข้อความสอบถาม กรุณาติดต่อเจ้าหน้าที่คลังโดยตรง` };
 }
 
 export function helpText(siteName: string): Text {
-  return { type: 'text', text: `ระบบคิว ${siteName} ส่งแจ้งเตือนอัตโนมัติเท่านั้น\nต้องการจองคิว ใช้ลิงก์ที่ได้รับจากเจ้าหน้าที่ · ต้องการติดต่อ กรุณาโทรหาคลังโดยตรง` };
+  return { type: 'text', text: `ระบบคิว ${siteName} ส่งแจ้งเตือนอัตโนมัติเท่านั้น\nกดเมนูด้านล่าง: "คิวของฉัน" ดูคิวที่จองไว้ · "สถานะ SO" ดูเอกสารและการชำระเงิน · "ติดต่อคลัง" ดูเบอร์โทร\nต้องการจองคิว ใช้ลิงก์ที่ได้รับจากเจ้าหน้าที่` };
 }
 
 export const GROUP_REGISTER_COMMAND = 'ลงทะเบียนกลุ่ม';

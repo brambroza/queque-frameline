@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex,
-  driverJobFlex, noShowFlex, staffGroupText, thaiDate,
+  contactText, driverJobFlex, helpText, moreItemsText, myDocsFlex, myQueuesFlex, noDocsText, noQueuesText, noShowFlex, notLinkedText, REPLY_LIST_LIMIT, staffGroupText, thaiDate,
 } from './messages';
 
 const booking = {
@@ -93,5 +93,74 @@ describe('thaiDate', () => {
   it('renders a Buddhist-year short date', () => {
     expect(thaiDate('2026-09-21')).toBe('จ. 21 ก.ย. 2569');
     expect(thaiDate('bad')).toBe('bad');
+  });
+});
+
+describe('rich menu replies', () => {
+  const queue = {
+    queueNo: 'R-012', status: 'confirmed', direction: 'outbound' as const, date: '2026-09-25', startTime: '09:30:00', endTime: '10:30:00',
+    dock: 'ท่า 2', plate: '1กข1234', doNo: 'DO-202609-0010', docNo: 'SO-2609-0031', url: 'https://x/book/t', role: 'partner' as const,
+  };
+  const doc = {
+    docNo: 'SO-2609-0031', docType: 'so' as const, partnerName: 'บจก. เอ', status: 'booked', dueDate: '2026-09-26', itemCount: 4, paymentStatus: 'paid' as const,
+    queues: [{ queueNo: 'R-012', status: 'confirmed', date: '2026-09-25', startTime: '09:30:00' }], url: 'https://x/book/t',
+  };
+
+  it('answers "คิวของฉัน" with one clean bubble per queue, capped with a "more" note', () => {
+    const m = myQueuesFlex([queue, { ...queue, queueNo: 'S-003', direction: 'inbound', role: 'driver', url: 'https://x/driver/d', status: 'called' }]);
+    expect(m.type).toBe('flex');
+    assertClean(m.contents);
+    const c = m.contents as { type: string; contents: unknown[] };
+    expect(c.type).toBe('carousel');
+    expect(c.contents).toHaveLength(2);
+    const json = JSON.stringify(m.contents);
+    expect(json).toContain('คุณเป็นคนขับ');
+    expect(json).toContain('เปิดหน้าคิว');
+    expect(json).toContain('เชิญเข้าท่า');
+    expect(m.altText).toContain('R-012 ยืนยันแล้ว');
+
+    const many = myQueuesFlex(Array.from({ length: 14 }, (_, i) => ({ ...queue, queueNo: `R-${i}` })));
+    expect((many.contents as { contents: unknown[] }).contents).toHaveLength(REPLY_LIST_LIMIT);
+    expect(many.altText).toContain('และอีก 4 คิว');
+    expect(many.altText.length).toBeLessThanOrEqual(400);
+    expect(moreItemsText(4, 'คิว').text).toContain('อีก 4 คิว');
+  });
+
+  it('shows "รอชำระเงิน" for a pending queue on an unpaid SO and drops the button without a link', () => {
+    const json = JSON.stringify(myQueuesFlex([{ ...queue, status: 'pending', paymentPending: true, url: null }]).contents);
+    expect(json).toContain('รอชำระเงิน');
+    expect(json).not.toContain('รอเจ้าหน้าที่ยืนยัน');
+    expect(json).not.toContain('"type":"button"');
+  });
+
+  it('answers "สถานะ SO" with document, payment and queue rows', () => {
+    const m = myDocsFlex([doc, { ...doc, docNo: 'PO-77', docType: 'po', status: 'open', paymentStatus: null, queues: [] }, { ...doc, docNo: 'SO-UNPAID', status: 'open', paymentStatus: 'unpaid', queues: [] }]);
+    assertClean(m.contents);
+    const json = JSON.stringify(m.contents);
+    expect(json).toContain('จองคิวแล้ว');
+    expect(json).toContain('ชำระแล้ว');
+    expect(json).toContain('4 รายการ');
+    expect(json).toContain('ใบสั่งซื้อ · ส่งสินค้า');
+    expect(json).toContain('ยืนยันหลังชำระเงิน');
+    expect(json).toContain('"label":"จองคิว"');
+    expect(m.altText).toContain('SO-2609-0031 จองคิวแล้ว');
+    expect(m.altText).toContain('PO-77 ยังไม่จองคิว');
+  });
+
+  it('writes contact details per branch, falling back to the site', () => {
+    const t = contactText({ siteName: 'Fameline', phone: '02-000-0000', address: 'กทม.', branches: [{ name: 'คลังบางนา', phone: '02-111-1111', address: 'บางนา' }, { name: 'ว่าง', phone: null, address: null }] });
+    expect(t.text).toContain('คลังบางนา');
+    expect(t.text).toContain('โทร 02-111-1111');
+    expect(t.text).not.toContain('02-000-0000');
+    expect(t.text).not.toContain('ว่าง');
+    expect(contactText({ siteName: 'Fameline', phone: '02-000-0000', address: null, branches: [] }).text).toContain('โทร 02-000-0000');
+    expect(contactText({ siteName: 'Fameline', phone: null, address: null, branches: [] }).text).toContain('ยังไม่ได้ระบุเบอร์โทร');
+  });
+
+  it('has plain-text fallbacks that mention the menu', () => {
+    expect(notLinkedText('Fameline').text).toContain('เปิดลิงก์จองคิว');
+    expect(noQueuesText().text).toContain('สถานะ SO');
+    expect(noDocsText().text.length).toBeGreaterThan(10);
+    expect(helpText('Fameline').text).toContain('คิวของฉัน');
   });
 });

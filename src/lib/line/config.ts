@@ -16,14 +16,18 @@ export type LineConfig = {
   notify_driver: boolean;
   notify_staff_group: boolean;
   webhook_verified_at: string | null;
+  /** Rich menu this system published (null = none). */
+  rich_menu_id: string | null;
+  rich_menu_published_at: string | null;
 };
 
 export const LINE_CONFIG_COLUMNS =
-  'channel_access_token,channel_secret,login_channel_id,liff_id,oa_basic_id,staff_group_id,staff_group_name,notify_customer,notify_driver,notify_staff_group,webhook_verified_at';
+  'channel_access_token,channel_secret,login_channel_id,liff_id,oa_basic_id,staff_group_id,staff_group_name,notify_customer,notify_driver,notify_staff_group,webhook_verified_at,rich_menu_id,rich_menu_published_at';
 
 const EMPTY: LineConfig = {
   channel_access_token: null, channel_secret: null, login_channel_id: null, liff_id: null, oa_basic_id: null,
   staff_group_id: null, staff_group_name: null, notify_customer: true, notify_driver: true, notify_staff_group: true, webhook_verified_at: null,
+  rich_menu_id: null, rich_menu_published_at: null,
 };
 
 /** Config with env fallbacks applied. `channel_access_token` null = LINE not set up; every notify skips. */
