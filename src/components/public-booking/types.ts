@@ -24,6 +24,10 @@ export type PublicBooking = {
   call_count: number | null;
   /** Set once the driver was told "dock delayed, please wait" (checked in, past appointment, not yet called). */
   wait_notified_at?: string | null;
+  /** Unpaid SO with auto-cancel on: the queue is cancelled at this instant unless the payment is recorded. */
+  payment_due_at?: string | null;
+  /** Set once the customer was warned that the deadline is near. */
+  payment_warned_at?: string | null;
   services: { service_name: string; plate_format?: string | null } | null;
   external_documents: { doc_no: string; doc_type: 'so' | 'po'; partner_name: string | null; items: PublicItem[] } | null;
   cancellable?: boolean;
@@ -52,6 +56,15 @@ export function longThaiDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   return `วัน${WEEKDAY[dow]} ${d} ${MONTH[m - 1]} ${y + 543}`;
+}
+
+/** "วันจันทร์ 21 ก.ย. 2569 14:30 น." for an ISO instant, in Bangkok time (the customer may be anywhere). */
+export function thaiDateTimeAt(iso: string): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(t);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${longThaiDate(`${get('year')}-${get('month')}-${get('day')}`)} ${get('hour')}:${get('minute')} น.`;
 }
 
 export function shortThaiDate(iso: string): { dow: string; day: number; month: string } {

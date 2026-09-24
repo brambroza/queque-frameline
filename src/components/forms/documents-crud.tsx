@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Card, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment, MenuItem, Skeleton,
-  Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tabs, TextField, Tooltip, Typography,
+  Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
@@ -11,7 +11,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { QrCode } from '@/components/ui/qr-code';
@@ -23,8 +22,8 @@ import { PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentStatus, type P
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
+import type { DocType } from '@/lib/auth/document-access';
 
-type DocType = 'so' | 'po';
 type DocRow = {
   id: string; doc_type: DocType; doc_no: string; branch_id: string | null; branches?: { branch_name?: string | null; code?: string | null } | null; partner_name: string | null; partner_code: string | null; doc_date: string | null; due_date: string | null;
   status: 'open' | 'booked' | 'completed' | 'cancelled'; source: string; items: Array<{ name: string; qty: number; uom?: string }>; has_link: boolean; booking_count: number;
@@ -49,12 +48,6 @@ type DocDetail = {
 type PartnerOption = { id: string; code: string | null; full_name: string; phone: string | null };
 type ItemDraft = { sku: string; name: string; qty: string; uom: string };
 type DocForm = { doc_no: string; branch_id: string; partner_code: string; partner_name: string; partner_phone: string; doc_date: string; due_date: string; remark: string; payment_status: string };
-type ImportSummary = {
-  rows: number; documents: number; created: number; updated: number; truncated: boolean;
-  errors: Array<{ line: number; doc_no: string | null; message: string }>;
-  failed: Array<{ doc_no: string; message: string }>;
-  preview: Array<{ doc_no: string; partner: string; items: number; due_date: string | null; branch?: string | null }>;
-};
 
 const STATUS: Record<DocRow['status'], { label: string; color: 'default' | 'primary' | 'success' | 'error' }> = {
   open: { label: 'รอจองคิว', color: 'default' },
@@ -62,20 +55,34 @@ const STATUS: Record<DocRow['status'], { label: string; color: 'default' | 'prim
   completed: { label: 'ปิดแล้ว', color: 'success' },
   cancelled: { label: 'ยกเลิก', color: 'error' },
 };
-const TYPE_META: Record<DocType, { label: string; partner: string; hint: string }> = {
-  so: { label: 'Sales Order (ลูกค้ารับสินค้า)', partner: 'ลูกค้า', hint: 'ส่งลิงก์ให้ลูกค้าเลือกวันเวลามารับสินค้า' },
-  po: { label: 'Purchase Order (Supplier ส่งสินค้า)', partner: 'Supplier', hint: 'ส่งลิงก์ให้ Supplier เลือกวันเวลามาส่งสินค้า' },
+/**
+ * Per-type copy. SO is keyed by the sales admin without item lines (the queue
+ * only needs the document number, customer and payment state); PO is keyed by
+ * purchasing and may carry item lines, which drive the suggested dock time.
+ */
+const TYPE_META: Record<DocType, { title: string; label: string; partner: string; hint: string; description: string; items: boolean }> = {
+  so: {
+    title: 'ใบสั่งขาย (SO)', label: 'ใบสั่งขาย (SO) — ลูกค้ามารับสินค้า', partner: 'ลูกค้า', hint: 'ส่งลิงก์ให้ลูกค้าเลือกวันเวลามารับสินค้า',
+    description: 'ฝ่ายขายคีย์ใบสั่งขายทีละใบ แล้วส่งลิงก์ / QR ให้ลูกค้าจองคิวมารับสินค้าเอง', items: false,
+  },
+  po: {
+    title: 'ใบสั่งซื้อ (PO)', label: 'ใบสั่งซื้อ (PO) — Supplier มาส่งสินค้า', partner: 'Supplier', hint: 'ส่งลิงก์ให้ Supplier เลือกวันเวลามาส่งสินค้า',
+    description: 'ฝ่ายจัดซื้อคีย์ใบสั่งซื้อทีละใบ แล้วส่งลิงก์ / QR ให้ Supplier จองคิวมาส่งสินค้าเอง', items: true,
+  },
 };
 const EMPTY_ITEM: ItemDraft = { sku: '', name: '', qty: '1', uom: '' };
 const EMPTY_FORM: DocForm = { doc_no: '', branch_id: '', partner_code: '', partner_name: '', partner_phone: '', doc_date: '', due_date: '', remark: '', payment_status: 'unpaid' };
 const SOURCE_LABEL: Record<string, string> = { api: 'ERP', csv: 'CSV', manual: 'กรอกเอง' };
 
-/** SO / PO: import, create or edit by hand, view detail, hand out the self-booking link, close or cancel. */
-export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
+/**
+ * One document type per page: key SO (sales admin) or PO (purchasing) by hand,
+ * view detail, hand out the self-booking link, close or cancel.
+ * `canEdit` = the caller may create / edit / cancel this type (server checks again).
+ */
+export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
   const { branches, branchId: scopedBranch, branchQuery } = useBranchScope();
-  const [docType, setDocType] = useState<DocType>('so');
   const [status, setStatus] = useState('');
   const [payment, setPayment] = useState('');
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
@@ -99,21 +106,11 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<DocForm>(EMPTY_FORM);
-  const [importBranch, setImportBranch] = useState('');
   const [items, setItems] = useState<ItemDraft[]>([{ ...EMPTY_ITEM }]);
   const [saving, setSaving] = useState(false);
   const [partnerOptions, setPartnerOptions] = useState<PartnerOption[]>([]);
   const [partnerLoading, setPartnerLoading] = useState(false);
   const [pickedPartner, setPickedPartner] = useState<PartnerOption | null>(null);
-
-  const [importOpen, setImportOpen] = useState(false);
-  const [csvText, setCsvText] = useState('');
-  const [csvName, setCsvName] = useState('');
-  const [summary, setSummary] = useState<ImportSummary | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [imported, setImported] = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { const id = setTimeout(() => { setQ(search.trim()); setPage(1); }, 300); return () => clearTimeout(id); }, [search]);
 
@@ -314,6 +311,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
           due_date: form.due_date,
           remark: form.remark,
           ...(docType === 'so' ? { payment_status: form.payment_status } : {}),
+          // SO carries no item lines from the form; lines an ERP push supplied are kept as loaded so an edit never drops them.
           items: items.filter((i) => i.name.trim()).map((i) => ({ sku: i.sku, name: i.name, qty: i.qty || '1', uom: i.uom })),
         }),
       });
@@ -330,53 +328,19 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  // ── CSV import ─────────────────────────────────────────────────────────────
-  function resetImport() { setCsvText(''); setCsvName(''); setSummary(null); setImportError(null); setImported(false); if (fileRef.current) fileRef.current.value = ''; }
-
-  async function runImport(text: string, dryRun: boolean) {
-    setImporting(true);
-    setImportError(null);
-    try {
-      const res = await fetch('/api/documents/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc_type: docType, csv: text, dry_run: dryRun, branch_id: importBranch || null }) });
-      const j = (await res.json().catch(() => ({}))) as { data?: ImportSummary; error?: string };
-      if (!res.ok || !j.data) { setImportError(j.error ?? 'อ่านไฟล์ไม่สำเร็จ'); setSummary(null); return; }
-      setSummary(j.data);
-      if (!dryRun) { setImported(true); push(`นำเข้าแล้ว: ใหม่ ${j.data.created} · อัปเดต ${j.data.updated}`); await load(); }
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  async function onFile(file: File | undefined) {
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { setImportError('ไฟล์ใหญ่เกิน 2 MB'); return; }
-    const text = await file.text();
-    setCsvName(file.name);
-    setCsvText(text);
-    setImported(false);
-    await runImport(text, true);
-  }
-
   const meta = TYPE_META[docType];
+  const code = docType.toUpperCase();
 
   return (
     <Stack spacing={2}>
       <PageHeader
-        title="เอกสาร SO / PO"
-        description="นำเข้าหรือเพิ่มเอกสาร แล้วส่งลิงก์ / QR ให้คู่ค้าจองคิวเอง"
-        action={isAdmin ? (
-          <Stack direction="row" spacing={1}>
-            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => { resetImport(); setImportBranch(scopedBranch || (branches.length === 1 ? branches[0].id : '')); setImportOpen(true); }}>นำเข้า CSV</Button>
-            <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>เพิ่ม {docType.toUpperCase()}</Button>
-          </Stack>
-        ) : undefined}
+        title={meta.title}
+        description={meta.description}
+        action={canEdit ? <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>เพิ่ม {code}</Button> : undefined}
       />
       <Card>
-        <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} justifyContent="space-between" spacing={1} sx={{ px: 2, pt: 1 }}>
-          <Tabs value={docType} onChange={(_, v: DocType) => { setDocType(v); setPage(1); setRows(null); }}>
-            <Tab value="so" label="SO · ลูกค้ารับสินค้า" />
-            <Tab value="po" label="PO · Supplier ส่งสินค้า" />
-          </Tabs>
+        <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ md: 'center' }} justifyContent="space-between" spacing={1} sx={{ px: 2, pt: 1.5 }}>
+          <Typography variant="subtitle2" color="text.secondary">{meta.label}</Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             {docType === 'so' ? (
               <TextField id="doc-payment-filter" select size="small" value={payment} onChange={(e) => { setPayment(e.target.value); setPage(1); }} slotProps={{ select: { displayEmpty: true } }} sx={{ minWidth: 150 }}>
@@ -396,13 +360,13 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         {rows === null ? (
           <Stack spacing={1} sx={{ p: 2 }}>{[0, 1, 2].map((i) => <Skeleton key={i} variant="rounded" height={44} />)}</Stack>
         ) : rows.length === 0 ? (
-          <EmptyState icon="📄" title={q || status ? 'ไม่พบเอกสารตามเงื่อนไข' : `ยังไม่มี ${docType.toUpperCase()}`} description={meta.hint} actionLabel={isAdmin && !q && !status ? 'นำเข้า CSV' : undefined} onAction={isAdmin && !q && !status ? () => { resetImport(); setImportOpen(true); } : undefined} />
+          <EmptyState icon="📄" title={q || status ? 'ไม่พบเอกสารตามเงื่อนไข' : `ยังไม่มี ${code}`} description={meta.hint} actionLabel={canEdit && !q && !status ? `เพิ่ม ${code}` : undefined} onAction={canEdit && !q && !status ? openCreate : undefined} />
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell>
+                  <TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell>{meta.items ? <TableCell align="right">รายการ</TableCell> : null}
                   <TableCell align="right">คิว</TableCell>{docType === 'so' ? <TableCell>ชำระเงิน</TableCell> : null}<TableCell>สถานะ</TableCell><TableCell align="right">จัดการ</TableCell>
                 </TableRow>
               </TableHead>
@@ -418,7 +382,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                       <TableCell sx={{ maxWidth: 260 }}><Typography variant="body2" noWrap>{d.partner_name ?? '-'}</Typography><Typography variant="caption" color="text.secondary">{d.partner_code ?? ''}</Typography></TableCell>
                       <TableCell>{d.branches?.branch_name ?? <Typography variant="caption" color="text.disabled">ค่าเริ่มต้น</Typography>}</TableCell>
                       <TableCell>{d.due_date ? formatDateDMY(d.due_date) : '-'}</TableCell>
-                      <TableCell align="right">{d.items?.length ?? 0}</TableCell>
+                      {meta.items ? <TableCell align="right">{d.items?.length ?? 0}</TableCell> : null}
                       <TableCell align="right">{d.booking_count > 0 ? <Button size="small" href={`/portal/bookings?doc=${d.id}`}>{d.booking_count}</Button> : 0}</TableCell>
                       {docType === 'so' ? (
                         <TableCell sx={{ whiteSpace: 'nowrap' }}>
@@ -436,12 +400,12 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                       <TableCell><Chip size="small" color={STATUS[d.status].color} variant={d.status === 'open' ? 'outlined' : 'filled'} label={STATUS[d.status].label} /></TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         {docType === 'so' && live && paymentStatusOf(d) === 'unpaid' ? <Button size="small" color="success" variant="outlined" sx={{ mr: 0.5 }} onClick={() => setPaymentTarget(d)}>บันทึกชำระเงิน</Button> : null}
-                        {isAdmin && live ? <Button size="small" variant={d.has_link ? 'text' : 'contained'} startIcon={<QrCode2RoundedIcon />} onClick={() => void openLink(d)}>{d.has_link ? 'ดูลิงก์' : 'ส่งลิงก์จอง'}</Button> : null}
-                        {isAdmin && live ? <Tooltip title="แก้ไข"><IconButton size="small" onClick={() => void openEdit(d)} aria-label="แก้ไข"><EditRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
-                        {isAdmin && live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'completed')}>ปิด</Button> : null}
-                        {isAdmin && live ? <Button size="small" color="error" onClick={() => void setDocStatus(d, 'cancelled')}>ยกเลิก</Button> : null}
-                        {isAdmin && !live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'open')}>เปิดใหม่</Button> : null}
-                        {isAdmin && d.booking_count === 0 ? <Tooltip title="ลบ"><IconButton size="small" color="error" onClick={() => void remove(d)} aria-label="ลบ"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
+                        {canEdit && live ? <Button size="small" variant={d.has_link ? 'text' : 'contained'} startIcon={<QrCode2RoundedIcon />} onClick={() => void openLink(d)}>{d.has_link ? 'ดูลิงก์' : 'ส่งลิงก์จอง'}</Button> : null}
+                        {canEdit && live ? <Tooltip title="แก้ไข"><IconButton size="small" onClick={() => void openEdit(d)} aria-label="แก้ไข"><EditRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
+                        {canEdit && live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'completed')}>ปิด</Button> : null}
+                        {canEdit && live ? <Button size="small" color="error" onClick={() => void setDocStatus(d, 'cancelled')}>ยกเลิก</Button> : null}
+                        {canEdit && !live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'open')}>เปิดใหม่</Button> : null}
+                        {canEdit && d.booking_count === 0 ? <Tooltip title="ลบ"><IconButton size="small" color="error" onClick={() => void remove(d)} aria-label="ลบ"><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
                       </TableCell>
                     </TableRow>
                   );
@@ -489,7 +453,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
 
       {/* Manual create / edit */}
       <Dialog open={formOpen} onClose={saving ? undefined : () => setFormOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editingId ? `แก้ไข ${docType.toUpperCase()} ${form.doc_no}` : `เพิ่ม ${meta.label}`}</DialogTitle>
+        <DialogTitle>{editingId ? `แก้ไข ${code} ${form.doc_no}` : `เพิ่ม${meta.title}`}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {editingId && detail?.source === 'api' ? <Alert severity="warning">เอกสารนี้มาจาก ERP — ค่าที่แก้ที่นี่จะถูกทับเมื่อ ERP ส่งเอกสารเลขนี้มาอีกครั้ง</Alert> : null}
@@ -497,7 +461,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
               {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}{b.active === false ? ' (ปิด)' : ''}</MenuItem>)}
             </TextField>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField autoFocus={!editingId} required fullWidth size="small" label={`เลขที่ ${docType.toUpperCase()}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} disabled={Boolean(editingId)} helperText={editingId ? 'เปลี่ยนเลขที่ไม่ได้' : 'เลขที่ซ้ำ = อัปเดตเอกสารเดิม'} />
+              <TextField autoFocus={!editingId} required fullWidth size="small" label={`เลขที่ ${code}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} disabled={Boolean(editingId)} helperText={editingId ? 'เปลี่ยนเลขที่ไม่ได้' : 'เลขที่ซ้ำ = อัปเดตเอกสารเดิม'} />
               <TextField fullWidth size="small" type="date" label="วันที่เอกสาร" value={form.doc_date} onChange={(e) => setForm((p) => ({ ...p, doc_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
             </Stack>
@@ -556,6 +520,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
               <TextField fullWidth size="small" label={`รหัส${meta.partner}`} value={form.partner_code} onChange={(e) => setForm((p) => ({ ...p, partner_code: e.target.value }))} />
               <TextField fullWidth size="small" type="tel" label="เบอร์โทร" placeholder="08x-xxx-xxxx" value={form.partner_phone} onChange={(e) => setForm((p) => ({ ...p, partner_phone: e.target.value }))} slotProps={{ htmlInput: { inputMode: 'tel' } }} />
             </Stack>
+            {meta.items ? (
+              <>
             <Typography variant="subtitle2" fontWeight={700}>รายการสินค้า (ไม่บังคับ)</Typography>
             {items.map((it, idx) => (
               <Stack key={idx} direction="row" spacing={1}>
@@ -567,6 +533,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
               </Stack>
             ))}
             <Button size="small" startIcon={<AddRoundedIcon />} onClick={() => setItems((p) => [...p, { ...EMPTY_ITEM }])} sx={{ alignSelf: 'flex-start' }}>เพิ่มรายการ</Button>
+              </>
+            ) : null}
             <TextField size="small" label="หมายเหตุ" value={form.remark} onChange={(e) => setForm((p) => ({ ...p, remark: e.target.value }))} />
           </Stack>
         </DialogContent>
@@ -616,8 +584,8 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
                 </Box>
               ) : null}
 
-              <Typography variant="subtitle2" fontWeight={700}>รายการสินค้า ({detail.items.length}){detail.total_qty != null ? ` · รวม ${detail.total_qty.toLocaleString('th-TH')}` : ''}</Typography>
-              {detail.items.length === 0 ? <Typography variant="body2" color="text.secondary">ไม่มีรายการสินค้า</Typography> : (
+              {meta.items || detail.items.length > 0 ? <Typography variant="subtitle2" fontWeight={700}>รายการสินค้า ({detail.items.length}){detail.total_qty != null ? ` · รวม ${detail.total_qty.toLocaleString('th-TH')}` : ''}</Typography> : null}
+              {!meta.items && detail.items.length === 0 ? null : detail.items.length === 0 ? <Typography variant="body2" color="text.secondary">ไม่มีรายการสินค้า</Typography> : (
                 <TableContainer sx={{ maxHeight: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
                   <Table size="small" stickyHeader>
                     <TableHead><TableRow><TableCell>#</TableCell><TableCell>รหัส</TableCell><TableCell>ชื่อสินค้า</TableCell><TableCell align="right">จำนวน</TableCell><TableCell>หน่วย</TableCell></TableRow></TableHead>
@@ -661,7 +629,7 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         </DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
           <Button color="inherit" onClick={() => setViewDoc(null)}>ปิด</Button>
-          {viewDoc && isAdmin && (viewDoc.status === 'open' || viewDoc.status === 'booked') ? (
+          {viewDoc && canEdit && (viewDoc.status === 'open' || viewDoc.status === 'booked') ? (
             <>
               <Button startIcon={<QrCode2RoundedIcon />} onClick={() => { const d = viewDoc; setViewDoc(null); void openLink(d); }}>{viewDoc.has_link ? 'ดูลิงก์จอง' : 'ส่งลิงก์จอง'}</Button>
               <Button variant="contained" startIcon={<EditRoundedIcon />} disabled={!detail} onClick={() => void openEdit(viewDoc)}>แก้ไข</Button>
@@ -670,64 +638,6 @@ export function DocumentsCrud({ isAdmin }: { isAdmin: boolean }) {
         </DialogActions>
       </Dialog>
 
-      {/* CSV import */}
-      <Dialog open={importOpen} onClose={importing ? undefined : () => setImportOpen(false)} fullWidth maxWidth="md">
-        <DialogTitle>นำเข้า {docType.toUpperCase()} จาก CSV</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Alert severity="info">
-              1 บรรทัด = 1 รายการสินค้า, บรรทัดที่เลขที่เอกสารเดียวกันรวมเป็นเอกสารเดียว. คอลัมน์ที่ต้องมี: <b>doc_no</b>, <b>partner_name</b> (รองรับหัวคอลัมน์ไทย เช่น เลขที่เอกสาร, ชื่อลูกค้า). ไม่บังคับ: <b>branch</b> (รหัสหรือชื่อสาขา), <b>payment_status</b> (SO: paid / unpaid / credit หรือ ชำระแล้ว / ยังไม่ชำระ / เครดิต — เว้นว่าง = ไม่เปลี่ยนค่าเดิม), partner_code, phone, due_date, sku, item_name, qty, uom, remark. บันทึกไฟล์เป็น CSV UTF-8
-            </Alert>
-            <TextField select size="small" label="สาขาสำหรับบรรทัดที่ไม่มีคอลัมน์สาขา" value={importBranch} onChange={(e) => setImportBranch(e.target.value)} sx={{ maxWidth: 360 }} slotProps={{ select: { displayEmpty: true } }}>
-              <MenuItem value="">ค่าเริ่มต้นของคลัง</MenuItem>
-              {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
-            </TextField>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Button variant="outlined" component="label" startIcon={<UploadFileRoundedIcon />} disabled={importing}>
-                เลือกไฟล์ CSV
-                <input ref={fileRef} hidden type="file" accept=".csv,text/csv" onChange={(e) => void onFile(e.target.files?.[0])} />
-              </Button>
-              <Typography variant="body2" color="text.secondary">{csvName || 'ยังไม่ได้เลือกไฟล์ (สูงสุด 2 MB)'}</Typography>
-            </Stack>
-            {importing ? <Skeleton variant="rounded" height={80} /> : null}
-            {importError ? <Alert severity="error">{importError}</Alert> : null}
-            {summary && !importing ? (
-              <>
-                <Alert severity={summary.errors.length + summary.failed.length > 0 ? 'warning' : 'success'}>
-                  {imported
-                    ? `นำเข้าแล้ว — ใหม่ ${summary.created} · อัปเดต ${summary.updated} · ไม่สำเร็จ ${summary.failed.length + summary.errors.length}`
-                    : `อ่านได้ ${summary.rows} บรรทัด → ${summary.documents} เอกสารพร้อมนำเข้า · ข้าม ${summary.errors.length} บรรทัด`}
-                  {summary.truncated ? ' · ไฟล์ยาวเกิน 5,000 บรรทัด ส่วนเกินถูกตัด' : ''}
-                </Alert>
-                {summary.errors.length + summary.failed.length > 0 ? (
-                  <Box sx={{ maxHeight: 140, overflowY: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
-                    {summary.errors.map((e, i) => <Typography key={`e${i}`} variant="caption" display="block" color="error.main">บรรทัด {e.line}{e.doc_no ? ` (${e.doc_no})` : ''}: {e.message}</Typography>)}
-                    {summary.failed.map((f, i) => <Typography key={`f${i}`} variant="caption" display="block" color="error.main">{f.doc_no}: {f.message}</Typography>)}
-                  </Box>
-                ) : null}
-                {summary.preview.length > 0 ? (
-                  <TableContainer sx={{ maxHeight: 260, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                    <Table size="small" stickyHeader>
-                      <TableHead><TableRow><TableCell>เลขที่</TableCell><TableCell>{meta.partner}</TableCell><TableCell>สาขา</TableCell><TableCell>กำหนดส่ง</TableCell><TableCell align="right">รายการ</TableCell></TableRow></TableHead>
-                      <TableBody>
-                        {summary.preview.map((p) => <TableRow key={p.doc_no}><TableCell>{p.doc_no}</TableCell><TableCell>{p.partner}</TableCell><TableCell>{p.branch ?? (branches.find((b) => b.id === importBranch)?.branch_name ?? 'ค่าเริ่มต้น')}</TableCell><TableCell>{p.due_date ? formatDateDMY(p.due_date) : '-'}</TableCell><TableCell align="right">{p.items}</TableCell></TableRow>)}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                ) : null}
-              </>
-            ) : null}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button color="inherit" onClick={() => setImportOpen(false)} disabled={importing}>ปิด</Button>
-          {!imported ? (
-            <Button variant="contained" disabled={importing || !summary || summary.documents === 0} onClick={() => void runImport(csvText, false)}>
-              {importing ? 'กำลังนำเข้า…' : `นำเข้า ${summary?.documents ?? 0} เอกสาร`}
-            </Button>
-          ) : null}
-        </DialogActions>
-      </Dialog>
     </Stack>
   );
 }

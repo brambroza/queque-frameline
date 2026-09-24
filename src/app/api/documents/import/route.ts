@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { documentPortalPath } from '@/lib/auth/document-access';
 import { CSV_MAX_ROWS, parseDocumentsCsv } from '@/lib/integration/csv';
 import { upsertDocument } from '@/lib/integration/upsert';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       priority: 'low',
       title: `นำเข้า ${docType.toUpperCase()} ${created + updated} รายการ`,
       message: `ใหม่ ${created} · อัปเดต ${updated} · ไม่สำเร็จ ${failed.length + result.errors.length}`,
-      actionUrl: '/portal/documents',
+      actionUrl: documentPortalPath(docType),
       icon: 'UploadFile',
       color: '#1565c0',
       metadata: { doc_type: docType, created, updated, failed: failed.length },

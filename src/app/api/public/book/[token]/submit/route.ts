@@ -7,6 +7,7 @@ import { PLATE_FORMAT_INFO, matchesPlateFormat, normalizePlate, toPlateFormat } 
 import { addDaysIso, normalizeSlotTime, toBangkokStamp } from '@/lib/booking/slot-time';
 import { resolveInitialBookingStatus } from '@/lib/booking/status-flow';
 import { isPaymentCleared } from '@/lib/booking/payment';
+import { paymentDeadline } from '@/lib/booking/unpaid-cancel';
 import { dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
@@ -110,6 +111,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     }
     const created = (rows as Array<{ booking_id: string; queue_number: string; do_number: string | null }> | null)?.[0];
     if (!created) throw new Error('create failed');
+    // Unpaid SO with auto-cancel on: the clock starts now (the insert happened within this request).
+    const paymentDueAt = !paymentCleared
+      ? paymentDeadline({ created_at: now.toISOString(), payment_updated_at: null, booking_date: p.booking_date, start_time: normalizeSlotTime(p.start_time) }, settings)?.toISOString() ?? null
+      : null;
     if (status === 'confirmed') {
       await ensureDriverLink(admin, { id: created.booking_id, shopId: doc.shop_id, bookingDate: p.booking_date, version: 0 }, settings.driver_token_ttl_days);
     }
@@ -141,13 +146,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
     // LINE (never throws): the person who booked, then the warehouse group.
     const [{ data: vt }] = await Promise.all([admin.from('services').select('service_name').eq('id', p.vehicle_type_id).maybeSingle()]);
-    await safeNotifyPartner(admin, { shopId: doc.shop_id, bookingId: created.booking_id, kind: status === 'pending' ? 'submitted' : 'confirmed' });
+    await safeNotifyPartner(admin, { shopId: doc.shop_id, bookingId: created.booking_id, kind: status === 'pending' ? 'submitted' : 'confirmed', dueAt: paymentDueAt });
     await safeNotifyStaffGroup(admin, {
       shopId: doc.shop_id, bookingId: created.booking_id,
       event: { kind: 'submitted', queueNo: created.queue_number, partner: doc.partner_name ?? '-', docNo: doc.doc_no, date: p.booking_date, time: p.start_time, plate: normalizePlate(p.plate_number), vehicle: (vt?.service_name as string | null) ?? null, pending: status === 'pending' },
     });
 
-    return NextResponse.json({ data: { queue_number: created.queue_number, status, do_number: created.do_number, payment_pending: !paymentCleared } });
+    return NextResponse.json({ data: { queue_number: created.queue_number, status, do_number: created.do_number, payment_pending: !paymentCleared, payment_due_at: paymentDueAt } });
   } catch (e) {
     console.error('[public/book/submit]', e instanceof Error ? e.message : e);
     return NextResponse.json({ error: 'เกิดข้อผิดพลาด กรุณาลองใหม่' }, { status: 500 });

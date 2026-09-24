@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { canWriteDocument } from '@/lib/auth/document-access';
 import { documentUpsertSchema } from '@/lib/integration/schemas';
 import { upsertDocument } from '@/lib/integration/upsert';
 
@@ -74,16 +75,18 @@ export async function GET(req: Request) {
   }
 }
 
-/** Create / update one document by hand (`source = manual`). */
+/** Create / update one document by hand (`source = manual`): admin, or the role that owns the type (sales admin for SO, purchasing for PO). */
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) {
       const fields = Array.from(new Set(parsed.error.issues.map((i) => i.path.join('.'))));
       return NextResponse.json({ error: `ข้อมูลไม่ถูกต้อง: ${fields.join(', ')}` }, { status: 400 });
     }
     const { doc_type: docType, branch_id: branchId, ...doc } = parsed.data;
+    if (!canWriteDocument(docType, ctx)) return NextResponse.json({ error: 'ไม่มีสิทธิ์บันทึกเอกสารประเภทนี้' }, { status: 403 });
     if (branchId) {
       const { data: branch } = await supabase.from('branches').select('id').eq('id', branchId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
       if (!branch) return NextResponse.json({ error: 'ไม่พบสาขาที่เลือก' }, { status: 400 });

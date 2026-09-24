@@ -41,6 +41,12 @@ export type BookingRow = {
   serving_started_at?: string | null;
   completed_at?: string | null;
   cancel_reason?: string | null;
+  /** Close sign-off (bucket paths + typed names); see `src/lib/booking/signatures.ts`. */
+  sign_staff_path?: string | null;
+  sign_staff_name?: string | null;
+  sign_customer_path?: string | null;
+  sign_customer_name?: string | null;
+  signed_at?: string | null;
   branches?: { branch_name: string } | null;
   services?: { service_name: string; duration_minutes?: number | null } | null;
   customers?: { full_name: string | null; phone: string | null; partner_type?: string | null; code?: string | null } | null;

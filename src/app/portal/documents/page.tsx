@@ -1,7 +1,7 @@
-import { DocumentsCrud } from '@/components/forms/documents-crud';
-import { requirePageAccess } from '@/lib/auth/page-roles';
+import { redirect } from 'next/navigation';
+import { DOCUMENT_PATH } from '@/lib/auth/document-access';
 
-export default async function DocumentsPage() {
-  const { isAdmin } = await requirePageAccess('documents');
-  return <DocumentsCrud isAdmin={isAdmin} />;
+/** Old combined SO / PO page — documents now live on two pages. Keep bookmarks and old notifications working. */
+export default function DocumentsPage() {
+  redirect(DOCUMENT_PATH.so);
 }

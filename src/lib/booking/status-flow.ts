@@ -7,6 +7,7 @@
  *   checked_in ─(staff เรียก / auto-call เมื่อท่าว่าง)─▶ called ─▶ serving ─▶ completed
  *   confirmed ─(เลย grace)─▶ late ─(มาถึง)─▶ checked_in      late ─▶ no_show
  *   called ─(ยกเลิกการเรียก)─▶ checked_in                     called ─(ไม่มา)─▶ no_show
+ *   pending ─(SO ยังไม่ชำระเกินเวลาที่ตั้ง, คิวจากลิงก์ลูกค้า)─▶ cancelled
  */
 import type { BookingStatus } from '@/types/db';
 
@@ -41,6 +42,8 @@ const SYSTEM_MOVES: ReadonlyArray<`${BookingStatus}>${BookingStatus}`> = [
   'late>no_show',
   'called>no_show',
   'checked_in>called',
+  // Unpaid customer-link queue past its payment deadline (`cancel_unpaid_booking`).
+  'pending>cancelled',
 ];
 
 export const TERMINAL_STATUSES: readonly BookingStatus[] = ['completed', 'cancelled', 'no_show'];

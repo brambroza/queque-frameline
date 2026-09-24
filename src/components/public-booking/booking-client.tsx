@@ -15,7 +15,11 @@ type Meta = {
   open: boolean;
   vehicle_types: Array<{ id: string; service_name: string; duration_minutes: number; plate_format?: PlateFormat | null }>;
   payment?: { required: boolean; pending: boolean };
-  rules: { lead_hours: number; horizon_days: number; require_admin_confirm: boolean; grace_minutes: number; early_arrival_minutes: number };
+  rules: {
+    lead_hours: number; horizon_days: number; require_admin_confirm: boolean; grace_minutes: number; early_arrival_minutes: number;
+    /** Null = the site does not cancel unpaid queues automatically. */
+    unpaid_cancel?: { minutes: number; warn_minutes: number } | null;
+  };
   line?: LineMeta;
   bookings: PublicBooking[];
 };
@@ -228,6 +232,7 @@ export function BookingClient({ token }: { token: string }) {
       {meta.payment?.pending && step !== 'status' ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
           เอกสารนี้ยังไม่ได้ชำระเงิน — จองคิวไว้ก่อนได้ แต่คิวจะได้รับการยืนยันและออกใบรับสินค้า (DO) หลังชำระเงินแล้วเท่านั้น
+          {meta.rules.unpaid_cancel ? ` หากไม่ได้รับการชำระเงินภายใน ${unpaidWindowText(meta.rules.unpaid_cancel.minutes)} หลังจอง (และก่อนเวลานัด) ระบบจะยกเลิกคิวอัตโนมัติ` : ''}
         </div>
       ) : null}
 
@@ -369,6 +374,17 @@ export function BookingClient({ token }: { token: string }) {
       </footer>
     </Shell>
   );
+}
+
+/** "60 นาที" / "2 ชั่วโมง" / "1 วัน 6 ชั่วโมง" for the auto-cancel window. */
+function unpaidWindowText(minutes: number): string {
+  if (minutes < 60) return `${minutes} นาที`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours < 24) return rest ? `${hours} ชั่วโมง ${rest} นาที` : `${hours} ชั่วโมง`;
+  const days = Math.floor(hours / 24);
+  const h = hours % 24;
+  return h ? `${days} วัน ${h} ชั่วโมง` : `${days} วัน`;
 }
 
 function Shell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {

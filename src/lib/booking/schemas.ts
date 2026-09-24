@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SIGNATURE_MAX_BYTES, SIGNATURE_NAME_MAX, isSignatureDataUrl } from './signatures';
 import { PLATE_FORMATS, isPlausiblePlate } from '@/lib/booking/plate';
 
 export const directionSchema = z.enum(['inbound', 'outbound']);
@@ -107,6 +108,18 @@ export const dockBookingSchema = vehicleDetailsSchema
 /** Minutes at the dock for one queue (the vehicle type's duration is only the default). */
 export const serviceMinutesSchema = z.coerce.number().int().min(5).max(1440);
 
+/** One party's close sign-off: typed name + PNG data URL drawn on the tablet. */
+export const signatureInputSchema = z.object({
+  name: z.string().trim().min(1).max(SIGNATURE_NAME_MAX),
+  image: z.string().max(Math.ceil((SIGNATURE_MAX_BYTES * 4) / 3) + 64).refine(isSignatureDataUrl, 'ลายเซ็นต้องเป็น PNG ขนาดไม่เกิน 200 KB'),
+});
+
+/** Optional sign-off sent with `status: 'completed'`; ignored for any other status. */
+export const bookingSignaturesSchema = z.object({
+  staff: signatureInputSchema.optional().nullable(),
+  customer: signatureInputSchema.optional().nullable(),
+});
+
 export const bookingStatusPatchSchema = z
   .object({
     id: z.string().uuid(),
@@ -114,6 +127,8 @@ export const bookingStatusPatchSchema = z
     cancel_reason: optionalText(300),
     /** Only read on approval (pending → confirmed). */
     service_minutes: serviceMinutesSchema.optional(),
+    /** Only read on close (serving → completed). */
+    signatures: bookingSignaturesSchema.optional().nullable(),
   })
   .superRefine((v, ctx) => {
     if (v.status === 'cancelled' && (!v.cancel_reason || v.cancel_reason.trim().length < 3)) {

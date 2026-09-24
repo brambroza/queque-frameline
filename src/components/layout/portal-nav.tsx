@@ -26,7 +26,8 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
-import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
+import ShoppingCartRoundedIcon from '@mui/icons-material/ShoppingCartRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
@@ -43,7 +44,8 @@ import { MENU_GROUPS, MENU_ITEMS, type MenuKey } from '@/lib/auth/menu-registry'
 const MENU_ICONS: Record<MenuKey, React.ReactNode> = {
   dashboard: <DashboardRoundedIcon fontSize="small" />,
   dock_queues: <EventNoteRoundedIcon fontSize="small" />,
-  documents: <DescriptionRoundedIcon fontSize="small" />,
+  sales_orders: <ReceiptLongRoundedIcon fontSize="small" />,
+  purchase_orders: <ShoppingCartRoundedIcon fontSize="small" />,
   calendar: <CalendarMonthRoundedIcon fontSize="small" />,
   queue_board: <ViewKanbanRoundedIcon fontSize="small" />,
   queue_display: <TvRoundedIcon fontSize="small" />,

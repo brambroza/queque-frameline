@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex,
-  contactText, driverJobFlex, helpText, moreItemsText, myDocsFlex, myQueuesFlex, noDocsText, noQueuesText, noShowFlex, notLinkedText, REPLY_LIST_LIMIT, staffGroupText, thaiDate,
+  contactText, driverJobFlex, helpText, moreItemsText, myDocsFlex, myQueuesFlex, noDocsText, noQueuesText, noShowFlex, notLinkedText, paymentWarningFlex, REPLY_LIST_LIMIT, staffGroupText, thaiDate, thaiDateTime,
 } from './messages';
 
 const booking = {
@@ -31,6 +31,9 @@ describe('flex builders', () => {
       bookingCalledFlex({ ...booking, callCount: 2 }),
       bookingRescheduledFlex({ ...booking, prevDate: '2026-09-20', prevTime: '09:00' }),
       bookingCancelledFlex({ ...booking, reason: 'รถเสีย', byCustomer: true }),
+      bookingCancelledFlex({ ...booking, reason: 'ไม่ชำระเงิน', by: 'system' }),
+      bookingSubmittedFlex({ ...booking, doNo: null, paymentPending: true, paymentDueAt: '2026-09-21T03:00:00Z' }),
+      paymentWarningFlex({ ...booking, doNo: null, dueAt: '2026-09-21T03:00:00Z' }),
       noShowFlex(booking),
       bookingLateFlex({ ...booking, graceMinutes: 30, autoNoShow: true, who: 'driver' }),
       bookingLateFlex({ ...booking, driverUrl: null, graceMinutes: 30, autoNoShow: false, who: 'partner' }),
@@ -59,6 +62,24 @@ describe('flex builders', () => {
     expect(JSON.stringify(bookingConfirmedFlex(booking))).toContain('ลิงก์สำหรับคนขับ');
   });
 
+  it('names the payment deadline on an unpaid submit and on the warning', () => {
+    expect(JSON.stringify(bookingSubmittedFlex({ ...booking, doNo: null, paymentPending: true }).contents)).not.toContain('ชำระภายใน');
+    const submitted = JSON.stringify(bookingSubmittedFlex({ ...booking, doNo: null, paymentPending: true, paymentDueAt: '2026-09-21T03:00:00Z' }).contents);
+    expect(submitted).toContain('ชำระภายใน');
+    expect(submitted).toContain('จ. 21 ก.ย. 2569 10:00 น.');
+    const warn = paymentWarningFlex({ ...booking, doNo: null, dueAt: '2026-09-21T03:00:00Z' });
+    expect(warn.altText).toContain('R-005');
+    expect(warn.altText).toContain('10:00');
+    expect(JSON.stringify(warn.contents)).toContain('SO-2609-0024');
+  });
+
+  it('tells the customer when the system, not staff, cancelled the queue', () => {
+    expect(bookingCancelledFlex({ ...booking, by: 'system' }).altText).toContain('อัตโนมัติ');
+    expect(JSON.stringify(bookingCancelledFlex({ ...booking, by: 'system' }).contents)).toContain('ยกเลิกคิวอัตโนมัติ');
+    expect(JSON.stringify(bookingCancelledFlex({ ...booking, byCustomer: true }).contents)).toContain('ยกเลิกคิวแล้ว');
+    expect(JSON.stringify(bookingCancelledFlex({ ...booking }).contents)).toContain('เจ้าหน้าที่ยกเลิกคิวของคุณ');
+  });
+
   it('uses inbound wording for PO', () => {
     const m = bookingLinkFlex({ docNo: 'PO-9', partnerName: 'หจก. ซี', direction: 'inbound', siteName: 'Fameline', url: 'https://x' });
     expect(m.altText).toContain('ส่งสินค้า');
@@ -75,6 +96,7 @@ describe('staff group text', () => {
     expect(staffGroupText({ kind: 'payment_cleared', docNo: 'SO-9', partner: 'บจก. เอ', queues: ['R-001', 'R-002'], status: 'ชำระแล้ว' }).text).toContain('R-001, R-002 รออนุมัติ');
     expect(staffGroupText({ kind: 'plate_mismatch', queueNo: 'R-1', booked: 'A', actual: 'B' }).text).toContain('มาจริง B');
     expect(staffGroupText({ kind: 'arrived', queueNo: 'R-1', plate: 'X', dock: null, by: 'driver' }).text).toContain('คนขับเช็คอินเอง');
+    expect(staffGroupText({ kind: 'unpaid_cancelled', queueNo: 'R-7', partner: 'บจก. เอ', docNo: 'SO-9', date: '2026-09-21', time: '10:30:00' }).text).toContain('ยกเลิกอัตโนมัติ ไม่ชำระเงิน R-7');
   });
 
   it('lists only the parts the customer changed', () => {
@@ -93,6 +115,11 @@ describe('thaiDate', () => {
   it('renders a Buddhist-year short date', () => {
     expect(thaiDate('2026-09-21')).toBe('จ. 21 ก.ย. 2569');
     expect(thaiDate('bad')).toBe('bad');
+  });
+  it('renders an instant in Bangkok time', () => {
+    expect(thaiDateTime('2026-09-21T03:05:00Z')).toBe('จ. 21 ก.ย. 2569 10:05');
+    expect(thaiDateTime('2026-09-21T17:30:00Z')).toBe('อ. 22 ก.ย. 2569 00:30');
+    expect(thaiDateTime('bad')).toBe('bad');
   });
 });
 

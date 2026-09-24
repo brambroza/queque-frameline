@@ -23,6 +23,9 @@ const settingsSchema = z
     minutes_per_item: int(1, 240),
     wait_notice_enabled: z.coerce.boolean(),
     wait_notice_minutes: int(0, 240),
+    unpaid_cancel_enabled: z.coerce.boolean(),
+    unpaid_cancel_minutes: int(5, 10080),
+    unpaid_warn_minutes: int(0, 240),
     do_number_format: z
       .string()
       .trim()
@@ -31,7 +34,11 @@ const settingsSchema = z
       .regex(/^[A-Za-z0-9\-_/{}]+$/, 'ใช้ได้เฉพาะ A-Z 0-9 - _ / และ {YYYYMM} {YYYY} {NNNN}')
       .refine((v) => /\{N+\}/.test(v), 'ต้องมีเลขรัน เช่น {NNNN}'),
   })
-  .partial();
+  .partial()
+  // The warning must come before the deadline (the DB constraint says the same; this gives a readable message).
+  .refine((v) => v.unpaid_cancel_minutes === undefined || v.unpaid_warn_minutes === undefined || v.unpaid_warn_minutes < v.unpaid_cancel_minutes, {
+    path: ['unpaid_warn_minutes'], message: 'เวลาแจ้งเตือนต้องน้อยกว่าเวลายกเลิก',
+  });
 
 export async function GET() {
   try {

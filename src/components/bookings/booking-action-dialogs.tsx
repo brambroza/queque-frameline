@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography,
 } from '@mui/material';
 import { PAYMENT_BLOCK_MESSAGE, PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentCleared, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { suggestServiceMinutes, type ItemMinutesRule, type SuggestedMinutes } from '@/lib/booking/suggest-minutes';
 import { labelOfMinutes, type DockDay } from '@/lib/booking/dock-day';
+import { SIGNATURE_NAME_MAX, SIGNATURE_PARTY_LABEL, type SignatureInput, type SignatureParty } from '@/lib/booking/signatures';
+import { SignaturePad, type SignaturePadHandle } from '@/components/ui/signature-pad';
 import { customerName, hhmm, type BookingRow } from './booking-types';
 import { DockDayTimeline } from './dock-day-timeline';
 
@@ -229,6 +231,100 @@ export function CancelDialog({ booking, saving, onClose, onSubmit }: {
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>ไม่ยกเลิก</Button>
         <Button color="error" variant="contained" disabled={saving || trimmed.length < 3} onClick={() => onSubmit(booking, trimmed)}>{saving ? 'กำลังยกเลิก…' : 'ยกเลิกคิว'}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/** Sign-off sent with the close; a party is omitted when nobody drew in its box. */
+export type BookingSignatures = Partial<Record<SignatureParty, SignatureInput>>;
+
+function SignatureBlock({ party, name, onName, padRef, onInk, disabled, hint }: {
+  party: SignatureParty; name: string; onName: (v: string) => void; padRef: React.RefObject<SignaturePadHandle | null>; onInk: (v: boolean) => void; disabled: boolean; hint: string;
+}) {
+  return (
+    <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
+      <Typography variant="subtitle2" fontWeight={700}>{SIGNATURE_PARTY_LABEL[party]}</Typography>
+      <TextField
+        id={`signature-name-${party}`}
+        size="small"
+        label="ชื่อผู้ลงชื่อ"
+        value={name}
+        onChange={(e) => onName(e.target.value.slice(0, SIGNATURE_NAME_MAX))}
+        disabled={disabled}
+        helperText={hint}
+      />
+      <SignaturePad ref={padRef} height={150} disabled={disabled} onChange={onInk} label={`ลายเซ็น${SIGNATURE_PARTY_LABEL[party]}`} />
+    </Stack>
+  );
+}
+
+/**
+ * Close the job ("ปิดงาน") with an optional sign-off from the warehouse officer
+ * and the customer / driver on the same tablet. A box with ink needs a name;
+ * an empty box is simply not sent, so closing never blocks on a signature.
+ */
+export function CompleteDialog({ booking, saving, onClose, onSubmit }: {
+  booking: BookingRow | null; saving: boolean; onClose: () => void; onSubmit: (b: BookingRow, signatures: BookingSignatures) => void;
+}) {
+  const staffPad = useRef<SignaturePadHandle | null>(null);
+  const customerPad = useRef<SignaturePadHandle | null>(null);
+  const [staffName, setStaffName] = useState('');
+  const [customerName_, setCustomerName] = useState('');
+  const [staffInk, setStaffInk] = useState(false);
+  const [customerInk, setCustomerInk] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Prefill: the signed-in officer's name and the driver on the booking.
+  useEffect(() => {
+    if (!booking) return undefined;
+    setCustomerName(booking.driver_name ?? '');
+    setStaffInk(false);
+    setCustomerInk(false);
+    setError(null);
+    let alive = true;
+    fetch('/api/me-profile', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j: { data?: { full_name?: string | null; email?: string | null } }) => { if (alive) setStaffName(j.data?.full_name ?? j.data?.email ?? ''); })
+      .catch(() => { if (alive) setStaffName(''); });
+    return () => { alive = false; };
+  }, [booking]);
+
+  if (!booking) return null;
+  const staffNeedsName = staffInk && !staffName.trim();
+  const customerNeedsName = customerInk && !customerName_.trim();
+  const anySigned = staffInk || customerInk;
+
+  function submit() {
+    if (!booking) return;
+    if (staffNeedsName || customerNeedsName) { setError('กรอกชื่อผู้ลงชื่อของช่องที่เซ็นแล้ว'); return; }
+    const out: BookingSignatures = {};
+    const staffImage = staffInk ? staffPad.current?.toDataUrl() : null;
+    const customerImage = customerInk ? customerPad.current?.toDataUrl() : null;
+    if (staffImage) out.staff = { name: staffName.trim(), image: staffImage };
+    if (customerImage) out.customer = { name: customerName_.trim(), image: customerImage };
+    setError(null);
+    onSubmit(booking, out);
+  }
+
+  return (
+    <Dialog open onClose={saving ? undefined : onClose} fullWidth maxWidth="md">
+      <DialogTitle>ปิดงาน · {booking.queue_number}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 0.5 }}>
+          <Summary b={booking} />
+          <Alert severity="info">ให้เจ้าหน้าที่คลังและลูกค้า/คนขับลงชื่อยืนยันว่าขึ้น-ลงสินค้าเรียบร้อย ลายเซ็นจะพิมพ์บนใบ DO · ถ้ายังไม่สะดวก ปิดงานโดยไม่ลงชื่อได้</Alert>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <SignatureBlock party="staff" name={staffName} onName={setStaffName} padRef={staffPad} onInk={setStaffInk} disabled={saving} hint={staffNeedsName ? 'ต้องกรอกชื่อเมื่อลงลายเซ็น' : 'ผู้ปิดงานหน้าท่า'} />
+            <SignatureBlock party="customer" name={customerName_} onName={setCustomerName} padRef={customerPad} onInk={setCustomerInk} disabled={saving} hint={customerNeedsName ? 'ต้องกรอกชื่อเมื่อลงลายเซ็น' : 'คนขับหรือผู้รับ/ส่งสินค้า'} />
+          </Stack>
+          {error ? <Alert severity="error">{error}</Alert> : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+        <Button onClick={onClose} disabled={saving}>ยังไม่ปิด</Button>
+        {!anySigned ? <Button color="inherit" disabled={saving} onClick={submit}>ปิดงานโดยไม่ลงชื่อ</Button> : null}
+        <Button variant="contained" disabled={saving || !anySigned || staffNeedsName || customerNeedsName} onClick={submit}>{saving ? 'กำลังปิดงาน…' : 'ลงชื่อและปิดงาน'}</Button>
       </DialogActions>
     </Dialog>
   );

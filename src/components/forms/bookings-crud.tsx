@@ -13,7 +13,7 @@ import { BookingsTable } from '@/components/bookings/bookings-table';
 import { BookingScheduleDialog, type ScheduleChanges, type ScheduleDraft } from '@/components/bookings/booking-schedule-dialog';
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
-import { ApproveDialog, CancelDialog, PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
+import { ApproveDialog, CancelDialog, CompleteDialog, PaymentDialog, type BookingSignatures, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import type { ItemMinutesRule } from '@/lib/booking/suggest-minutes';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
@@ -80,6 +80,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [scheduleTarget, setScheduleTarget] = useState<BookingRow | null>(null);
   const [approveTarget, setApproveTarget] = useState<BookingRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<BookingRow | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<BookingRow | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -186,6 +187,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   function requestStatus(b: BookingRow, status: string) {
     if (status === 'confirmed' && b.status === 'pending') { setApproveTarget(b); return; }
     if (status === 'cancelled') { setCancelTarget(b); return; }
+    if (status === 'completed' && b.status === 'serving') { setCompleteTarget(b); return; }
     void updateStatus(b, status);
   }
 
@@ -234,7 +236,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  async function updateStatus(b: BookingRow, status: string, extra: { cancel_reason?: string; service_minutes?: number } = {}) {
+  async function updateStatus(b: BookingRow, status: string, extra: { cancel_reason?: string; service_minutes?: number; signatures?: BookingSignatures } = {}) {
     if (saving) return;
     setSaving(true);
     try {
@@ -243,11 +245,13 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}`);
       else if (status === 'cancelled') push(t('cancel_ok', 'ยกเลิกคิวแล้ว'));
       else if (status === 'called') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
+      else if (status === 'completed') push(extra.signatures && Object.keys(extra.signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
       else push(t('status_ok', 'อัปเดตสถานะแล้ว'));
       if (r.autoCalled.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${r.autoCalled.join(', ')}`);
       setEditTarget(null);
       setApproveTarget(null);
       setCancelTarget(null);
+      setCompleteTarget(null);
       reload();
     } finally {
       setSaving(false);
@@ -328,6 +332,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
       <ApproveDialog booking={approveTarget} saving={saving} onClose={() => setApproveTarget(null)} onSubmit={(b, m) => void updateStatus(b, 'confirmed', { service_minutes: m })} itemMinutes={itemMinutes} />
       <CancelDialog booking={cancelTarget} saving={saving} onClose={() => setCancelTarget(null)} onSubmit={(b, reason) => void updateStatus(b, 'cancelled', { cancel_reason: reason })} />
+      <CompleteDialog booking={completeTarget} saving={saving} onClose={() => setCompleteTarget(null)} onSubmit={(b, signatures) => void updateStatus(b, 'completed', Object.keys(signatures).length ? { signatures } : {})} />
       <PaymentDialog
         target={paymentTarget}
         onClose={() => setPaymentTarget(null)}

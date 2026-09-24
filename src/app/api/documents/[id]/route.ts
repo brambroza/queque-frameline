@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { canWriteDocument, isDocType } from '@/lib/auth/document-access';
 import { LIVE_STATUSES } from '@/lib/booking/status-flow';
 
 const patchSchema = z.object({ status: z.enum(['open', 'completed', 'cancelled']) });
@@ -35,13 +36,33 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
 }
 
-/** Close, cancel or reopen a document (admin). Cancelling is refused while a queue is still live. */
+/**
+ * Whether the caller may change documents of the row's type. Resolves the row
+ * first so a sales admin cannot touch a PO by guessing its id (404 either way).
+ */
+async function loadWritable(auth: Awaited<ReturnType<typeof requireAuthContext>>, id: string) {
+  const { data } = await auth.supabase
+    .from('external_documents')
+    .select('id,doc_type')
+    .eq('id', id)
+    .eq('shop_id', auth.profile.shop_id)
+    .eq('is_deleted', false)
+    .maybeSingle();
+  if (!data || !isDocType(data.doc_type)) return { status: 404 as const, error: 'ไม่พบเอกสาร' };
+  if (!canWriteDocument(data.doc_type, auth)) return { status: 403 as const, error: 'ไม่มีสิทธิ์แก้ไขเอกสารประเภทนี้' };
+  return null;
+}
+
+/** Close, cancel or reopen a document (admin, or the role that owns the type). Cancelling is refused while a queue is still live. */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = auth;
     const { id } = await ctx.params;
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'สถานะไม่ถูกต้อง' }, { status: 400 });
+    const denied = await loadWritable(auth, id);
+    if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
 
     const { count } = await supabase
       .from('bookings')
@@ -72,11 +93,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 }
 
-/** Remove a document that never had a queue (admin). */
+/** Remove a document that never had a queue (admin, or the role that owns the type). */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = auth;
     const { id } = await ctx.params;
+    const denied = await loadWritable(auth, id);
+    if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
     const { count } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })

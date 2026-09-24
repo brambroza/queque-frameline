@@ -12,7 +12,7 @@ import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
-import { ApproveDialog, PaymentChip, isPaymentBlocked, paymentOf } from './booking-action-dialogs';
+import { ApproveDialog, CompleteDialog, PaymentChip, isPaymentBlocked, paymentOf, type BookingSignatures } from './booking-action-dialogs';
 import type { StatusPaletteKey } from '@/lib/booking/status-meta';
 import { BOARD_CARD_TONE, DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type BookingRow, type NextStatusOption } from './booking-types';
 
@@ -81,6 +81,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [approveTarget, setApproveTarget] = useState<{ booking: BookingRow; opt: NextStatusOption } | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<{ booking: BookingRow; opt: NextStatusOption } | null>(null);
   const [site, setSite] = useState<SiteInfo | null>(null);
   const dateRef = useRef(date);
   dateRef.current = date;
@@ -118,10 +119,12 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
     return () => clearInterval(id);
   }, [load, loadSite]);
 
-  async function setStatus(b: BookingRow, opt: NextStatusOption, serviceMinutes?: number) {
+  async function setStatus(b: BookingRow, opt: NextStatusOption, serviceMinutes?: number, signatures?: BookingSignatures) {
     if (busyId) return;
     // Approval asks for the dock time first (and shows the payment block).
     if (opt.kind === 'confirm' && serviceMinutes === undefined) { setApproveTarget({ booking: b, opt }); return; }
+    // Closing offers the sign-off pads first.
+    if (opt.kind === 'done' && signatures === undefined) { setCompleteTarget({ booking: b, opt }); return; }
     if (opt.kind === 'no_show') {
       const ok = await confirm({
         tone: 'warning',
@@ -137,7 +140,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
       const res = await fetch('/api/bookings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: b.id, status: opt.status, ...(serviceMinutes !== undefined ? { service_minutes: serviceMinutes } : {}) }),
+        body: JSON.stringify({ id: b.id, status: opt.status, ...(serviceMinutes !== undefined ? { service_minutes: serviceMinutes } : {}), ...(signatures && Object.keys(signatures).length ? { signatures } : {}) }),
       });
       const json = (await res.json().catch(() => ({}))) as PatchResponse;
       if (!res.ok) {
@@ -146,7 +149,9 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         return;
       }
       setApproveTarget(null);
+      setCompleteTarget(null);
       if (opt.kind === 'confirm' && json.data?.do_number) push(`อนุมัติคิวแล้ว · ${json.data.do_number}`);
+      else if (opt.kind === 'done') push(signatures && Object.keys(signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
       else if (opt.kind === 'call' || opt.kind === 'recall') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
       const auto = json.data?.auto_called ?? [];
       if (auto.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${auto.join(', ')}`);
@@ -294,6 +299,12 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         })}
       </Box>
 
+      <CompleteDialog
+        booking={completeTarget?.booking ?? null}
+        saving={busyId !== null}
+        onClose={() => setCompleteTarget(null)}
+        onSubmit={(b, signatures) => { if (completeTarget) void setStatus(b, completeTarget.opt, undefined, signatures); }}
+      />
       <ApproveDialog
         booking={approveTarget?.booking ?? null}
         saving={busyId !== null}

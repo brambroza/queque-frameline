@@ -21,7 +21,14 @@ export type DoDocumentData = {
   note: string | null;
   issuedAt: string | null;
   items: Array<{ sku?: string | null; name: string; qty: number; uom?: string | null }>;
+  /** Close sign-off captured on the tablet; a party is absent when nobody signed. */
+  signatures?: { staff?: DoSignature | null; customer?: DoSignature | null } | null;
+  /** When the sign-off was captured (ISO). */
+  signedAt?: string | null;
 };
+
+/** One printed signature: the PNG (same-origin URL or data URL) and the typed name. */
+export type DoSignature = { name: string; imageUrl: string };
 
 const cell: React.CSSProperties = { border: '1px solid #cbd5e1', padding: '6px 8px', fontSize: 13, verticalAlign: 'top' };
 const head: React.CSSProperties = { ...cell, background: '#f1f5f9', fontWeight: 600, textAlign: 'left' };
@@ -110,11 +117,18 @@ export function DoDocument({ data, qr }: { data: DoDocumentData; qr?: React.Reac
       </table>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginTop: 36 }}>
-        {[outbound ? 'ผู้รับสินค้า' : 'ผู้ส่งสินค้า', 'เจ้าหน้าที่คลัง', 'เจ้าหน้าที่ รปภ.'].map((who) => (
+        {([
+          [outbound ? 'ผู้รับสินค้า' : 'ผู้ส่งสินค้า', data.signatures?.customer ?? null],
+          ['เจ้าหน้าที่คลัง', data.signatures?.staff ?? null],
+          ['เจ้าหน้าที่ รปภ.', null],
+        ] as Array<[string, DoSignature | null]>).map(([who, sig]) => (
           <div key={who} style={{ textAlign: 'center', fontSize: 12, color: '#475569' }}>
-            <div style={{ borderBottom: '1px dotted #64748b', height: 36 }} />
-            <div style={{ marginTop: 6 }}>{who}</div>
-            <div>วันที่ ....../....../......</div>
+            <div style={{ borderBottom: '1px dotted #64748b', height: 48, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- print sheet uses inline markup only; the PNG is tiny and same-origin */}
+              {sig ? <img src={sig.imageUrl} alt={`ลายเซ็น ${who}`} style={{ maxHeight: 46, maxWidth: '100%', objectFit: 'contain' }} /> : null}
+            </div>
+            <div style={{ marginTop: 6 }}>{sig ? <span style={{ color: '#0f172a', fontWeight: 600 }}>{sig.name}</span> : who}</div>
+            <div>{sig ? `${who} · ${data.signedAt ? thaiDate(data.signedAt) : ''}` : 'วันที่ ....../....../......'}</div>
           </div>
         ))}
       </div>

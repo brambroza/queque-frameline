@@ -164,13 +164,13 @@ def svg_status(fig: Figure) -> list[str]:
 
 
 # ---------------------------------------------------------------- figure 1: before the appointment day
-OFFICE, PARTNER, SYS1 = range(3)
+SALES, OFFICE, PARTNER, SYS1 = range(4)
 FIG1 = Figure(
-    lanes=["เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ลูกค้า / ผู้ขาย (Supplier)", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
+    lanes=["ฝ่ายขาย / จัดซื้อ\nแอดมินเซล · ฝ่ายจัดซื้อ", "เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ลูกค้า / ผู้ขาย (Supplier)", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
     system_lane=SYS1,
     steps=[
-        Step(0, OFFICE, "1", "บันทึกเอกสาร SO / PO", "นำเข้าไฟล์ CSV หรือกรอกเอง"),
-        Step(1, OFFICE, "2", "ส่งลิงก์จองคิว / QR", "ผ่าน LINE หรือช่องทางอื่น", line=True),
+        Step(0, SALES, "1", "คีย์ใบ SO / PO ทีละใบ", "เซลคีย์ SO · จัดซื้อคีย์ PO"),
+        Step(1, SALES, "2", "ส่งลิงก์จองคิว / QR", "ผ่าน LINE หรือช่องทางอื่น", line=True),
         Step(2, PARTNER, "3", "จองคิวด้วยตนเอง", "เลือกประเภทรถ วัน และเวลา"),
         Step(3, SYS1, "4", "จัดสรรท่าและออกเลขคิว", "ไม่ให้คิวซ้อนในท่าเดียวกัน", line=True, system=True),
         Step(5, OFFICE, "5", "บันทึกการชำระเงิน", "ชำระแล้ว หรือลูกค้าเครดิต", line=True),
@@ -180,7 +180,7 @@ FIG1 = Figure(
     ],
     n_cols=9,
     status=[(0, 1, "เอกสารรอจองคิว"), (2, 5, "รอยืนยัน · SO ที่ยังไม่ชำระเงินคงสถานะนี้"), (6, 8, "ยืนยันแล้ว · มีเลขใบ DO")],
-    aria="ก่อนวันนัด: ทีมคลังนำเข้าเอกสารและส่งลิงก์ ลูกค้าจองคิว ระบบจองท่า ตรวจการชำระเงินของ SO แล้วทีมคลังยืนยันคิว ระบบออก DO และส่งลิงก์ให้คนขับ",
+    aria="ก่อนวันนัด: แอดมินเซลคีย์ใบสั่งขาย ฝ่ายจัดซื้อคีย์ใบสั่งซื้อ แล้วส่งลิงก์ ลูกค้าจองคิว ระบบจองท่า ตรวจการชำระเงินของ SO แล้วทีมคลังยืนยันคิว ระบบออก DO และส่งลิงก์ให้คนขับ",
 )
 
 
@@ -345,13 +345,13 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 <header>
   <p class="eyebrow">Fameline Dock Queue · ระบบคิวรับ-ส่งสินค้าหน้าคลัง</p>
   <h1>เส้นทางของคิวหนึ่งคิว ตั้งแต่เอกสารเข้าจนรถออกจากท่า</h1>
-  <p class="lede">ผู้เกี่ยวข้อง 4 กลุ่มทำงานต่อเนื่องกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปพลิเคชันหรือสมัครสมาชิก</strong> ใช้เพียงลิงก์ที่ได้รับทาง LINE ส่วนงานที่ต้องติดตามตลอดเวลา เช่น การจัดสรรท่า การเรียกคิว และการแจ้งเตือน ระบบดำเนินการให้อัตโนมัติ</p>
+  <p class="lede">ผู้เกี่ยวข้อง 5 กลุ่มทำงานต่อเนื่องกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปพลิเคชันหรือสมัครสมาชิก</strong> ใช้เพียงลิงก์ที่ได้รับทาง LINE ส่วนงานที่ต้องติดตามตลอดเวลา เช่น การจัดสรรท่า การเรียกคิว และการแจ้งเตือน ระบบดำเนินการให้อัตโนมัติ</p>
 </header>
 
 <section id="before">
   <div class="sec-head">
     <h2>ก่อนวันนัด — จากเอกสารถึงใบ DO</h2>
-    <p>คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และใบสั่งขาย (SO) ผ่านการตรวจการชำระเงินแล้ว</p>
+    <p>แอดมินฝ่ายขายคีย์ใบสั่งขาย (SO) และฝ่ายจัดซื้อคีย์ใบสั่งซื้อ (PO) เข้าระบบทีละใบ ไม่มีการนำเข้าไฟล์ คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และใบสั่งขายผ่านการตรวจการชำระเงินแล้ว</p>
   </div>
   <figure id="fig1">
     <div class="scroll">__FIG1__</div>
@@ -443,10 +443,10 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
   <table>
     <thead><tr><th>ขั้น</th><th>หน้าจอ</th><th>ผู้ใช้</th><th>ภาพประกอบ</th></tr></thead>
     <tbody>
-      <tr><td class="n">1–2</td><td>เอกสาร SO/PO › นำเข้า, ลิงก์จอง + QR</td><td>ทีมคลัง</td><td class="f">02a-documents · 02b-documents-link-qr</td></tr>
+      <tr><td class="n">1–2</td><td>ใบสั่งขาย (SO) / ใบสั่งซื้อ (PO) › คีย์เอกสาร, ลิงก์จอง + QR</td><td>ฝ่ายขาย / ฝ่ายจัดซื้อ</td><td class="f">02a-documents · 02b-documents-link-qr</td></tr>
       <tr><td class="n">3</td><td>หน้าจองของลูกค้า 5 ขั้น: รถ › วัน › เวลา › รายละเอียด › ยืนยัน</td><td>ลูกค้า / Supplier</td><td class="f">03a … 05c-book-submitted</td></tr>
       <tr><td class="n">4</td><td>สถานะคิวฝั่งลูกค้า, รายการคิวรอยืนยันฝั่งคลัง</td><td>ลูกค้า · ทีมคลัง</td><td class="f">05d-book-status · 06h-bookings-pending</td></tr>
-      <tr><td class="n">5</td><td>เอกสาร SO/PO › บันทึกการชำระเงิน</td><td>ทีมคลัง</td><td>สาธิตสดจากระบบ</td></tr>
+      <tr><td class="n">5</td><td>ใบสั่งขาย (SO) › บันทึกการชำระเงิน</td><td>ทีมคลัง</td><td>สาธิตสดจากระบบ</td></tr>
       <tr><td class="n">6–7</td><td>รายละเอียดคิว › อนุมัติคิว + ออก DO, ใบ DO</td><td>ทีมคลัง</td><td class="f">06b-booking-drawer · 06e-do-sheet</td></tr>
       <tr><td class="n">8–10</td><td>หน้าคนขับ: ใบ DO ท่า เวลานัด และปุ่มเช็คอิน</td><td>คนขับ</td><td class="f">08b-driver-full</td></tr>
       <tr><td class="n">11</td><td>บอร์ดคิววันนี้, จอหน้าลาน, หน้าคนขับเมื่อถูกเรียก</td><td>เจ้าหน้าที่ · คนขับ</td><td class="f">07-queue-board · 09-display-tv · 08a-driver-called</td></tr>
@@ -491,8 +491,8 @@ def main() -> None:
     print(f"{FRAGMENT_OUT.relative_to(HERE)}\n{LOCAL_OUT.relative_to(HERE)}")
     if "--no-png" in sys.argv:
         return
-    render(LOCAL_OUT.as_uri(), PNG_FULL, 1600, 2560)
-    render(LOCAL_OUT.as_uri() + "?only=swimlane", PNG_LANES, 1600, 1070)
+    render(LOCAL_OUT.as_uri(), PNG_FULL, 1600, 2680)
+    render(LOCAL_OUT.as_uri() + "?only=swimlane", PNG_LANES, 1600, 1185)
 
 
 if __name__ == "__main__":

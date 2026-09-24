@@ -134,6 +134,11 @@ export function BookingEditDrawer({
         note: b.note ?? null,
         issuedAt: b.do_issued_at ?? null,
         items,
+        signatures: {
+          staff: b.sign_staff_path ? { name: b.sign_staff_name ?? '', imageUrl: `/api/bookings/${b.id}/signature/staff` } : null,
+          customer: b.sign_customer_path ? { name: b.sign_customer_name ?? '', imageUrl: `/api/bookings/${b.id}/signature/customer` } : null,
+        },
+        signedAt: b.signed_at ?? null,
       }
     : null;
   const qrNode = link ? <QrCode value={link.url} size={110} alt="ลิงก์คนขับ" /> : undefined;
@@ -276,6 +281,27 @@ export function BookingEditDrawer({
                   <Row k="หมายเหตุ" v={b.note} />
                   {b.cancel_reason ? <Row k="เหตุผลยกเลิก" v={b.cancel_reason} /> : null}
                 </Box>
+
+                {b.status === 'completed' ? (
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={700}>ลงชื่อปิดงาน{b.signed_at ? ` · ${formatDateTimeDMY(b.signed_at)}` : ''}</Typography>
+                    {!b.sign_staff_path && !b.sign_customer_path ? (
+                      <Typography variant="body2" color="text.secondary">ปิดงานโดยไม่ได้ลงชื่อ</Typography>
+                    ) : (
+                      <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
+                        {([['staff', 'เจ้าหน้าที่คลัง', b.sign_staff_path, b.sign_staff_name], ['customer', 'ลูกค้า / คนขับ', b.sign_customer_path, b.sign_customer_name]] as Array<[string, string, string | null | undefined, string | null | undefined]>)
+                          .filter(([, , path]) => Boolean(path))
+                          .map(([party, who, , name]) => (
+                            <Box key={party} sx={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+                              <Box component="img" src={`/api/bookings/${b.id}/signature/${party}`} alt={`ลายเซ็น ${who}`} sx={{ width: '100%', maxHeight: 96, objectFit: 'contain', bgcolor: '#fff', border: 1, borderColor: 'divider', borderRadius: 1 }} />
+                              <Typography variant="body2" fontWeight={600} noWrap>{name || '-'}</Typography>
+                              <Typography variant="caption" color="text.secondary">{who}</Typography>
+                            </Box>
+                          ))}
+                      </Stack>
+                    )}
+                  </Box>
+                ) : null}
 
                 {next.length > 0 ? (
                   <Box>

@@ -7,6 +7,7 @@
  * processed at all (the AX side treats any non-2xx as "retry later").
  */
 import { NextResponse } from 'next/server';
+import { documentPortalPath } from '@/lib/auth/document-access';
 import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DocumentType } from '@/types/db';
@@ -87,7 +88,7 @@ async function afterUpsert(ctx: ApiKeyContext, docType: DocumentType, doc: { doc
     type, category: 'operations', priority: 'high',
     title: outcome.code === 'has_live_bookings' ? `ERP ยกเลิก ${label} ${doc.doc_no} แต่ยังมีคิวค้าง` : `ERP ย้าย ${label} ${doc.doc_no} ไปสาขาอื่น แต่ยังมีคิวค้าง`,
     message: `${row.partner_name ?? '-'} — ${outcome.message} ERP จะส่งซ้ำอัตโนมัติเมื่อจัดการคิวแล้ว`,
-    relatedType: 'document', relatedId: row.id as string, actionUrl: '/portal/documents', icon: 'SyncProblem', color: '#B71C1C',
+    relatedType: 'document', relatedId: row.id as string, actionUrl: documentPortalPath(docType), icon: 'SyncProblem', color: '#B71C1C',
     metadata: { doc_type: docType, doc_no: doc.doc_no, code: outcome.code, source: 'erp' },
   });
 }
@@ -186,7 +187,7 @@ export async function handleDocumentBatch(req: Request, docType: DocumentType): 
         type: 'document_imported', category: 'system', priority: summary.failed > 0 ? 'medium' : 'low',
         title: `ERP ส่ง ${label} ${summary.received} รายการ`,
         message: `ใหม่ ${summary.created} · อัปเดต ${summary.updated} · ไม่สำเร็จ ${summary.failed}`,
-        actionUrl: summary.failed > 0 ? '/portal/api-keys' : '/portal/documents',
+        actionUrl: summary.failed > 0 ? '/portal/api-keys' : documentPortalPath(docType),
         icon: 'CloudSync', color: summary.failed > 0 ? '#B71C1C' : '#1565c0',
         metadata: { doc_type: docType, request_id: requestId, created: summary.created, updated: summary.updated, failed: summary.failed, api_key_id: ctx.keyId },
       });

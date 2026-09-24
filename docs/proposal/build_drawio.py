@@ -139,7 +139,7 @@ def draw_figure(doc: Doc, fig: Figure, oy: float, title: str, subtitle: str) -> 
 
 def build_fig1(doc: Doc, oy: float) -> None:
     ids = draw_figure(doc, FIG1, oy, "ก่อนวันนัด — จากเอกสารถึงใบ DO",
-                      "คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และใบสั่งขาย (SO) ผ่านการตรวจการชำระเงินแล้ว")
+                      "ฝ่ายขายคีย์ SO ฝ่ายจัดซื้อคีย์ PO ทีละใบ · คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และ SO ผ่านการตรวจการชำระเงินแล้ว")
     s = {x.no: x for x in FIG1.steps}
     for a, b in [("1", "2"), ("2", "3"), ("3", "4"), ("5", "6"), ("6", "7"), ("7", "8")]:
         doc.edge(ids[s[a]], ids[s[b]], EDGE + anchors(1, 0.5, 0, 0.5))
@@ -177,7 +177,7 @@ def build_fig2(doc: Doc, oy: float) -> None:
     doc.edge(ids[gate_in], ids[call], dash + anchors(1, 0.5, 0, 0.5))
     for a, b in [(open_do, arrive), (arrive, call), (call, load), (load, nxt)]:
         doc.edge(ids[a], ids[b], EDGE + anchors(1, 0.5, 0, 0.5))
-    doc.vertex("cap", "เส้นประ: เจ้าหน้าที่ประตูเช็คอินแทนได้ กรณีคนขับไม่ได้เช็คอินเองหรือไม่มีสัญญาณ GPS",
+    doc.vertex("cap", "เส้นประ: กรณีทะเบียนรถไม่ตรงกับที่จอง แจ้งเจ้าหน้าที่แก้ไขทะเบียนและเช็คอินให้ได้ ระบบแจ้งทีมคลังทาง LINE",
                text_style(15, C["muted"]), 0, oy + FIG2.height + 12, FIG2.width, 26)
 
 

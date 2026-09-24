@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { computeOverdueMoves, computeWaitNotices } from '@/lib/booking/overdue';
+import { computeUnpaidActions, paymentDeadline, type UnpaidCandidate } from '@/lib/booking/unpaid-cancel';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
+import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { addDaysIso, toBangkokStamp } from '@/lib/booking/slot-time';
 import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
@@ -24,8 +26,18 @@ function authorized(req: Request): boolean {
  *  2. auto-call — fill free docks with checked-in vehicles (also a backstop for a missed event)
  *  3. wait notice — checked-in trucks past their appointment that still could not be called
  *     get one "ท่ายังไม่ว่าง กรุณารอสักครู่" (LINE + Web Push), stamped in `wait_notified_at`
+ *  4. unpaid sweep — customer-link queues on an unpaid SO get one warning before their payment
+ *     deadline (`payment_warned_at`) and are cancelled through `cancel_unpaid_booking` once it passes
  * Every write is conditional on the status that was read, so overlapping ticks are harmless.
  */
+const UNPAID_CANCEL_REASON = 'ไม่ได้ชำระเงินภายในเวลาที่กำหนด — ระบบยกเลิกอัตโนมัติ';
+/** Each cancel is up to three LINE pushes; keep one tick inside the free plan's monthly quota. */
+const UNPAID_SWEEP_LIMIT = 50;
+
+type UnpaidRow = UnpaidCandidate & {
+  queue_number: string; branch_id: string | null;
+  external_documents: { doc_no: string; partner_name: string | null; payment_updated_at: string | null } | null;
+};
 export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
@@ -108,9 +120,70 @@ export async function GET(req: Request) {
       }
     }
 
+    // Unpaid customer queues: warn once, then cancel. The RPC re-checks the SO under lock, so a
+    // payment recorded between this read and the cancel keeps the queue.
+    const unpaidWarned: string[] = [];
+    const unpaidCancelled: string[] = [];
+    if (settings.unpaid_cancel_enabled) {
+      const { data: unpaid, error: unpaidError } = await admin
+        .from('bookings')
+        .select('id,queue_number,status,booking_source,created_at,booking_date,start_time,payment_warned_at,branch_id,external_documents!inner(doc_no,partner_name,doc_type,payment_status,payment_updated_at)')
+        .eq('shop_id', site.shopId)
+        .eq('is_deleted', false)
+        .eq('status', 'pending')
+        .eq('booking_source', 'customer_link')
+        .eq('external_documents.doc_type', 'so')
+        .eq('external_documents.payment_status', 'unpaid')
+        .order('created_at', { ascending: true })
+        .limit(UNPAID_SWEEP_LIMIT);
+      if (unpaidError) throw unpaidError;
+      const rows = ((unpaid ?? []) as unknown as UnpaidRow[]).map((r) => ({ ...r, payment_updated_at: r.external_documents?.payment_updated_at ?? null }));
+      const actions = computeUnpaidActions(rows, now, settings);
+
+      for (const id of actions.warn) {
+        const row = rows.find((r) => r.id === id);
+        if (!row) continue;
+        const { data: stamped } = await admin.from('bookings').update({ payment_warned_at: now.toISOString() }).eq('id', id).eq('shop_id', site.shopId).eq('status', 'pending').is('payment_warned_at', null).select('id');
+        if (!stamped || stamped.length === 0) continue;
+        const dueAt = paymentDeadline(row, settings)?.toISOString() ?? null;
+        unpaidWarned.push(row.queue_number);
+        await logBooking(admin, {
+          companyId: site.companyId, shopId: site.shopId, bookingId: id, action: 'payment_warning',
+          description: `${row.queue_number}: แจ้งลูกค้าว่าคิวจะถูกยกเลิกอัตโนมัติถ้ายังไม่ชำระเงิน`, to: { payment_warned_at: now.toISOString(), due_at: dueAt }, actorKind: 'system',
+        });
+        await safeNotifyPartner(admin, { shopId: site.shopId, bookingId: id, kind: 'payment_warning', dueAt });
+      }
+
+      for (const id of actions.cancel) {
+        const row = rows.find((r) => r.id === id);
+        if (!row) continue;
+        const { data: done, error: cancelError } = await admin.rpc('cancel_unpaid_booking', { p_shop_id: site.shopId, p_booking_id: id, p_reason: UNPAID_CANCEL_REASON });
+        if (cancelError) { console.error('[cron/auto-call] cancel_unpaid_booking failed:', cancelError.message); continue; }
+        if (done !== true) continue;
+        unpaidCancelled.push(row.queue_number);
+        const doc = row.external_documents;
+        await logBooking(admin, {
+          companyId: site.companyId, shopId: site.shopId, bookingId: id, action: 'status_change',
+          description: `${row.queue_number}: pending → cancelled (unpaid_timeout)`, from: { status: 'pending' }, to: { status: 'cancelled', reason: 'unpaid_timeout' }, actorKind: 'system',
+        });
+        await safeCreateNotification(admin, {
+          companyId: site.companyId, shopId: site.shopId, branchId: row.branch_id,
+          type: 'booking_cancelled', category: 'bookings', priority: 'high',
+          title: `ยกเลิกคิว ${row.queue_number} อัตโนมัติ — ไม่ชำระเงิน`,
+          message: `${doc?.partner_name ?? '-'} · ${doc?.doc_no ?? '-'} · ${row.booking_date} ${String(row.start_time).slice(0, 5)}`,
+          relatedType: 'booking', relatedId: id, actionUrl: '/portal/bookings', icon: 'Cancel', color: '#c62828',
+        });
+        await safeNotifyPartner(admin, { shopId: site.shopId, bookingId: id, kind: 'cancelled', by: 'system' });
+        await safeNotifyStaffGroup(admin, {
+          shopId: site.shopId, bookingId: id,
+          event: { kind: 'unpaid_cancelled', queueNo: row.queue_number, partner: doc?.partner_name ?? '-', docNo: doc?.doc_no ?? null, date: String(row.booking_date), time: String(row.start_time) },
+        });
+      }
+    }
+
     await admin.from('site_settings').update({ auto_call_last_run_at: now.toISOString() }).eq('shop_id', site.shopId);
 
-    return NextResponse.json({ data: { swept, called: called.map((c) => c.queueNumber), waited } });
+    return NextResponse.json({ data: { swept, called: called.map((c) => c.queueNumber), waited, unpaid_warned: unpaidWarned, unpaid_cancelled: unpaidCancelled } });
   } catch (e) {
     console.error('[cron/auto-call]', e instanceof Error ? e.message : e);
     return NextResponse.json({ error: 'cron failed' }, { status: 500 });

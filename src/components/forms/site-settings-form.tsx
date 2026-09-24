@@ -11,8 +11,16 @@ type Settings = {
   booking_lead_min_hours: number; booking_horizon_days: number; require_admin_confirm: boolean; driver_self_checkin: boolean; do_number_format: string;
   item_minutes_enabled: boolean; minutes_per_item: number;
   wait_notice_enabled: boolean; wait_notice_minutes: number;
+  unpaid_cancel_enabled: boolean; unpaid_cancel_minutes: number; unpaid_warn_minutes: number;
   auto_call_last_run_at: string | null;
 };
+
+/** The minute cron is what enforces time-based rules; if it has not run for a while, say so. */
+function cronStale(lastRun: string | null): boolean {
+  if (!lastRun) return true;
+  const t = new Date(lastRun).getTime();
+  return Number.isNaN(t) || Date.now() - t > 5 * 60_000;
+}
 
 const MODE_HINT: Record<Settings['auto_call_mode'], string> = {
   off: 'พนักงานกดเรียกคิวเองทุกครั้ง',
@@ -132,6 +140,22 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
             {num('booking_token_ttl_days', 'อายุลิงก์จอง (วัน)', 'นับจากวันที่ออกลิงก์', 1, 90)}
             {num('driver_token_ttl_days', 'อายุลิงก์คนขับ (วัน)', 'นับหลังวันนัด', 1, 90)}
             {toggle('driver_self_checkin', 'ให้คนขับกด “ฉันมาถึงแล้ว” เช็คอินเองจากลิงก์ — ตรวจ GPS ตามพิกัดและรัศมีที่ตั้งในหน้า สาขา / คลัง (ปิด = เจ้าหน้าที่หน้าประตูเป็นคนเช็คอิน)')}
+          </Section>
+
+          <Section title="คิวที่ยังไม่ชำระเงิน" hint="ลูกค้าจอง SO ที่ยังไม่ชำระได้ แต่คิวจะค้างเป็น “รอชำระเงิน” และกันช่องเวลาไว้ — ตั้งเวลาให้ระบบยกเลิกคิวอัตโนมัติถ้ายังไม่บันทึกการชำระเงิน (เฉพาะคิวที่ลูกค้าจองผ่านลิงก์ คิวที่เจ้าหน้าที่สร้างเองไม่ถูกยกเลิก)">
+            {toggle('unpaid_cancel_enabled', 'ยกเลิกคิวอัตโนมัติเมื่อไม่ชำระเงินภายในเวลาที่กำหนด')}
+            {s.unpaid_cancel_enabled ? (
+              <>
+                {num('unpaid_cancel_minutes', 'ยกเลิกหลังจองแล้วกี่นาที', 'นับจากเวลาที่จอง (หรือครั้งล่าสุดที่เอกสารกลับเป็นยังไม่ชำระ) ไม่เกินเวลานัด', 5, 10080)}
+                {num('unpaid_warn_minutes', 'แจ้งเตือนลูกค้าก่อนยกเลิกกี่นาที', s.unpaid_warn_minutes > 0
+                  ? 'แจ้ง 1 ครั้งทาง LINE + หน้าลิงก์จอง — คิวที่ค้างอยู่ก่อนเปิดใช้จะได้รับแจ้งก่อนเสมอ แล้วถูกยกเลิกหลังจากนั้นตามจำนวนนาทีนี้'
+                  : '0 = ไม่แจ้งเตือน — คิวที่ค้างเกินเวลาอยู่แล้วจะถูกยกเลิกทันทีในรอบตรวจถัดไป', 0, 240)}
+                {s.unpaid_warn_minutes >= s.unpaid_cancel_minutes ? <Alert severity="error">เวลาแจ้งเตือนต้องน้อยกว่าเวลายกเลิก</Alert> : null}
+                {cronStale(s.auto_call_last_run_at) ? (
+                  <Alert severity="warning">ระบบตรวจอัตโนมัติ (pg_cron) ยังไม่ทำงาน — จะยังไม่มีการยกเลิกคิวอัตโนมัติจนกว่าจะตั้งค่า pg_cron + Vault ตาม README</Alert>
+                ) : null}
+              </>
+            ) : null}
           </Section>
 
           <Section title="เลข DO">

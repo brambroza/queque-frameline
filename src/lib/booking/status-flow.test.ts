@@ -69,6 +69,8 @@ describe('canTransition', () => {
     expect(canTransition('late', 'no_show', 'system')).toEqual({ ok: true });
     expect(canTransition('called', 'no_show', 'system')).toEqual({ ok: true });
     expect(canTransition('checked_in', 'called', 'system')).toEqual({ ok: true });
+    expect(canTransition('pending', 'cancelled', 'system')).toEqual({ ok: true });
+    expect(canTransition('confirmed', 'cancelled', 'system')).toEqual({ ok: false, reason: 'not_allowed' });
     expect(canTransition('pending', 'confirmed', 'system')).toEqual({ ok: false, reason: 'not_allowed' });
     expect(canTransition('serving', 'completed', 'system')).toEqual({ ok: false, reason: 'not_allowed' });
   });

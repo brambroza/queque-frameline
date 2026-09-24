@@ -88,7 +88,18 @@ export type BookingInput = {
   dock: string | null; plate: string; vehicleType: string | null; doNo: string | null; statusUrl: string; driverUrl?: string | null;
   /** SO not paid yet: the queue is held but will not be confirmed until payment. */
   paymentPending?: boolean;
+  /** ISO instant the unpaid queue is cancelled automatically (auto-cancel on). */
+  paymentDueAt?: string | null;
 };
+
+/** "จ. 21 ก.ย. 2569 14:30" for an ISO instant, in Bangkok time. */
+export function thaiDateTime(iso: string): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(t);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${thaiDate(`${get('year')}-${get('month')}-${get('day')}`)} ${get('hour')}:${get('minute')}`;
+}
 
 function bookingRows(b: BookingInput, opts: { dockBig?: boolean } = {}) {
   return [
@@ -109,11 +120,33 @@ export function bookingSubmittedFlex(b: BookingInput): Flex {
     header: 'รับคำขอจองคิวแล้ว',
     headerColor: COLOR.warn,
     sub: b.paymentPending ? 'รอชำระเงิน — คิวจะยืนยันหลังชำระเงินแล้ว' : 'รอเจ้าหน้าที่ยืนยันและออกเลข DO',
-    body: bookingRows(b),
+    body: [
+      ...bookingRows(b),
+      ...(b.paymentPending && b.paymentDueAt ? [row('ชำระภายใน', `${thaiDateTime(b.paymentDueAt)} น.`, { bold: true, color: COLOR.bad })] : []),
+    ],
     footer: [button('ดูสถานะ', b.statusUrl, 'secondary')],
     note: b.paymentPending
-      ? 'กรุณาชำระเงินและแจ้งฝ่ายขาย เมื่อบันทึกการชำระเงินแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้'
+      ? `กรุณาชำระเงินและแจ้งฝ่ายขาย${b.paymentDueAt ? ' หากไม่ได้รับการชำระเงินภายในเวลาที่ระบุ ระบบจะยกเลิกคิวอัตโนมัติ' : ''} เมื่อบันทึกการชำระเงินแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้`
       : 'เมื่อยืนยันแล้ว ระบบจะส่งเลข DO และลิงก์สำหรับคนขับให้ทาง LINE นี้',
+  });
+}
+
+/** One warning before an unpaid queue is cancelled automatically. Customer only. */
+export function paymentWarningFlex(b: BookingInput & { dueAt: string }): Flex {
+  const due = `${thaiDateTime(b.dueAt)} น.`;
+  return card({
+    altText: `คิว ${b.queueNo} จะถูกยกเลิกอัตโนมัติ ${due} หากยังไม่ได้ชำระเงิน`,
+    header: 'คิวกำลังจะถูกยกเลิก',
+    headerColor: COLOR.bad,
+    sub: `ยังไม่ได้รับการชำระเงิน · ยกเลิกอัตโนมัติ ${due}`,
+    body: [
+      row('เลขคิว', b.queueNo, { bold: true, size: 'xl' }),
+      row('วันเวลานัด', `${thaiDate(b.date)} · ${hhmm(b.startTime)} น.`, { bold: true }),
+      ...(b.docNo ? [row('SO', b.docNo)] : []),
+      row('ชำระภายใน', due, { bold: true, color: COLOR.bad }),
+    ],
+    footer: [button('ดูสถานะ', b.statusUrl, 'secondary')],
+    note: 'กรุณาชำระเงินและแจ้งฝ่ายขายให้บันทึกการชำระเงินก่อนเวลาที่ระบุ หากชำระแล้วกรุณาแจ้งเจ้าหน้าที่ทันที',
   });
 }
 
@@ -203,12 +236,17 @@ export function bookingRescheduledFlex(b: BookingInput & { prevDate: string; pre
   });
 }
 
-export function bookingCancelledFlex(b: Pick<BookingInput, 'siteName' | 'queueNo' | 'date' | 'startTime' | 'docNo' | 'direction' | 'statusUrl'> & { reason?: string | null; byCustomer?: boolean }): Flex {
+/** Who cancelled: the customer themselves, the warehouse, or the system (unpaid past the deadline). */
+export type CancelledBy = 'customer' | 'staff' | 'system';
+
+export function bookingCancelledFlex(b: Pick<BookingInput, 'siteName' | 'queueNo' | 'date' | 'startTime' | 'docNo' | 'direction' | 'statusUrl'> & { reason?: string | null; byCustomer?: boolean; by?: CancelledBy }): Flex {
+  const by: CancelledBy = b.by ?? (b.byCustomer ? 'customer' : 'staff');
   return card({
-    altText: `ยกเลิกคิว ${b.queueNo} (${thaiDate(b.date)} ${hhmm(b.startTime)})`,
-    header: b.byCustomer ? 'ยกเลิกคิวแล้ว' : 'เจ้าหน้าที่ยกเลิกคิวของคุณ',
+    altText: by === 'system' ? `ยกเลิกคิว ${b.queueNo} อัตโนมัติ — ไม่ได้รับการชำระเงินภายในกำหนด` : `ยกเลิกคิว ${b.queueNo} (${thaiDate(b.date)} ${hhmm(b.startTime)})`,
+    header: by === 'customer' ? 'ยกเลิกคิวแล้ว' : by === 'system' ? 'ยกเลิกคิวอัตโนมัติ' : 'เจ้าหน้าที่ยกเลิกคิวของคุณ',
+    ...(by === 'system' ? { sub: 'ไม่ได้รับการชำระเงินภายในกำหนด' } : {}),
     headerColor: COLOR.bad,
-    sub: b.siteName,
+    ...(by === 'system' ? {} : { sub: b.siteName }),
     body: [
       row('เลขคิว', b.queueNo, { bold: true }),
       row('วันเวลา', `${thaiDate(b.date)} · ${hhmm(b.startTime)} น.`),
@@ -216,6 +254,7 @@ export function bookingCancelledFlex(b: Pick<BookingInput, 'siteName' | 'queueNo
       ...(b.reason ? [row('เหตุผล', b.reason)] : []),
     ],
     footer: [button('จองคิวใหม่', b.statusUrl, 'secondary')],
+    ...(by === 'system' ? { note: 'ชำระเงินแล้วจองคิวใหม่ได้จากลิงก์เดิม หรือติดต่อเจ้าหน้าที่หากชำระไปแล้ว' } : {}),
   });
 }
 
@@ -243,7 +282,9 @@ export type StaffEvent =
   | { kind: 'no_show'; queueNo: string; partner: string; date: string; time: string }
   | { kind: 'late'; queueNo: string; partner: string; time: string }
   | { kind: 'auto_called'; queueNo: string; plate: string; dock: string | null }
-  | { kind: 'payment_cleared'; docNo: string; partner: string; queues: string[]; status: string };
+  | { kind: 'payment_cleared'; docNo: string; partner: string; queues: string[]; status: string }
+  /** The sweep cancelled an unpaid customer queue past its payment deadline. */
+  | { kind: 'unpaid_cancelled'; queueNo: string; partner: string; docNo: string | null; date: string; time: string };
 
 /** One-line group message; the group is a notification feed, not a chat. */
 export function staffGroupText(e: StaffEvent): Text {
@@ -270,6 +311,8 @@ export function staffGroupText(e: StaffEvent): Text {
       return { type: 'text', text: `⏰ เลยเวลานัด ${e.queueNo} (${hhmm(e.time)} น.) · ${e.partner}` };
     case 'auto_called':
       return { type: 'text', text: `📣 เรียกอัตโนมัติ ${e.queueNo} · ${e.plate}${e.dock ? ` → ${e.dock}` : ''}` };
+    case 'unpaid_cancelled':
+      return { type: 'text', text: `⛔ ยกเลิกอัตโนมัติ ไม่ชำระเงิน ${e.queueNo}\n${e.partner}${e.docNo ? ` · ${e.docNo}` : ''} · ${thaiDate(e.date)} ${hhmm(e.time)} น.` };
   }
 }
 

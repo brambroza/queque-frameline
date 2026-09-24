@@ -8,8 +8,8 @@ import type { BookingDirection } from '@/types/db';
 import { pushMessage } from './client';
 import { getLineConfig, isLineConfigured, liffUrl, type LineConfig } from './config';
 import {
-  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex, driverJobFlex, noShowFlex, staffGroupText,
-  type BookingInput, type StaffEvent,
+  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex, driverJobFlex, noShowFlex, paymentWarningFlex, staffGroupText,
+  type BookingInput, type CancelledBy, type StaffEvent,
 } from './messages';
 import { deriveLinkToken } from '@/lib/tokens';
 import { bookingUrl, driverUrl } from '@/lib/links';
@@ -19,7 +19,7 @@ import { isPaymentCleared } from '@/lib/booking/payment';
 
 export type NotifyResult = { sent: boolean; reason?: 'not_configured' | 'disabled' | 'not_linked' | 'not_found' | 'push_failed' | 'no_group' };
 
-export type PartnerKind = 'submitted' | 'confirmed' | 'called' | 'late' | 'rescheduled' | 'cancelled' | 'no_show';
+export type PartnerKind = 'submitted' | 'confirmed' | 'called' | 'late' | 'rescheduled' | 'cancelled' | 'no_show' | 'payment_warning';
 export type DriverKind = 'job' | 'called' | 'waiting' | 'late';
 
 /** `late` needs the site's grace rule to say how long the driver still has. */
@@ -113,7 +113,13 @@ async function push(cfg: LineConfig & { channel_access_token: string }, to: stri
  */
 export async function safeNotifyPartner(
   admin: SupabaseClient,
-  args: { shopId: string; bookingId: string; kind: PartnerKind; prev?: { date: string; time: string }; byCustomer?: boolean },
+  args: {
+    shopId: string; bookingId: string; kind: PartnerKind; prev?: { date: string; time: string }; byCustomer?: boolean;
+    /** `cancelled`: who did it (defaults to staff, or customer when `byCustomer`). */
+    by?: CancelledBy;
+    /** `submitted` / `payment_warning`: ISO instant the unpaid queue is auto-cancelled. */
+    dueAt?: string | null;
+  },
 ): Promise<NotifyResult> {
   try {
     const cfg = await getLineConfig(admin, args.shopId);
@@ -127,12 +133,13 @@ export async function safeNotifyPartner(
 
     const input = toInput(cfg, await siteName(admin, args.shopId), b);
     const message =
-      args.kind === 'submitted' ? bookingSubmittedFlex(input)
+      args.kind === 'submitted' ? bookingSubmittedFlex({ ...input, paymentDueAt: args.dueAt ?? null })
+      : args.kind === 'payment_warning' ? paymentWarningFlex({ ...input, dueAt: args.dueAt ?? new Date().toISOString() })
       : args.kind === 'confirmed' ? bookingConfirmedFlex(input)
       : args.kind === 'called' ? bookingCalledFlex({ ...input, callCount: b.call_count })
       : args.kind === 'late' ? bookingLateFlex({ ...input, ...(await lateFacts(admin, args.shopId)), who: 'partner' })
       : args.kind === 'rescheduled' ? bookingRescheduledFlex({ ...input, prevDate: args.prev?.date ?? input.date, prevTime: args.prev?.time ?? input.startTime })
-      : args.kind === 'cancelled' ? bookingCancelledFlex({ ...input, reason: b.cancel_reason, byCustomer: args.byCustomer })
+      : args.kind === 'cancelled' ? bookingCancelledFlex({ ...input, reason: b.cancel_reason, byCustomer: args.byCustomer, by: args.by })
       : noShowFlex(input);
     const r = await push(cfg, to, [message]);
     await record(admin, b, 'partner', args.kind, r);

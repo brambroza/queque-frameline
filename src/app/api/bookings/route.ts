@@ -13,6 +13,7 @@ import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib
 import { safeNotifyDriverPush } from '@/lib/push/send';
 import { effectivePlate } from '@/lib/booking/plate';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
+import { SIGNATURE_BUCKET, SIGNATURE_PARTIES, decodeSignatureDataUrl, signatureColumns, signatureLogText, signatureObjectPath, type SignatureParty } from '@/lib/booking/signatures';
 
 /** Columns + joins the portal list, board and drawers render. */
 const BOOKING_SELECT =
@@ -232,7 +233,7 @@ export async function PATCH(req: Request) {
       if (reasonIssue) return NextResponse.json({ error: reasonIssue.message, code: 'cancel_reason_required' }, { status: 400 });
       return invalidPayload(parsed.error.issues);
     }
-    const { id, status, cancel_reason: cancelReason, service_minutes: serviceMinutes } = parsed.data;
+    const { id, status, cancel_reason: cancelReason, service_minutes: serviceMinutes, signatures } = parsed.data;
     const actor = actorFromRoles(roles);
 
     const { data: before } = await supabase
@@ -252,6 +253,31 @@ export async function PATCH(req: Request) {
     const settings = await getSiteSettings(supabase, profile.shop_id);
     let doNumber = (before.do_number as string | null) ?? null;
     let confirmedMinutes: number | null = null;
+
+    // Close sign-off: upload each party's PNG first (service role, private
+    // bucket), then stamp the paths in the same update as the status. Skipped
+    // parties leave their columns untouched; a stale update removes the objects.
+    const signed: Partial<Record<SignatureParty, { name: string }>> = {};
+    const signatureUpdate: Record<string, string> = {};
+    if (status === 'completed' && signatures) {
+      for (const party of SIGNATURE_PARTIES) {
+        const input = signatures[party];
+        if (!input) continue;
+        const bytes = decodeSignatureDataUrl(input.image);
+        if (!bytes) return NextResponse.json({ error: 'ลายเซ็นไม่ถูกต้อง', code: 'bad_signature' }, { status: 400 });
+        const objectPath = signatureObjectPath(profile.shop_id, id, party);
+        const { error: uploadError } = await admin.storage.from(SIGNATURE_BUCKET).upload(objectPath, bytes, { contentType: 'image/png', upsert: true });
+        if (uploadError) {
+          console.warn('[signature_upload_failed]', { id, party, reason: uploadError.message.slice(0, 120) });
+          return NextResponse.json({ error: 'บันทึกลายเซ็นไม่สำเร็จ ลองใหม่อีกครั้ง', code: 'signature_upload_failed' }, { status: 502 });
+        }
+        const cols = signatureColumns(party);
+        signatureUpdate[cols.path] = objectPath;
+        signatureUpdate[cols.name] = input.name;
+        signed[party] = { name: input.name };
+      }
+      if (Object.keys(signed).length > 0) signatureUpdate.signed_at = new Date().toISOString();
+    }
 
     if (isConfirmTransition(from, status)) {
       // Atomic in SQL: status + DO number in one statement, so a lost race never burns a number.
@@ -274,7 +300,7 @@ export async function PATCH(req: Request) {
         callCount: Number(before.call_count ?? 0),
         calledTimeoutMinutes: settings.called_timeout_minutes,
       });
-      const update: Record<string, unknown> = { status, updated_by: user.id, ...stamps };
+      const update: Record<string, unknown> = { status, updated_by: user.id, ...stamps, ...signatureUpdate };
       if (status === 'cancelled') update.cancel_reason = cancelReason ?? null;
       // Conditional on the status we read: two tablets pressing at once cannot both win.
       const { data: updated, error } = await supabase
@@ -286,9 +312,12 @@ export async function PATCH(req: Request) {
         .select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) {
+        const uploaded = Object.values(signatureUpdate).filter((v) => v.endsWith('.png'));
+        if (uploaded.length > 0) await admin.storage.from(SIGNATURE_BUCKET).remove(uploaded).catch(() => undefined);
         return NextResponse.json({ error: 'คิวนี้ถูกเปลี่ยนสถานะไปแล้ว กรุณารีเฟรช', code: 'stale' }, { status: 409 });
       }
     }
+    const signatureText = signatureLogText(signed);
 
     const queueLabel = String(before.queue_number ?? id);
     await logBooking(supabase, {
@@ -296,9 +325,9 @@ export async function PATCH(req: Request) {
       shopId: profile.shop_id,
       bookingId: id,
       action: status === 'cancelled' ? 'cancel' : 'status_change',
-      description: `${queueLabel}: ${from} → ${status}${isConfirmTransition(from, status) && doNumber ? ` · ${doNumber}` : ''}${confirmedMinutes ? ` · ${confirmedMinutes} นาทีที่ท่า` : ''}${status === 'cancelled' && cancelReason ? ` · ${cancelReason}` : ''}`,
+      description: `${queueLabel}: ${from} → ${status}${isConfirmTransition(from, status) && doNumber ? ` · ${doNumber}` : ''}${confirmedMinutes ? ` · ${confirmedMinutes} นาทีที่ท่า` : ''}${status === 'cancelled' && cancelReason ? ` · ${cancelReason}` : ''}${signatureText ? ` · ${signatureText}` : ''}`,
       from: { status: from },
-      to: { status, do_number: isConfirmTransition(from, status) ? doNumber : undefined, service_minutes: confirmedMinutes ?? undefined, cancel_reason: cancelReason },
+      to: { status, do_number: isConfirmTransition(from, status) ? doNumber : undefined, service_minutes: confirmedMinutes ?? undefined, cancel_reason: cancelReason, signed: Object.keys(signed).length ? signed : undefined },
       actorKind: actor,
       actorId: user.id,
     });
@@ -350,7 +379,7 @@ export async function PATCH(req: Request) {
       autoCalled = result.called.map((c) => c.queueNumber);
     }
 
-    return NextResponse.json({ data: { ok: true, status, do_number: doNumber, auto_called: autoCalled } });
+    return NextResponse.json({ data: { ok: true, status, do_number: doNumber, auto_called: autoCalled, signed: Object.keys(signed) } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }

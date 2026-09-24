@@ -2,7 +2,7 @@
 
 import { QrCode } from '@/components/ui/qr-code';
 import { CUSTOMER_PAYMENT_NOTICE } from '@/lib/booking/payment';
-import { PUBLIC_STATUS, longThaiDate, type PublicBooking } from './types';
+import { PUBLIC_STATUS, longThaiDate, thaiDateTimeAt, type PublicBooking } from './types';
 
 /** One queue as the customer / driver sees it: status, time, dock, plate, DO. */
 export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentPending }: { b: PublicBooking; showDriverLink?: boolean; /** SO not paid yet: the queue is held but cannot be confirmed. */ paymentPending?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. */ onShareDriver?: (b: PublicBooking) => void }) {
@@ -22,6 +22,13 @@ export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentP
       {st.hint ? <p className="mt-2 text-sm text-slate-600">{st.hint}</p> : null}
       {awaitingPayment ? (
         <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">{CUSTOMER_PAYMENT_NOTICE}</p>
+      ) : null}
+      {awaitingPayment && b.payment_due_at ? (
+        // Auto-cancel deadline; turns red once the warning went out.
+        <p className={`mt-2 rounded-xl border p-3 text-sm ${b.payment_warned_at ? 'border-red-300 bg-red-50 text-red-800' : 'border-amber-300 bg-amber-50 text-amber-900'}`} role="alert">
+          <span className="font-semibold">{b.payment_warned_at ? 'คิวกำลังจะถูกยกเลิก — ' : ''}ต้องชำระเงินภายใน {thaiDateTimeAt(b.payment_due_at)}</span>
+          {' '}หากยังไม่ได้รับการชำระเงิน ระบบจะยกเลิกคิวนี้อัตโนมัติ ชำระแล้วกรุณาแจ้งเจ้าหน้าที่ทันที
+        </p>
       ) : null}
       {b.status === 'cancelled' && b.cancel_reason ? (
         <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span className="font-semibold">เหตุผลที่ยกเลิก:</span> {b.cancel_reason}</p>

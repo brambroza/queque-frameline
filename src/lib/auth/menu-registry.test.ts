@@ -38,9 +38,9 @@ describe('resolveMenuAccess', () => {
   it('unions menus across roles and takes the highest level', () => {
     const access = resolveMenuAccess([
       { access_level: 'staff', menu_keys: ['queue_board'] },
-      { access_level: 'staff', menu_keys: ['documents'] },
+      { access_level: 'staff', menu_keys: ['sales_orders'] },
     ]);
-    expect(access).toEqual({ level: 'staff', menuKeys: ['documents', 'queue_board'] });
+    expect(access).toEqual({ level: 'staff', menuKeys: ['sales_orders', 'queue_board'] });
     expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'admin', menu_keys: null }]).level).toBe('admin');
   });
 

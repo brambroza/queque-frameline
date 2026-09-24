@@ -28,6 +28,12 @@ export type SiteSettings = {
   wait_notice_enabled: boolean;
   /** Minutes after the appointment start before that notice goes out (0 = at start). */
   wait_notice_minutes: number;
+  /** Cancel a customer-link queue on an unpaid SO when the payment is not recorded in time. */
+  unpaid_cancel_enabled: boolean;
+  /** Minutes from the booking before that cancel (never later than the appointment). */
+  unpaid_cancel_minutes: number;
+  /** Minutes before the deadline to warn the customer once (0 = no warning). */
+  unpaid_warn_minutes: number;
   auto_call_last_run_at: string | null;
 };
 
@@ -49,6 +55,9 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   minutes_per_item: 10,
   wait_notice_enabled: true,
   wait_notice_minutes: 5,
+  unpaid_cancel_enabled: false,
+  unpaid_cancel_minutes: 60,
+  unpaid_warn_minutes: 15,
   auto_call_last_run_at: null,
 };
 

@@ -11,7 +11,7 @@
 import type { AppRole } from '@/types/db';
 
 export type MenuKey =
-  | 'dashboard' | 'dock_queues' | 'documents' | 'calendar' | 'queue_board' | 'queue_display' | 'notifications'
+  | 'dashboard' | 'dock_queues' | 'sales_orders' | 'purchase_orders' | 'calendar' | 'queue_board' | 'queue_display' | 'notifications'
   | 'branches' | 'vehicle_types' | 'docks' | 'working_hours' | 'holidays' | 'staff' | 'partners'
   | 'reports' | 'site_settings' | 'line_settings' | 'api_keys' | 'settings' | 'translations';
 
@@ -36,7 +36,8 @@ export const MENU_GROUPS: Array<{ key: MenuGroupKey; titleKey: string; fallback:
 export const MENU_ITEMS: MenuItemDef[] = [
   { key: 'dashboard', href: '/portal/dashboard', labelKey: 'menu.dashboard', fallback: 'แดชบอร์ด', group: 'overview' },
   { key: 'dock_queues', href: '/portal/bookings', labelKey: 'menu.dock_queues', fallback: 'คิวรับ-ส่งสินค้า', group: 'overview' },
-  { key: 'documents', href: '/portal/documents', labelKey: 'menu.documents', fallback: 'เอกสาร SO / PO', group: 'overview' },
+  { key: 'sales_orders', href: '/portal/sales-orders', labelKey: 'menu.sales_orders', fallback: 'ใบสั่งขาย (SO)', group: 'overview' },
+  { key: 'purchase_orders', href: '/portal/purchase-orders', labelKey: 'menu.purchase_orders', fallback: 'ใบสั่งซื้อ (PO)', group: 'overview' },
   { key: 'calendar', href: '/portal/calendar', labelKey: 'menu.calendar', fallback: 'ปฏิทิน', group: 'overview' },
   { key: 'queue_board', href: '/portal/queue-board', labelKey: 'menu.queue_board', fallback: 'บอร์ดคิว', group: 'overview' },
   { key: 'queue_display', href: '/portal/queue-display', labelKey: 'menu.queue_display', fallback: 'จอแสดงคิว', group: 'overview' },
