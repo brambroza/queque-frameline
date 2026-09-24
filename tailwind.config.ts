@@ -29,6 +29,14 @@ const config: Config = {
           800: '#0b5937',
           900: '#0a482e',
           DEFAULT: 'var(--brand)'
+        },
+        // สีแบรนด์ Fameline (จาก fameline.com) — ใช้กับจอ TV หน้าลาน (`/display`)
+        fameline: {
+          green: '#002c1f',
+          'green-deep': '#00170f',
+          mint: '#aedbc0',
+          'mint-soft': '#d4eddf',
+          lime: '#adc32b'
         }
       },
       borderRadius: {

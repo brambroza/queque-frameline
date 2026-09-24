@@ -10,6 +10,7 @@ import { actorFromRoles, dockErrorResponse, getSiteSettings, logBooking, resolve
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
 import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { safeNotifyDriverPush } from '@/lib/push/send';
 import { effectivePlate } from '@/lib/booking/plate';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 
@@ -330,6 +331,7 @@ export async function PATCH(req: Request) {
       await safeNotifyDriver(admin, { ...lineArgs, kind: 'job' });
     } else if (status === 'called') {
       await safeNotifyDriver(admin, { ...lineArgs, kind: 'called' });
+      await safeNotifyDriverPush(admin, { ...lineArgs, kind: 'called' });
       await safeNotifyPartner(admin, { ...lineArgs, kind: 'called' });
     } else if (status === 'checked_in' && from !== 'called') {
       await safeNotifyStaffGroup(admin, { ...lineArgs, event: { kind: 'arrived', queueNo: queueLabel, plate: effectivePlate(before) || '-', dock: (before.resource_name as string | null) ?? null, by: 'staff' } });

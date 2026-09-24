@@ -5,6 +5,7 @@ import { PLATE_FORMAT_INFO, formatPlateInput, matchesPlateFormat, toPlateFormat,
 import { BookingCard } from './booking-card';
 import { LineBanner, type LineMeta } from './line-banner';
 import { useLiffBind } from './use-liff-bind';
+import { VehicleEditForm, type VehicleEditValues } from './vehicle-edit-form';
 import { longThaiDate, shortThaiDate, type PublicBooking, type PublicItem } from './types';
 
 type Meta = {
@@ -49,6 +50,9 @@ export function BookingClient({ token }: { token: string }) {
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Queue whose plate / driver form is open on the status page. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const lineBind = useLiffBind(meta?.line?.liff_id, `${api}/line-link`);
 
   const loadMeta = useCallback(async (silent = false) => {
@@ -152,6 +156,26 @@ export function BookingClient({ token }: { token: string }) {
     liff.shareTargetPicker([{ type: 'text', text }]).catch(() => undefined);
   }
 
+  /** Plate / driver change from the status page; the warehouse is notified server-side. */
+  async function changeVehicle(b: PublicBooking, values: VehicleEditValues) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`${api}/vehicle`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ booking_id: b.id, ...values }) });
+      const j = (await res.json().catch(() => ({}))) as { data?: { changed?: boolean }; error?: string };
+      if (!res.ok) { setError(j.error ?? 'บันทึกไม่สำเร็จ กรุณาลองใหม่'); await loadMeta(true); return; }
+      setEditingId(null);
+      setNotice(j.data?.changed ? `บันทึกแล้ว — แจ้งคลังเรื่องรถ/คนขับของคิว ${b.queue_number} แล้ว` : 'ข้อมูลรถ/คนขับเหมือนเดิม ไม่มีอะไรเปลี่ยน');
+      await loadMeta(true);
+    } catch {
+      setError('เชื่อมต่อไม่ได้ กรุณาลองใหม่');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancel(b: PublicBooking) {
     if (busy) return;
     // Tailwind page without the MUI confirm provider — native confirm is deliberate here.
@@ -208,13 +232,28 @@ export function BookingClient({ token }: { token: string }) {
       ) : null}
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{error}</div> : null}
+      {notice && step === 'status' ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800" role="status">{notice}</div> : null}
 
       {step === 'status' ? (
         <>
           {meta.bookings.length === 0 ? <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">ยังไม่มีคิวสำหรับเอกสารนี้</p> : null}
           {meta.bookings.map((b) => (
             <BookingCard key={b.id} b={b} showDriverLink paymentPending={meta.payment?.pending} onShareDriver={lineBind.liff?.shareTargetPicker && lineBind.state.phase === 'bound' ? shareDriver : undefined}
-              footer={b.cancellable ? <button type="button" disabled={busy} onClick={() => void cancel(b)} className="mt-4 min-h-[44px] w-full rounded-xl border border-red-200 text-sm font-medium text-red-700 active:bg-red-50">ยกเลิกคิวนี้</button> : null} />
+              footer={
+                b.vehicle_editable || b.cancellable ? (
+                  <>
+                    {b.vehicle_editable && editingId === b.id ? (
+                      <VehicleEditForm key={`${b.id}-${b.plate_number ?? ''}-${b.driver_name ?? ''}-${b.driver_phone ?? ''}`} b={b} busy={busy} onSubmit={(v) => changeVehicle(b, v)} onCancel={() => setEditingId(null)} />
+                    ) : null}
+                    <div className="mt-4 grid gap-2">
+                      {b.vehicle_editable && editingId !== b.id ? (
+                        <button type="button" disabled={busy} onClick={() => { setError(null); setNotice(null); setEditingId(b.id); }} className="min-h-[44px] w-full rounded-xl border border-emerald-300 text-sm font-medium text-emerald-800 active:bg-emerald-50">เปลี่ยนทะเบียนรถ / คนขับ</button>
+                      ) : null}
+                      {b.cancellable ? <button type="button" disabled={busy} onClick={() => void cancel(b)} className="min-h-[44px] w-full rounded-xl border border-red-200 text-sm font-medium text-red-700 active:bg-red-50">ยกเลิกคิวนี้</button> : null}
+                    </div>
+                  </>
+                ) : null
+              } />
           ))}
           {meta.open ? (
             <button type="button" className={meta.bookings.some((b) => LIVE.has(b.status)) ? btnGhost : btnPrimary} onClick={() => { setError(null); setStep('vehicle'); }}>

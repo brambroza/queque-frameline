@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { PUBLIC_BOOKING_SELECT, resolveBookingToken } from '@/lib/public/resolve';
 import { getSiteSettings } from '@/lib/booking/server';
 import { toBangkokStamp } from '@/lib/booking/slot-time';
-import { CUSTOMER_CANCELLABLE_STATUSES } from '@/lib/booking/status-flow';
+import { CUSTOMER_CANCELLABLE_STATUSES, canCustomerEditVehicle } from '@/lib/booking/status-flow';
 import { deriveLinkToken } from '@/lib/tokens';
 import { driverUrl } from '@/lib/links';
 import { addFriendUrl, getLineConfig } from '@/lib/line/config';
@@ -64,6 +64,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         bookings: ((bookings ?? []) as unknown as Array<Record<string, unknown>>).map(({ driver_token_version, driver_token_hash, ...b }) => ({
           ...b,
           cancellable: (CUSTOMER_CANCELLABLE_STATUSES as readonly string[]).includes(String(b.status)),
+          vehicle_editable: canCustomerEditVehicle(String(b.status)),
           // The customer forwards this to their driver once the queue is confirmed.
           driver_url: b.do_number && driver_token_hash ? driverUrl(deriveLinkToken('driver', String(b.id), Number(driver_token_version ?? 0))) : null,
         })),

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, Chip, Paper, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { alpha, keyframes, type Theme } from '@mui/material/styles';
 import AutoModeRoundedIcon from '@mui/icons-material/AutoModeRounded';
 import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -12,9 +13,49 @@ import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
 import { ApproveDialog, PaymentChip, isPaymentBlocked, paymentOf } from './booking-action-dialogs';
-import { DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type BookingRow, type NextStatusOption } from './booking-types';
+import type { StatusPaletteKey } from '@/lib/booking/status-meta';
+import { BOARD_CARD_TONE, DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type BookingRow, type NextStatusOption } from './booking-types';
 
 const POLL_MS = 15_000;
+
+/** Soft ring that breathes on cards currently being called, so the yard notices them. */
+const calledPulse = keyframes`
+  0% { box-shadow: 0 0 0 0 var(--pulse-color); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+`;
+
+/** Main colour of a status tone; `default` maps to a neutral grey so every tone resolves. */
+function toneMain(theme: Theme, tone: StatusPaletteKey): string {
+  return tone === 'default' ? theme.palette.grey[500] : theme.palette[tone].main;
+}
+
+/** Darker shade of a tone for text sitting on its tinted background. */
+function toneDark(theme: Theme, tone: StatusPaletteKey): string {
+  return tone === 'default' ? theme.palette.text.secondary : theme.palette[tone].dark;
+}
+
+/** Tinted surface + coloured edge per status so each stage reads at a glance. */
+function cardSx(theme: Theme, status: string) {
+  const tone = BOARD_CARD_TONE[status] ?? 'default';
+  const main = toneMain(theme, tone);
+  const muted = status === 'completed';
+  return {
+    p: 1.25,
+    borderRadius: 1.5,
+    borderColor: alpha(main, muted ? 0.25 : 0.45),
+    borderLeft: 4,
+    borderLeftColor: main,
+    bgcolor: muted ? theme.palette.background.paper : alpha(main, 0.07),
+    opacity: muted ? 0.85 : 1,
+    transition: theme.transitions.create(['box-shadow', 'transform'], { duration: theme.transitions.duration.shorter }),
+    '&:hover': { boxShadow: `0 4px 14px ${alpha(main, 0.22)}`, transform: 'translateY(-1px)' },
+    ...(status === 'called'
+      ? { '--pulse-color': alpha(main, 0.45), animation: `${calledPulse} 2s ease-out infinite` }
+      : {}),
+    ...(status === 'serving' ? { borderStyle: 'solid', boxShadow: `inset 0 0 0 1px ${alpha(main, 0.25)}` } : {}),
+  };
+}
 
 type SiteInfo = { auto_call_mode: string; auto_call_last_run_at: string | null; item_minutes_enabled?: boolean; minutes_per_item?: number };
 type PatchResponse = { error?: string; code?: string; data?: { auto_called?: string[]; do_number?: string | null } };
@@ -154,10 +195,35 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         {QUEUE_COLUMNS.map((col) => {
           const items = visible.filter((r) => (col.statuses as string[]).includes(r.status));
           return (
-            <Paper key={col.key} variant="outlined" component="section" sx={{ p: 1.5, minHeight: 160, bgcolor: 'background.default' }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                <Typography variant="subtitle2" fontWeight={700}>{col.label}</Typography>
-                <Chip size="small" label={items.length} />
+            <Paper
+              key={col.key}
+              variant="outlined"
+              component="section"
+              sx={(theme) => {
+                const main = toneMain(theme, col.tone);
+                return {
+                  p: 1.5,
+                  minHeight: 160,
+                  borderRadius: 2,
+                  borderTop: 3,
+                  borderTopColor: main,
+                  bgcolor: col.tone === 'default' ? theme.palette.background.default : alpha(main, 0.035),
+                };
+              }}
+            >
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.25 }}>
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <Box sx={(theme) => ({ width: 8, height: 8, borderRadius: '50%', bgcolor: toneMain(theme, col.tone), flexShrink: 0 })} />
+                  <Typography variant="subtitle2" fontWeight={700}>{col.label}</Typography>
+                </Stack>
+                <Chip
+                  size="small"
+                  label={items.length}
+                  sx={(theme) => {
+                    const main = toneMain(theme, col.tone);
+                    return { fontWeight: 700, bgcolor: alpha(main, 0.14), color: toneDark(theme, col.tone) };
+                  }}
+                />
               </Stack>
               <Stack spacing={1}>
                 {loading ? <Skeleton variant="rounded" height={84} /> : null}
@@ -166,9 +232,23 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                   const options = (NEXT_STATUSES[r.status] ?? []).filter((o) => !o.adminOnly || isAdmin);
                   const dir = DIRECTION_META[r.direction] ?? DIRECTION_META.outbound;
                   return (
-                    <Paper key={r.id} variant="outlined" component="article" sx={{ p: 1.25, borderLeft: 4, borderLeftColor: `${dir.palette}.main` }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-                        <Typography fontWeight={800}>{r.queue_number}</Typography>
+                    <Paper key={r.id} variant="outlined" component="article" sx={(theme) => cardSx(theme, r.status)}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Stack direction="row" spacing={0.75} alignItems="center">
+                          <Typography fontWeight={800}>{r.queue_number}</Typography>
+                          <Chip
+                            size="small"
+                            label={dir.short}
+                            sx={(theme) => ({
+                              height: 18,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              bgcolor: alpha(toneMain(theme, dir.palette), 0.12),
+                              color: toneDark(theme, dir.palette),
+                              '& .MuiChip-label': { px: 0.75 },
+                            })}
+                          />
+                        </Stack>
                         <Typography variant="caption" color="text.secondary">{hhmm(r.start_time)}{r.end_time ? `–${hhmm(r.end_time)}` : ''}</Typography>
                       </Stack>
                       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.25 }}>

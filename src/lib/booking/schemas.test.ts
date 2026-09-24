@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { bookingDurationSchema, bookingStatusPatchSchema, documentPaymentSchema, rescheduleSchema } from './schemas';
+import { bookingDurationSchema, bookingStatusPatchSchema, customerVehicleChangeSchema, documentPaymentSchema, rescheduleSchema } from './schemas';
+
+describe('customerVehicleChangeSchema', () => {
+  const id = '22222222-2222-4222-8222-222222222222';
+  it('accepts a plate with optional driver, blanks become undefined', () => {
+    const r = customerVehicleChangeSchema.safeParse({ booking_id: id, plate_number: '70-1234', driver_name: '', driver_phone: '' });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.driver_name).toBeUndefined();
+      expect(r.data.driver_phone).toBeUndefined();
+    }
+  });
+  it('rejects an implausible plate or a bad phone', () => {
+    expect(customerVehicleChangeSchema.safeParse({ booking_id: id, plate_number: 'ab' }).success).toBe(false);
+    expect(customerVehicleChangeSchema.safeParse({ booking_id: id, plate_number: '70-1234', driver_phone: '12' }).success).toBe(false);
+    expect(customerVehicleChangeSchema.safeParse({ booking_id: 'nope', plate_number: '70-1234' }).success).toBe(false);
+  });
+});
 
 describe('rescheduleSchema', () => {
   const base = { booking_date: '2026-09-22', start_time: '14:00' };

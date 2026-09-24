@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALLOWED_TRANSITIONS,
+  canCustomerEditVehicle,
   canTransition,
   freesDock,
   isArrivalTransition,
@@ -56,6 +57,11 @@ describe('canTransition', () => {
     expect(canTransition('late', 'cancelled', 'customer')).toEqual({ ok: true });
     expect(canTransition('checked_in', 'cancelled', 'customer')).toEqual({ ok: false, reason: 'not_customer_cancellable' });
     expect(canTransition('confirmed', 'checked_in', 'customer')).toEqual({ ok: false, reason: 'not_customer_cancellable' });
+  });
+
+  it('lets a customer change plate / driver only before the gate checks the truck in', () => {
+    for (const s of ['pending', 'confirmed', 'late']) expect(canCustomerEditVehicle(s)).toBe(true);
+    for (const s of ['checked_in', 'called', 'serving', 'completed', 'cancelled', 'no_show', 'waiting']) expect(canCustomerEditVehicle(s)).toBe(false);
   });
 
   it('limits the system to sweep + auto-call moves', () => {

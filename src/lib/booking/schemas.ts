@@ -134,6 +134,18 @@ export const plateChangeSchema = z.object({
   reason: optionalText(300),
 });
 
+/**
+ * Customer changes the vehicle / driver of one of their queues from the
+ * booking link (before the truck is checked in). The booked plate itself is
+ * replaced — this is not the gate correction (`plateChangeSchema`).
+ */
+export const customerVehicleChangeSchema = z.object({
+  booking_id: z.string().uuid(),
+  plate_number: plateSchema,
+  driver_name: optionalText(120),
+  driver_phone: z.preprocess(emptyToUndefined, phoneSchema.optional()),
+});
+
 export const rescheduleSchema = z.object({
   booking_date: isoDateSchema,
   start_time: slotTimeSchema,

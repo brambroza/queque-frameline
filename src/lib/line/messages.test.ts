@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex,
+  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex,
   driverJobFlex, noShowFlex, staffGroupText, thaiDate,
 } from './messages';
 
@@ -32,6 +32,8 @@ describe('flex builders', () => {
       bookingRescheduledFlex({ ...booking, prevDate: '2026-09-20', prevTime: '09:00' }),
       bookingCancelledFlex({ ...booking, reason: 'รถเสีย', byCustomer: true }),
       noShowFlex(booking),
+      bookingLateFlex({ ...booking, graceMinutes: 30, autoNoShow: true, who: 'driver' }),
+      bookingLateFlex({ ...booking, driverUrl: null, graceMinutes: 30, autoNoShow: false, who: 'partner' }),
     ];
     for (const m of all) {
       expect(m.type).toBe('flex');
@@ -71,6 +73,17 @@ describe('staff group text', () => {
     expect(staffGroupText({ kind: 'payment_cleared', docNo: 'SO-9', partner: 'บจก. เอ', queues: ['R-001', 'R-002'], status: 'ชำระแล้ว' }).text).toContain('R-001, R-002 รออนุมัติ');
     expect(staffGroupText({ kind: 'plate_mismatch', queueNo: 'R-1', booked: 'A', actual: 'B' }).text).toContain('มาจริง B');
     expect(staffGroupText({ kind: 'arrived', queueNo: 'R-1', plate: 'X', dock: null, by: 'driver' }).text).toContain('คนขับเช็คอินเอง');
+  });
+
+  it('lists only the parts the customer changed', () => {
+    const base = { kind: 'vehicle_changed' as const, queueNo: 'R-3', partner: 'บจก. บี', date: '2026-09-25', time: '09:00:00' };
+    const plateOnly = staffGroupText({ ...base, plate: { from: '701234', to: '715555' }, driver: null }).text;
+    expect(plateOnly).toContain('ทะเบียน 701234 → 715555');
+    expect(plateOnly.split('\n')).toHaveLength(3);
+    expect(plateOnly.split('\n').filter((l) => l.startsWith('คนขับ'))).toHaveLength(0);
+    const both = staffGroupText({ ...base, plate: { from: 'A', to: 'B' }, driver: { from: '-', to: 'ก้อง · 0811111111' } }).text;
+    expect(both).toContain('คนขับ - → ก้อง · 0811111111');
+    expect(both).toContain('09:00');
   });
 });
 

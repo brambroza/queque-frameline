@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
 import { BookingCard } from './booking-card';
 import { LineBanner, type LineMeta } from './line-banner';
+import { AlertsBanner } from './alerts-banner';
 import { useLiffBind } from './use-liff-bind';
+import { useDriverAlerts } from './use-driver-alerts';
+import { TERMINAL_STATUSES } from '@/lib/booking/status-flow';
 import type { PublicBooking } from './types';
 
 type DriverData = {
@@ -15,6 +18,8 @@ type DriverData = {
   check_in_radius_m?: number | null;
   early_arrival_minutes: number;
   grace_minutes: number;
+  auto_no_show_after_grace?: boolean;
+  push?: { enabled: boolean; public_key: string | null };
   line?: LineMeta;
 };
 
@@ -46,6 +51,8 @@ export function DriverClient({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const lineBind = useLiffBind(data?.line?.liff_id, `${api}/line-link`);
+  const alerts = useDriverAlerts(api);
+  const { observe } = alerts;
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -53,12 +60,20 @@ export function DriverClient({ token }: { token: string }) {
       const j = (await res.json()) as { data?: DriverData; error?: string };
       if (!res.ok || !j.data) { if (!silent) setFatal(j.error ?? 'เปิดลิงก์ไม่สำเร็จ'); return; }
       setData(j.data);
+      observe(j.data.booking, j.data.push?.public_key);
     } catch {
       if (!silent) setFatal('เชื่อมต่อไม่ได้ กรุณาลองใหม่');
     }
-  }, [api]);
+  }, [api, observe]);
 
   useEffect(() => { void load(); const id = setInterval(() => void load(true), POLL_MS); return () => clearInterval(id); }, [load]);
+
+  // Coming back to the tab (screen unlocked, app switched) should not wait for the next tick.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(true); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
 
   async function arrive() {
     if (busy) return;
@@ -116,11 +131,20 @@ export function DriverClient({ token }: { token: string }) {
         </header>
 
         <LineBanner line={data.line} state={lineBind.state} viaLine={lineBind.viaLine} path={`/driver/${encodeURIComponent(token)}`} who="driver" />
+        {!(TERMINAL_STATUSES as readonly string[]).includes(b.status) ? (
+          <AlertsBanner state={alerts.state} lineBound={lineBind.state.phase === 'bound' || Boolean(data.line?.linked_name)} onEnable={() => void alerts.enable()} onDisable={() => void alerts.disable()} />
+        ) : null}
 
         {b.status === 'called' ? (
           <div className="rounded-2xl bg-sky-600 p-5 text-center text-white" role="status">
-            <p className="text-sm">ถึงคิวของคุณแล้ว</p>
+            <p className="text-sm">ถึงคิวของคุณแล้ว{(b.call_count ?? 1) > 1 ? ` (เรียกครั้งที่ ${b.call_count})` : ''}</p>
             <p className="text-3xl font-extrabold">เชิญเข้า{b.resource_name ?? 'ท่า'}</p>
+          </div>
+        ) : null}
+        {b.status === 'late' ? (
+          <div className="rounded-2xl border border-orange-300 bg-orange-50 p-4 text-orange-900" role="status">
+            <p className="font-semibold">เลยเวลานัด {b.start_time.slice(0, 5)} น. แล้ว — ยังเข้าได้</p>
+            <p className="mt-1 text-sm">{data.auto_no_show_after_grace ? `ต้องมาถึงและเช็คอินภายใน ${data.grace_minutes} นาที ไม่เช่นนั้นระบบจะปิดคิวอัตโนมัติ` : 'กรุณารีบมาถึงคลัง หรือติดต่อเจ้าหน้าที่หากต้องการเลื่อนคิว'}</p>
           </div>
         ) : null}
 

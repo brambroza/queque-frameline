@@ -5,7 +5,8 @@ import { computeOverdueMoves } from '@/lib/booking/overdue';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { addDaysIso, toBangkokStamp } from '@/lib/booking/slot-time';
-import { safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { safeNotifyDriverPush } from '@/lib/push/send';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,10 @@ export async function GET(req: Request) {
         await safeNotifyPartner(admin, { shopId: site.shopId, bookingId: m.id, kind: 'no_show' });
         await safeNotifyStaffGroup(admin, { shopId: site.shopId, bookingId: m.id, event: { kind: 'no_show', queueNo, partner, date: String(row?.booking_date ?? today), time: String(row?.start_time ?? '') } });
       } else if (m.to === 'late') {
+        // The truck is overdue: tell the driver (LINE + browser push) and the customer / supplier, then the team.
+        await safeNotifyDriver(admin, { shopId: site.shopId, bookingId: m.id, kind: 'late' });
+        await safeNotifyDriverPush(admin, { shopId: site.shopId, bookingId: m.id, kind: 'late' });
+        await safeNotifyPartner(admin, { shopId: site.shopId, bookingId: m.id, kind: 'late' });
         await safeNotifyStaffGroup(admin, { shopId: site.shopId, bookingId: m.id, event: { kind: 'late', queueNo, partner, time: String(row?.start_time ?? '') } });
       }
     }

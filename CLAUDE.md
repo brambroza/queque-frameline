@@ -173,7 +173,8 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - Token = `HMAC-SHA256(TOKEN_SECRET, kind:id:version)` (`deriveLinkToken` ใน `src/lib/tokens.ts`) — DB เก็บ **sha256 + version เท่านั้น** จึงแสดงลิงก์/QR เดิมซ้ำได้โดยไม่เก็บ raw; regenerate = version+1 (ลิงก์เก่าตาย)
 - ลิงก์คนขับออกอัตโนมัติตอนยืนยันคิว (`ensureDriverLink`, `src/lib/booking/driver-link.ts`)
 - Resolver: `src/lib/public/resolve.ts` — public route ต้อง resolve token ก่อน แล้ว scope ทุก query ด้วย `shop_id` ของ row นั้น
-- Public API: `/api/public/book/[token]/{meta,days,slots,submit,cancel}`, `/api/public/driver/[token]`, `/api/public/display` — 404 เมื่อ token ผิด, 410 เมื่อหมดอายุ
+- Public API: `/api/public/book/[token]/{meta,days,slots,submit,cancel,vehicle}`, `/api/public/driver/[token]`, `/api/public/display` — 404 เมื่อ token ผิด, 410 เมื่อหมดอายุ
+- **ลูกค้าเปลี่ยนทะเบียน/คนขับเอง (2026-09-24):** หน้า `/book/[token]` (รวมเปิดผ่าน LIFF) ปุ่ม "เปลี่ยนทะเบียนรถ / คนขับ" ใต้การ์ดคิว → `VehicleEditForm` (`src/components/public-booking/vehicle-edit-form.tsx`) → `PATCH …/vehicle` (`customerVehicleChangeSchema`): ตรวจว่าคิวเป็นของเอกสารที่ token เปิด, สถานะต้องอยู่ใน `CUSTOMER_VEHICLE_EDITABLE_STATUSES` = pending|confirmed|late (`canCustomerEditVehicle`; เช็คอินแล้ว = 409 `not_editable` ให้แจ้งป้อมยาม), ทะเบียนต้องตรง `plate_format` ของประเภทรถ (`services(plate_format)` อยู่ใน `PUBLIC_BOOKING_SELECT`), update แบบ optimistic `where status = <เดิม>`; diff pure ใน `src/lib/booking/vehicle-change.ts` (vitest) — เปลี่ยน **`plate_number` ที่จอง** (ไม่ใช่ `plate_number_actual` ของป้อมยาม; ถ้า actual เดิมตรงกับทะเบียนใหม่จะล้าง actual), พิมพ์ทะเบียนเดิมต่างรูปแบบ = ไม่นับเป็นเปลี่ยน; แจ้งคลัง 3 ทาง: `booking_logs` action `vehicle_change` (actor customer), notification `booking_vehicle_changed` (priority high ถ้าคิว confirmed/late เพราะ DO ออกแล้ว), LINE กลุ่มทีม `vehicle_changed`; ไม่ออก DO ใหม่/ไม่เปลี่ยนลิงก์คนขับ (ลิงก์เดิมผูกกับคิว ลูกค้าส่งต่อให้คนขับคนใหม่ได้เลย)
 - ห้าม log raw token / raw API key
 
 ---
@@ -234,6 +235,8 @@ export async function POST(req: Request) {
 ### Public pages (`/book`, `/driver`, `/display`)
 - Tailwind, mobile-first, ไม่มี MUI provider
 - ห้ามเรียก `createAdminClient()` โดยไม่ resolve token ก่อน
+- **จอ TV `/display` (2026-09-23) = 2 ช่อง** สีแบรนด์ Fameline (`tailwind.config.ts` → `fameline.green #002c1f / mint #aedbc0 / mint-soft / lime #adc32b`, จาก fameline.com): ซ้าย `YardScene` (`src/components/display/yard-scene.tsx`) = SVG ผังลานมุมสูงจาก feed เดียวกัน — ประตูท่าละช่อง (ลาย idle / มินต์ serving / มะนาวกะพริบ called), รถถอยเข้าท่า + badge เลขคิว/ทะเบียน, "ลานรอเรียก" ต่อแถวตามลำดับ (cap 6 + `+N`); กติกา pure ใน `src/lib/display/yard.ts` (`truckKind` จากชื่อประเภทรถ, `sceneLayout`; vitest) — ขวา = tile ท่า (1 คอลัมน์ ≤2 ท่า, 2 คอลัมน์ 3–4) + รายการรอเรียกเดิม; header ใช้ `site.logo_url` ถ้ามี ไม่มีก็ badge "F" + wordmark FAMELINE
+- Capture ภาพ proposal: `node docs/proposal/capture_display.mjs` (dev server รันอยู่; `APP_URL` ถ้าไม่ใช่ :3000) — mock `/api/public/display` ด้วย fixture ในไฟล์ → `09-display-tv.png` / `09b-display-tv-waiting.png` 1600×900 @2x, Playwright จาก npx cache (`PLAYWRIGHT_CORE` override)
 
 ### Import Alias
 ```ts
@@ -266,7 +269,7 @@ import { xxx } from '../../lib/...';  // ผิด
 
 - ตั้งค่าที่ `/portal/line-settings` → ตาราง `line_config` (token/secret/LIFF ID/Login channel ID/OA id/กลุ่ม/switch) env `LINE_*` เป็น fallback (`getLineConfig` ใน `src/lib/line/config.ts`)
 - **Bind ผ่านลิงก์เดิม:** ลิงก์แบบ LINE = `https://liff.line.me/{liff_id}/book/{token}?via=line` (`liffUrl`) · LIFF endpoint = root `/` → `src/app/page.tsx` เห็น `?liff.state` แล้ว render `LiffGate` ให้ SDK redirect ไป path → หน้า `/book`,`/driver` เห็น `?via=line` → `useLiffBind` (`src/components/public-booking/use-liff-bind.ts`) init/login/getIDToken → `POST …/line-link` → `bindLineUser` (`src/lib/line/bind.ts`) verify ID token กับ Login channel → upsert `line_users` → เขียน `customers.line_user_id` + `bookings.line_user_id` (ลูกค้า) หรือ `bookings.driver_line_user_id` (คนขับ)
-- **Push:** `src/lib/line/notify.ts` — `safeNotifyPartner` (submitted/confirmed/called/rescheduled/cancelled/no_show), `safeNotifyDriver` (job/called), `safeNotifyStaffGroup` (submitted/customer_cancelled/arrived/plate_mismatch/no_show/late/auto_called) — ไม่ throw, บันทึก `booking_logs` action `line_push`, stamp `bookings.last_line_notify_at` Flex ใน `messages.ts` (pure + vitest)
+- **Push:** `src/lib/line/notify.ts` — `safeNotifyPartner` (submitted/confirmed/called/rescheduled/cancelled/no_show), `safeNotifyDriver` (job/called), `safeNotifyStaffGroup` (submitted/customer_cancelled/arrived/plate_mismatch/vehicle_changed/no_show/late/auto_called) — ไม่ throw, บันทึก `booking_logs` action `line_push`, stamp `bookings.last_line_notify_at` Flex ใน `messages.ts` (pure + vitest)
 - **Webhook** `POST /api/line/webhook`: ตรวจลายเซ็น, `follow` → welcome + upsert, `join` → วิธีลงทะเบียน, ข้อความ `ลงทะเบียนกลุ่ม` ในกลุ่ม → เก็บ `staff_group_id`, ข้อความ 1:1 → help ทุก event ลง `line_events` ยังไม่ตั้งค่า = ตอบ 200 เปล่า (ให้ปุ่ม Verify ผ่าน)
 - **Hard limits:** ห้าม log token/secret, ห้ามเชื่อ `line_user_id` จาก request (ต้องมาจาก ID token เท่านั้น), push ทุกจุดต้องผ่าน `safeNotify*`
 - ค่าใช้จ่าย: แผนฟรี 200 ข้อความ/เดือน (push + กลุ่ม) — reply ไม่นับ
@@ -281,7 +284,18 @@ import { xxx } from '../../lib/...';  // ผิด
 ## Notification System
 
 `safeCreateNotification(supabase, {...})` (`src/lib/notifications/createNotification.ts`) = notification center ของ **staff/admin** เท่านั้น ไม่ throw
-ลูกค้า/คนขับไม่มี push — ดูสถานะจากหน้าลิงก์ของตัวเอง (poll)
+ลูกค้าดูสถานะจากหน้าลิงก์ของตัวเอง (poll) + LINE ถ้าผูกไว้ · คนขับมี 3 ช่องทาง: poll หน้าลิงก์, LINE, **Web Push บนเบราว์เซอร์** (ด้านล่าง)
+
+### Driver browser alerts / Web Push (2026-09-24, `202609240003_push_subscriptions`)
+
+- ทางเลือกสำหรับคนขับที่ไม่ใช้ LINE: หน้า `/driver/[token]` มีแถบ `AlertsBanner` ปุ่ม "เปิดแจ้งเตือน" → `useDriverAlerts` (`src/components/public-booking/use-driver-alerts.ts`) ขอ `Notification.requestPermission` + ปลดล็อกเสียง (WebAudio, ต้องอยู่ใน tap) + ถ้าเบราว์เซอร์รองรับ Push API → register `public/sw.js` (scope `/driver/`, ไม่มี fetch handler) → `pushManager.subscribe(VAPID public key จาก meta)` → `POST /api/public/driver/[token]/push` upsert `push_subscriptions` บน `(booking_id, endpoint)`; `DELETE` = ปิดบนเครื่องนี้; จำสถานะเปิดใน `localStorage` `fameline.alerts.<bookingId>` (try/catch) แล้ว re-sync subscription ตอนเปิดหน้าใหม่
+- **2 ชั้น**: (1) in-page — poll ทุก 10 วิ + refetch ตอน `visibilitychange` เห็นสถานะเปลี่ยน → `alertKindForChange` (`src/lib/push/driver-alerts.ts`, pure + vitest: called รวมเรียกซ้ำเมื่อ `call_count` เพิ่ม, late, cancelled, no_show) → สั่น + เสียง + `reg.showNotification` (Android Chrome ห้าม `new Notification()` ในหน้า จึงใช้ SW เมื่อมี) (2) server push — `safeNotifyDriverPush(admin, { shopId, bookingId, kind })` (`src/lib/push/send.ts`, `web-push`, TTL 15 นาที, urgency high, ไม่ throw, log `booking_logs` action `web_push`, 404/410 = soft-delete subscription) เรียกที่ `runAutoCall` + `PATCH /api/bookings` (called) + cron (late); ทั้ง 2 ชั้นใช้ `driverAlert()` เดียวกัน → `tag` เดียวกัน OS แทนที่ไม่ซ้อน
+- env `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (`src/lib/push/config.ts`, `npx web-push generate-vapid-keys`); ไม่ตั้ง = meta คืน `push.enabled=false`, ปุ่มยังเปิดได้แต่แจ้งเฉพาะตอนเปิดหน้าอยู่; private key ไม่ออกจาก server, endpoint เป็น capability URL ห้าม log
+- ข้อจำกัด: iOS Safari ต้อง "เพิ่มไปยังหน้าจอโฮม" ก่อน (แถบบอกวิธี; ยังไม่มี manifest/PWA — ถ้าจะทำต้องเพิ่ม `manifest` ไม่ใส่ `start_url`); เบราว์เซอร์ throttle poll ตอนอยู่เบื้องหลัง — ชั้น server push คือตัวจริง
+
+### แจ้งคิวช้ากว่ากำหนด (late)
+
+cron `confirmed→late` → LINE คนขับ + Web Push คนขับ (`kind: 'late'`) + LINE ลูกค้า/supplier (`bookingLateFlex`, `who: 'driver'|'partner'` — บอกเวลานัด, ยังเข้าได้, เหลือ `grace_minutes` นาทีก่อนปิดคิวถ้า `auto_no_show_after_grace`) + LINE กลุ่มทีมคลัง (เดิม); หน้า `/driver` มีแถบส้ม "เลยเวลานัด" (meta ส่ง `auto_no_show_after_grace`); **ไม่**ลง notification center ของ staff (ตัดสินใจ 2026-09-24 — กลุ่ม LINE พอ)
 
 ---
 
@@ -299,6 +313,7 @@ import { xxx } from '../../lib/...';  // ผิด
 | `DISPLAY_KEY` | optional | บังคับ `/display?key=` |
 | `SMTP_*` | optional | อีเมลขาออก (feedback; DO / ลิงก์ในอนาคต) — Gmail: `smtp.gmail.com` 587 + App Password |
 | `FEEDBACK_TO_EMAIL` | feedback | ผู้รับรายงาน bug/ข้อเสนอแนะจากปุ่มลอย (ไม่ตั้ง = เก็บ DB อย่างเดียว) |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | optional | Web Push ให้คนขับที่ไม่ใช้ LINE (`npx web-push generate-vapid-keys`; ไม่ตั้ง = แจ้งเฉพาะตอนเปิดหน้า) |
 
 ---
 
@@ -343,6 +358,7 @@ Quality gate ก่อน commit: `npm run typecheck && npm run lint && npm run 
   - E2E กับ Supabase จริง/ local stack (`supabase start`) — SQL ทดสอบบน Postgres 16 แล้ว, API/UI ผ่านแค่ typecheck + build
   - Integration API + หน้า API keys โค้ดเสร็จ 2026-09-23 (ดู section Integration) — ค้าง: รัน migration `202609230001` บน Supabase จริง, joint test กับ X++ job ของ Fameline, ยืนยัน `branches.code` = `InventSiteId` และกติกา paid ก่อน invoice กับ finance
   - Feedback FAB โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240002` (คอลัมน์ติดต่อกลับ; `202609240001` รันแล้ว) บน Supabase จริง, ตั้ง `SMTP_*` + `FEEDBACK_TO_EMAIL`, ทดสอบแคปหน้าจอบนเบราว์เซอร์จริง
+  - Driver Web Push + แจ้ง late โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240003_push_subscriptions` (ไม่รัน = `POST …/push` 500 แต่หน้า driver ยังใช้ได้), gen + ตั้ง `VAPID_*` บน Vercel, ทดสอบบน Android Chrome จริง (ปิดแท็บแล้วยังเด้ง) + iOS home-screen
   - Dashboard / Reports / Calendar ยังเป็นของ Queue (ใช้ได้ แต่ยังไม่มี KPI ตามท่า / direction, ยังอ้าง `customers.nickname`)
   - Dock lane view บนบอร์ดคิว, i18n keys ใหม่ (ตอนนี้ใช้ fallback ไทยในโค้ด), ลบคอลัมน์/ตารางมรดกที่ไม่ใช้
   - Vault secrets `cron_app_url` + `cron_secret` บน Supabase จริง (ไม่ตั้ง = auto-call ทำงานเฉพาะ event path)

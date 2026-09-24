@@ -51,6 +51,18 @@ export const LIVE_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 
 /** Statuses a customer may still cancel from their booking link. */
 export const CUSTOMER_CANCELLABLE_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 'late'];
 
+/**
+ * Statuses in which the customer may still change the vehicle / driver from
+ * their booking link. Once the truck is checked in the gate has verified the
+ * plate, so only staff may correct it from then on.
+ */
+export const CUSTOMER_VEHICLE_EDITABLE_STATUSES: readonly BookingStatus[] = ['pending', 'confirmed', 'late'];
+
+/** Whether the customer may change plate / driver for a booking in `status`. */
+export function canCustomerEditVehicle(status: string): boolean {
+  return (CUSTOMER_VEHICLE_EDITABLE_STATUSES as readonly string[]).includes(status);
+}
+
 /** Statuses from which the vehicle may be checked in at the gate. */
 export const CHECKIN_STATUSES: readonly BookingStatus[] = ['confirmed', 'late'];
 

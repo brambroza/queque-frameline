@@ -8,19 +8,25 @@ import type { BookingDirection } from '@/types/db';
 import { pushMessage } from './client';
 import { getLineConfig, isLineConfigured, liffUrl, type LineConfig } from './config';
 import {
-  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingRescheduledFlex, bookingSubmittedFlex, driverJobFlex, noShowFlex, staffGroupText,
+  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingRescheduledFlex, bookingSubmittedFlex, driverJobFlex, noShowFlex, staffGroupText,
   type BookingInput, type StaffEvent,
 } from './messages';
 import { deriveLinkToken } from '@/lib/tokens';
 import { bookingUrl, driverUrl } from '@/lib/links';
 import { effectivePlate } from '@/lib/booking/plate';
-import { logBooking } from '@/lib/booking/server';
+import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { isPaymentCleared } from '@/lib/booking/payment';
 
 export type NotifyResult = { sent: boolean; reason?: 'not_configured' | 'disabled' | 'not_linked' | 'not_found' | 'push_failed' | 'no_group' };
 
-export type PartnerKind = 'submitted' | 'confirmed' | 'called' | 'rescheduled' | 'cancelled' | 'no_show';
-export type DriverKind = 'job' | 'called';
+export type PartnerKind = 'submitted' | 'confirmed' | 'called' | 'late' | 'rescheduled' | 'cancelled' | 'no_show';
+export type DriverKind = 'job' | 'called' | 'late';
+
+/** `late` needs the site's grace rule to say how long the driver still has. */
+async function lateFacts(admin: SupabaseClient, shopId: string): Promise<{ graceMinutes: number; autoNoShow: boolean }> {
+  const s = await getSiteSettings(admin, shopId);
+  return { graceMinutes: s.grace_minutes, autoNoShow: s.auto_no_show_after_grace };
+}
 
 type BookingRowForLine = {
   id: string; company_id: string; shop_id: string; queue_number: string; direction: BookingDirection; booking_date: string; start_time: string; end_time: string | null;
@@ -124,6 +130,7 @@ export async function safeNotifyPartner(
       args.kind === 'submitted' ? bookingSubmittedFlex(input)
       : args.kind === 'confirmed' ? bookingConfirmedFlex(input)
       : args.kind === 'called' ? bookingCalledFlex({ ...input, callCount: b.call_count })
+      : args.kind === 'late' ? bookingLateFlex({ ...input, ...(await lateFacts(admin, args.shopId)), who: 'partner' })
       : args.kind === 'rescheduled' ? bookingRescheduledFlex({ ...input, prevDate: args.prev?.date ?? input.date, prevTime: args.prev?.time ?? input.startTime })
       : args.kind === 'cancelled' ? bookingCancelledFlex({ ...input, reason: b.cancel_reason, byCustomer: args.byCustomer })
       : noShowFlex(input);
@@ -136,7 +143,7 @@ export async function safeNotifyPartner(
   }
 }
 
-/** Notify the driver bound to this booking (job card on confirm, "ถึงคิวแล้ว" on call). */
+/** Notify the driver bound to this booking (job card on confirm, "ถึงคิวแล้ว" on call, "เลยเวลานัด" when late). */
 export async function safeNotifyDriver(admin: SupabaseClient, args: { shopId: string; bookingId: string; kind: DriverKind }): Promise<NotifyResult> {
   try {
     const cfg = await getLineConfig(admin, args.shopId);
@@ -150,7 +157,9 @@ export async function safeNotifyDriver(admin: SupabaseClient, args: { shopId: st
     const input = toInput(cfg, await siteName(admin, args.shopId), b);
     const message = args.kind === 'called'
       ? bookingCalledFlex({ ...input, callCount: b.call_count })
-      : driverJobFlex({ ...input, driverUrl: input.driverUrl ?? input.statusUrl });
+      : args.kind === 'late'
+        ? bookingLateFlex({ ...input, ...(await lateFacts(admin, args.shopId)), who: 'driver' })
+        : driverJobFlex({ ...input, driverUrl: input.driverUrl ?? input.statusUrl });
     const r = await push(cfg, to, [message]);
     await record(admin, b, 'driver', args.kind, r);
     return r;

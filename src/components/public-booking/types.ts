@@ -22,9 +22,11 @@ export type PublicBooking = {
   do_issued_at: string | null;
   called_at: string | null;
   call_count: number | null;
-  services: { service_name: string } | null;
+  services: { service_name: string; plate_format?: string | null } | null;
   external_documents: { doc_no: string; doc_type: 'so' | 'po'; partner_name: string | null; items: PublicItem[] } | null;
   cancellable?: boolean;
+  /** Customer may still change plate / driver (before check-in). */
+  vehicle_editable?: boolean;
   driver_url?: string | null;
 };
 

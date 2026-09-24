@@ -11,6 +11,7 @@ import { getSiteSettings, logBooking, type SiteSettings } from '@/lib/booking/se
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { safeNotifyDriver, safeNotifyPartner, safeNotifyStaffGroup } from '@/lib/line/notify';
+import { safeNotifyDriverPush } from '@/lib/push/send';
 import { effectivePlate } from '@/lib/booking/plate';
 
 export type AutoCallResult = { called: Array<{ bookingId: string; dockId: string; queueNumber: string }> };
@@ -123,7 +124,9 @@ export async function runAutoCall(
       color: '#1565c0',
       metadata: { auto: true, dock_id: pick.dockId },
     });
+    // Driver: LINE when bound, browser push when subscribed — both may fire; the page dedupes by tag.
     await safeNotifyDriver(admin, { shopId: shop.shopId, bookingId: pick.bookingId, kind: 'called' });
+    await safeNotifyDriverPush(admin, { shopId: shop.shopId, bookingId: pick.bookingId, kind: 'called' });
     await safeNotifyPartner(admin, { shopId: shop.shopId, bookingId: pick.bookingId, kind: 'called' });
     await safeNotifyStaffGroup(admin, { shopId: shop.shopId, bookingId: pick.bookingId, event: { kind: 'auto_called', queueNo: queueNumber, plate: effectivePlate(row) || '-', dock: dock?.name ?? (row.resource_name as string | null) ?? null } });
   }

@@ -6,6 +6,7 @@ import { toBangkokStamp } from '@/lib/booking/slot-time';
 import { CHECKIN_STATUSES } from '@/lib/booking/status-flow';
 import { addFriendUrl, getLineConfig } from '@/lib/line/config';
 import { DEFAULT_CHECKIN_RADIUS_M, hasGeofence, type BranchGeofence } from '@/lib/booking/geofence';
+import { getPushConfig } from '@/lib/push/config';
 
 /** Driver page data: the DO, the dock and the live status. Read-only. */
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -34,6 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     void _v; void _d;
     const today = toBangkokStamp(new Date()).date;
     const canSelfCheckIn = settings.driver_self_checkin && ref.booking_date === today && (CHECKIN_STATUSES as readonly string[]).includes(ref.status);
+    const push = getPushConfig();
 
     return NextResponse.json({
       data: {
@@ -46,6 +48,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
         check_in_radius_m: fenced ? Number((branch as BranchGeofence).checkin_radius_m ?? DEFAULT_CHECKIN_RADIUS_M) : null,
         early_arrival_minutes: settings.early_arrival_minutes,
         grace_minutes: settings.grace_minutes,
+        auto_no_show_after_grace: settings.auto_no_show_after_grace,
+        // Public VAPID key only; the page needs it to subscribe. The private key never leaves the server.
+        push: { enabled: push !== null, public_key: push?.publicKey ?? null },
         line: { liff_id: line.liff_id, add_friend_url: addFriendUrl(line), linked_name: ((driverLine as { display_name?: string | null } | null)?.display_name) ?? null, enabled: Boolean(line.channel_access_token && line.liff_id && line.login_channel_id) },
       },
     });

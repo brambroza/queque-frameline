@@ -159,6 +159,26 @@ export function bookingCalledFlex(b: BookingInput & { callCount?: number | null 
   });
 }
 
+/**
+ * "เลยเวลานัด" — the grace period passed and the truck has not checked in.
+ * Sent to the driver (button opens the driver page) and the customer / supplier
+ * (button opens the status page).
+ */
+export function bookingLateFlex(b: BookingInput & { graceMinutes: number; autoNoShow: boolean; who: 'driver' | 'partner' }): Flex {
+  const closing = b.autoNoShow && b.graceMinutes > 0;
+  return card({
+    altText: `คิว ${b.queueNo} เลยเวลานัด ${hhmm(b.startTime)} น. แล้ว${closing ? ` ต้องมาถึงภายใน ${b.graceMinutes} นาที` : ''}`,
+    header: 'เลยเวลานัดแล้ว',
+    headerColor: COLOR.warn,
+    sub: `นัด ${hhmm(b.startTime)} น. · ยังเข้าได้`,
+    body: bookingRows(b),
+    footer: [button(b.who === 'driver' ? 'เปิดหน้าคิว' : 'ดูสถานะ', b.who === 'driver' ? b.driverUrl ?? b.statusUrl : b.statusUrl, 'secondary')],
+    note: closing
+      ? `หากไม่มาถึงภายใน ${b.graceMinutes} นาที ระบบจะปิดคิวอัตโนมัติ กรุณาติดต่อคลังหากมาไม่ทัน`
+      : 'กรุณารีบมาถึงคลัง หรือติดต่อเจ้าหน้าที่หากต้องการเลื่อนคิว',
+  });
+}
+
 export function bookingRescheduledFlex(b: BookingInput & { prevDate: string; prevTime: string }): Flex {
   return card({
     altText: `เลื่อนคิว ${b.queueNo} เป็น ${thaiDate(b.date)} ${hhmm(b.startTime)}`,
@@ -205,6 +225,8 @@ export type StaffEvent =
   | { kind: 'customer_cancelled'; queueNo: string; partner: string; date: string; time: string }
   | { kind: 'arrived'; queueNo: string; plate: string; dock: string | null; by: 'driver' | 'staff' }
   | { kind: 'plate_mismatch'; queueNo: string; booked: string; actual: string }
+  /** Customer changed the vehicle / driver from their link; `null` = that part did not change. */
+  | { kind: 'vehicle_changed'; queueNo: string; partner: string; date: string; time: string; plate: { from: string; to: string } | null; driver: { from: string; to: string } | null }
   | { kind: 'no_show'; queueNo: string; partner: string; date: string; time: string }
   | { kind: 'late'; queueNo: string; partner: string; time: string }
   | { kind: 'auto_called'; queueNo: string; plate: string; dock: string | null }
@@ -221,6 +243,12 @@ export function staffGroupText(e: StaffEvent): Text {
       return { type: 'text', text: `🚚 รถมาถึง ${e.queueNo} · ${e.plate}${e.dock ? ` → ${e.dock}` : ''}${e.by === 'driver' ? ' (คนขับเช็คอินเอง)' : ''}` };
     case 'plate_mismatch':
       return { type: 'text', text: `⚠️ ทะเบียนไม่ตรง ${e.queueNo}\nจอง ${e.booked} · มาจริง ${e.actual}` };
+    case 'vehicle_changed': {
+      const lines = [`🔁 ลูกค้าเปลี่ยนรถ/คนขับ ${e.queueNo}`, `${e.partner} · ${thaiDate(e.date)} ${hhmm(e.time)} น.`];
+      if (e.plate) lines.push(`ทะเบียน ${e.plate.from} → ${e.plate.to}`);
+      if (e.driver) lines.push(`คนขับ ${e.driver.from} → ${e.driver.to}`);
+      return { type: 'text', text: lines.join('\n') };
+    }
     case 'no_show':
       return { type: 'text', text: `⛔ ปิดคิว ไม่มา ${e.queueNo}\n${e.partner} · ${thaiDate(e.date)} ${hhmm(e.time)} น.` };
     case 'payment_cleared':

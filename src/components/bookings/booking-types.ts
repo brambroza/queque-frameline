@@ -107,15 +107,29 @@ export const CANCELLABLE = new Set<string>(['pending', 'confirmed', 'late', 'che
 /** Statuses that can still be moved to another slot or dock. */
 export const MOVABLE = new Set<string>(['pending', 'confirmed', 'late']);
 
-/** Kanban columns of `/portal/queue-board`. */
-export const QUEUE_COLUMNS: Array<{ key: string; label: string; statuses: BookingStatus[] }> = [
-  { key: 'pending', label: 'รอยืนยัน', statuses: ['pending'] },
-  { key: 'expected', label: 'รอรถมาถึง', statuses: ['confirmed', 'late'] },
-  { key: 'yard', label: 'มาถึงแล้ว · รอเรียก', statuses: ['checked_in'] },
-  { key: 'called', label: 'กำลังเรียกเข้าท่า', statuses: ['called'] },
-  { key: 'serving', label: 'กำลังขึ้น/ลงของ', statuses: ['serving'] },
-  { key: 'done', label: 'เสร็จวันนี้', statuses: ['completed'] },
+/** Kanban columns of `/portal/queue-board`; `tone` colours the column header and count. */
+export const QUEUE_COLUMNS: Array<{ key: string; label: string; statuses: BookingStatus[]; tone: StatusPaletteKey }> = [
+  { key: 'pending', label: 'รอยืนยัน', statuses: ['pending'], tone: 'warning' },
+  { key: 'expected', label: 'รอรถมาถึง', statuses: ['confirmed', 'late'], tone: 'primary' },
+  { key: 'yard', label: 'มาถึงแล้ว · รอเรียก', statuses: ['checked_in'], tone: 'secondary' },
+  { key: 'called', label: 'กำลังเรียกเข้าท่า', statuses: ['called'], tone: 'info' },
+  { key: 'serving', label: 'กำลังขึ้น/ลงของ', statuses: ['serving'], tone: 'success' },
+  { key: 'done', label: 'เสร็จวันนี้', statuses: ['completed'], tone: 'default' },
 ];
+
+/**
+ * Card colour per status on the queue board. Differs from `STATUS_META` where two
+ * statuses share a palette but sit side by side here (late vs pending, completed vs serving).
+ */
+export const BOARD_CARD_TONE: Record<string, StatusPaletteKey> = {
+  pending: 'warning',
+  confirmed: 'primary',
+  late: 'error',
+  checked_in: 'secondary',
+  called: 'info',
+  serving: 'success',
+  completed: 'default',
+};
 
 /** Partner name shown in lists; `-` when the row has no partner. */
 export function customerName(b: Pick<BookingRow, 'customers'>): string {

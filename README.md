@@ -81,6 +81,16 @@ DATABASE_URL=postgres:///fameline_test scripts/apply-migrations.sh
 
 หลังจากนี้ ลิงก์จอง/ลิงก์คนขับใน portal จะมีแบบ "ลิงก์สำหรับส่งใน LINE" — ผู้ที่เปิดผ่าน LINE จะถูกผูกบัญชีอัตโนมัติและได้รับแจ้งเตือน แผนฟรีส่งได้ 200 ข้อความ/เดือน
 
+## แจ้งเตือนคนขับผ่านเบราว์เซอร์ (Web Push, optional)
+
+สำหรับคนขับที่ไม่ใช้ LINE — หน้า `/driver/<token>` มีปุ่ม "เปิดแจ้งเตือน" แล้วมือถือจะสั่น + มีเสียง + เด้งแจ้งเตือนเมื่อถึงคิว / เลยเวลานัด / คิวถูกปิด แม้ปิดหน้าเว็บไว้ (Android Chrome; iPhone ต้องเพิ่มไปยังหน้าจอโฮมก่อน)
+
+```bash
+npx web-push generate-vapid-keys      # ครั้งเดียว ได้ Public Key + Private Key
+```
+
+ใส่ใน env ของแอป: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:admin@fameline.co.th` หรือ URL https ของแอป) แล้วรัน migration `202609240003_push_subscriptions.sql` — ถ้าไม่ตั้งค่า ปุ่มยังใช้ได้แต่จะแจ้งเฉพาะตอนเปิดหน้าอยู่เท่านั้น ต้องเป็น https (localhost ยกเว้น)
+
 ## Local Supabase (optional)
 
 ```bash
