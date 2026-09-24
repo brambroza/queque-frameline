@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex,
+  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingLinkFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex,
   driverJobFlex, noShowFlex, staffGroupText, thaiDate,
 } from './messages';
 
@@ -34,6 +34,8 @@ describe('flex builders', () => {
       noShowFlex(booking),
       bookingLateFlex({ ...booking, graceMinutes: 30, autoNoShow: true, who: 'driver' }),
       bookingLateFlex({ ...booking, driverUrl: null, graceMinutes: 30, autoNoShow: false, who: 'partner' }),
+      bookingWaitingFlex(booking),
+      bookingWaitingFlex({ ...booking, dock: null }),
     ];
     for (const m of all) {
       expect(m.type).toBe('flex');

@@ -21,6 +21,8 @@ const settingsSchema = z
     driver_self_checkin: z.coerce.boolean(),
     item_minutes_enabled: z.coerce.boolean(),
     minutes_per_item: int(1, 240),
+    wait_notice_enabled: z.coerce.boolean(),
+    wait_notice_minutes: int(0, 240),
     do_number_format: z
       .string()
       .trim()

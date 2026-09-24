@@ -10,7 +10,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "create:admin": "node scripts/create-admin.mjs"
+    "create:admin": "node scripts/create-admin.mjs",
+    "seed:test": "node scripts/dev/seed-test-data.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

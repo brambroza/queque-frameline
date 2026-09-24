@@ -174,6 +174,7 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - ลิงก์คนขับออกอัตโนมัติตอนยืนยันคิว (`ensureDriverLink`, `src/lib/booking/driver-link.ts`)
 - Resolver: `src/lib/public/resolve.ts` — public route ต้อง resolve token ก่อน แล้ว scope ทุก query ด้วย `shop_id` ของ row นั้น
 - Public API: `/api/public/book/[token]/{meta,days,slots,submit,cancel,vehicle}`, `/api/public/driver/[token]`, `/api/public/display` — 404 เมื่อ token ผิด, 410 เมื่อหมดอายุ
+- **ฟอร์มจองของลูกค้าถามแค่ 3 ช่อง (2026-09-24):** ขั้น "ข้อมูลรถและคนขับ" = ทะเบียนรถ + ชื่อคนขับ + เบอร์คนขับ (**บังคับทั้ง 3** ใน `submitSchema` เพราะเบอร์คนขับเป็นช่องทางติดต่อเดียวของคิว); ไม่ถามผู้รับ/ผู้ติดต่อ/หมายเหตุอีก → `receiver_*` เป็น null สำหรับคิวจากลิงก์ (คอลัมน์/RPC ยังรับอยู่, portal "สร้างคิว" ยังกรอกได้), ผู้ติดต่อฝั่งเอกสารคือคู่ค้าบน SO/PO
 - **ลูกค้าเปลี่ยนทะเบียน/คนขับเอง (2026-09-24):** หน้า `/book/[token]` (รวมเปิดผ่าน LIFF) ปุ่ม "เปลี่ยนทะเบียนรถ / คนขับ" ใต้การ์ดคิว → `VehicleEditForm` (`src/components/public-booking/vehicle-edit-form.tsx`) → `PATCH …/vehicle` (`customerVehicleChangeSchema`): ตรวจว่าคิวเป็นของเอกสารที่ token เปิด, สถานะต้องอยู่ใน `CUSTOMER_VEHICLE_EDITABLE_STATUSES` = pending|confirmed|late (`canCustomerEditVehicle`; เช็คอินแล้ว = 409 `not_editable` ให้แจ้งป้อมยาม), ทะเบียนต้องตรง `plate_format` ของประเภทรถ (`services(plate_format)` อยู่ใน `PUBLIC_BOOKING_SELECT`), update แบบ optimistic `where status = <เดิม>`; diff pure ใน `src/lib/booking/vehicle-change.ts` (vitest) — เปลี่ยน **`plate_number` ที่จอง** (ไม่ใช่ `plate_number_actual` ของป้อมยาม; ถ้า actual เดิมตรงกับทะเบียนใหม่จะล้าง actual), พิมพ์ทะเบียนเดิมต่างรูปแบบ = ไม่นับเป็นเปลี่ยน; แจ้งคลัง 3 ทาง: `booking_logs` action `vehicle_change` (actor customer), notification `booking_vehicle_changed` (priority high ถ้าคิว confirmed/late เพราะ DO ออกแล้ว), LINE กลุ่มทีม `vehicle_changed`; ไม่ออก DO ใหม่/ไม่เปลี่ยนลิงก์คนขับ (ลิงก์เดิมผูกกับคิว ลูกค้าส่งต่อให้คนขับคนใหม่ได้เลย)
 - ห้าม log raw token / raw API key
 
@@ -236,6 +237,7 @@ export async function POST(req: Request) {
 - Tailwind, mobile-first, ไม่มี MUI provider
 - ห้ามเรียก `createAdminClient()` โดยไม่ resolve token ก่อน
 - **จอ TV `/display` (2026-09-23) = 2 ช่อง** สีแบรนด์ Fameline (`tailwind.config.ts` → `fameline.green #002c1f / mint #aedbc0 / mint-soft / lime #adc32b`, จาก fameline.com): ซ้าย `YardScene` (`src/components/display/yard-scene.tsx`) = SVG ผังลานมุมสูงจาก feed เดียวกัน — ประตูท่าละช่อง (ลาย idle / มินต์ serving / มะนาวกะพริบ called), รถถอยเข้าท่า + badge เลขคิว/ทะเบียน, "ลานรอเรียก" ต่อแถวตามลำดับ (cap 6 + `+N`); กติกา pure ใน `src/lib/display/yard.ts` (`truckKind` จากชื่อประเภทรถ, `sceneLayout`; vitest) — ขวา = tile ท่า (1 คอลัมน์ ≤2 ท่า, 2 คอลัมน์ 3–4) + รายการรอเรียกเดิม; header ใช้ `site.logo_url` ถ้ามี ไม่มีก็ badge "F" + wordmark FAMELINE
+- Capture หน้าคนขับ (390×844 @2x, mock `/api/public/driver/<token>` + fake Notification/PushManager เพราะ headless Chromium คืน permission denied): `node docs/proposal/capture_driver.mjs` → `10-driver-called-offer.png` (ก่อนกดเปิดแจ้งเตือน), `10a-driver-called.png`, `10b-driver-called-again.png`, `10c-driver-late.png`
 - Capture ภาพ proposal: `node docs/proposal/capture_display.mjs` (dev server รันอยู่; `APP_URL` ถ้าไม่ใช่ :3000) — mock `/api/public/display` ด้วย fixture ในไฟล์ → `09-display-tv.png` / `09b-display-tv-waiting.png` 1600×900 @2x, Playwright จาก npx cache (`PLAYWRIGHT_CORE` override)
 
 ### Import Alias
@@ -293,6 +295,14 @@ import { xxx } from '../../lib/...';  // ผิด
 - env `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (`src/lib/push/config.ts`, `npx web-push generate-vapid-keys`); ไม่ตั้ง = meta คืน `push.enabled=false`, ปุ่มยังเปิดได้แต่แจ้งเฉพาะตอนเปิดหน้าอยู่; private key ไม่ออกจาก server, endpoint เป็น capability URL ห้าม log
 - ข้อจำกัด: iOS Safari ต้อง "เพิ่มไปยังหน้าจอโฮม" ก่อน (แถบบอกวิธี; ยังไม่มี manifest/PWA — ถ้าจะทำต้องเพิ่ม `manifest` ไม่ใส่ `start_url`); เบราว์เซอร์ throttle poll ตอนอยู่เบื้องหลัง — ชั้น server push คือตัวจริง
 
+### แจ้ง "กรุณารอสักครู่" — เช็คอินแล้ว เลยเวลานัด ท่ายังไม่ว่าง (2026-09-24, `202609240004_wait_notice`)
+
+- ความหมายของ "คิวช้า" ที่ลูกค้าต้องการ: รถมาถึง+เช็คอินแล้ว ถึงเวลานัดแต่ท่ายังไม่ว่าง (ยังไม่ถูกเรียก) → แจ้งคนขับ **ครั้งเดียวต่อคิว** ว่าท่าล่าช้า กรุณารอ
+- `site_settings.wait_notice_enabled` (default true) + `wait_notice_minutes` (default 5, 0–240; 0 = ทันทีที่ถึงเวลานัด) ตั้งที่ `/portal/site-settings` section "เรียกคิวอัตโนมัติ"; `bookings.wait_notified_at` = stamp กันซ้ำ
+- cron `/api/cron/auto-call` step 3 (หลัง `runAutoCall` เพื่อให้คิวที่เรียกได้ถูกเรียกก่อน): `computeWaitNotices` (`src/lib/booking/overdue.ts`, pure + vitest) เลือก `checked_in` วันนี้ที่ `now ≥ start_time + wait_notice_minutes` และ `wait_notified_at is null` → update conditional → log `wait_notice` → `safeNotifyDriver kind 'waiting'` (`bookingWaitingFlex`) + `safeNotifyDriverPush kind 'waiting'`; response มี `waited[]`
+- หน้า `/driver`: `PUBLIC_BOOKING_SELECT` ส่ง `wait_notified_at` → แถบเหลือง "คิวล่าช้ากว่ากำหนด — ท่า X ยังไม่ว่าง กรุณารอ"; in-page alert ผ่าน `alertKindForChange` เมื่อ stamp โผล่ขณะ status ยัง `checked_in` (ไม่แจ้งตอนโหลดครั้งแรก)
+- ไม่แจ้งลูกค้า/staff (คนขับเท่านั้น) — staff เห็นบนบอร์ดอยู่แล้ว
+
 ### แจ้งคิวช้ากว่ากำหนด (late)
 
 cron `confirmed→late` → LINE คนขับ + Web Push คนขับ (`kind: 'late'`) + LINE ลูกค้า/supplier (`bookingLateFlex`, `who: 'driver'|'partner'` — บอกเวลานัด, ยังเข้าได้, เหลือ `grace_minutes` นาทีก่อนปิดคิวถ้า `auto_no_show_after_grace`) + LINE กลุ่มทีมคลัง (เดิม); หน้า `/driver` มีแถบส้ม "เลยเวลานัด" (meta ส่ง `auto_no_show_after_grace`); **ไม่**ลง notification center ของ staff (ตัดสินใจ 2026-09-24 — กลุ่ม LINE พอ)
@@ -338,6 +348,7 @@ npm run typecheck    # next typegen + tsc --noEmit (ต้องผ่านก�
 npm run lint         # ESLint
 npm run test         # vitest (pure logic)
 npm run create:admin -- <email> <password> "ชื่อ" admin   # สร้าง admin user
+npm run seed:test -- [--code=C002] [--date=YYYY-MM-DD] [--reset] [--dry-run]   # ข้อมูลทดสอบ: ลูกค้า C002 + SO paid/confirmed ทุกประเภทรถ + SO unpaid (pending) + SO ยังไม่จอง, พิมพ์ลิงก์คนขับ/ลิงก์จอง (เอกสาร SO-TEST-<code>-nnn; --reset ลบชุดเดิมแบบ hard delete แล้วสร้างใหม่)
 supabase start / supabase db reset                        # local stack + replay chain
 ```
 
@@ -358,7 +369,7 @@ Quality gate ก่อน commit: `npm run typecheck && npm run lint && npm run 
   - E2E กับ Supabase จริง/ local stack (`supabase start`) — SQL ทดสอบบน Postgres 16 แล้ว, API/UI ผ่านแค่ typecheck + build
   - Integration API + หน้า API keys โค้ดเสร็จ 2026-09-23 (ดู section Integration) — ค้าง: รัน migration `202609230001` บน Supabase จริง, joint test กับ X++ job ของ Fameline, ยืนยัน `branches.code` = `InventSiteId` และกติกา paid ก่อน invoice กับ finance
   - Feedback FAB โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240002` (คอลัมน์ติดต่อกลับ; `202609240001` รันแล้ว) บน Supabase จริง, ตั้ง `SMTP_*` + `FEEDBACK_TO_EMAIL`, ทดสอบแคปหน้าจอบนเบราว์เซอร์จริง
-  - Driver Web Push + แจ้ง late โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240003_push_subscriptions` (ไม่รัน = `POST …/push` 500 แต่หน้า driver ยังใช้ได้), gen + ตั้ง `VAPID_*` บน Vercel, ทดสอบบน Android Chrome จริง (ปิดแท็บแล้วยังเด้ง) + iOS home-screen
+  - Driver Web Push + แจ้ง late + แจ้ง "กรุณารอสักครู่" โค้ดเสร็จ 2026-09-24 — ค้าง: รัน migration `202609240003_push_subscriptions` + `202609240004_wait_notice` (ไม่รัน 0004 = cron 500 เพราะ select `wait_notified_at`) (ไม่รัน = `POST …/push` 500 แต่หน้า driver ยังใช้ได้), gen + ตั้ง `VAPID_*` บน Vercel, ทดสอบบน Android Chrome จริง (ปิดแท็บแล้วยังเด้ง) + iOS home-screen
   - Dashboard / Reports / Calendar ยังเป็นของ Queue (ใช้ได้ แต่ยังไม่มี KPI ตามท่า / direction, ยังอ้าง `customers.nickname`)
   - Dock lane view บนบอร์ดคิว, i18n keys ใหม่ (ตอนนี้ใช้ fallback ไทยในโค้ด), ลบคอลัมน์/ตารางมรดกที่ไม่ใช้
   - Vault secrets `cron_app_url` + `cron_secret` บน Supabase จริง (ไม่ตั้ง = auto-call ทำงานเฉพาะ event path)

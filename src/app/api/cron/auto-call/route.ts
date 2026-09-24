@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { computeOverdueMoves } from '@/lib/booking/overdue';
+import { computeOverdueMoves, computeWaitNotices } from '@/lib/booking/overdue';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
 import { getSiteSettings, logBooking } from '@/lib/booking/server';
 import { addDaysIso, toBangkokStamp } from '@/lib/booking/slot-time';
@@ -22,6 +22,8 @@ function authorized(req: Request): boolean {
  * Minute tick (Supabase pg_cron → here):
  *  1. overdue sweep — confirmed→late, late→no_show, called→no_show
  *  2. auto-call — fill free docks with checked-in vehicles (also a backstop for a missed event)
+ *  3. wait notice — checked-in trucks past their appointment that still could not be called
+ *     get one "ท่ายังไม่ว่าง กรุณารอสักครู่" (LINE + Web Push), stamped in `wait_notified_at`
  * Every write is conditional on the status that was read, so overlapping ticks are harmless.
  */
 export async function GET(req: Request) {
@@ -78,9 +80,37 @@ export async function GET(req: Request) {
     }
 
     const { called } = await runAutoCall(admin, site, { settings, now });
+
+    // After auto-call, whoever is still waiting past their appointment gets the "please wait" notice.
+    const waited: string[] = [];
+    if (settings.wait_notice_enabled) {
+      const { data: waiting } = await admin
+        .from('bookings')
+        .select('id,queue_number,booking_date,start_time,wait_notified_at')
+        .eq('shop_id', site.shopId)
+        .eq('is_deleted', false)
+        .eq('booking_date', today)
+        .eq('status', 'checked_in')
+        .is('wait_notified_at', null);
+      const ids = computeWaitNotices(
+        (waiting ?? []).map((r) => ({ id: r.id as string, status: 'checked_in', booking_date: String(r.booking_date), start_time: String(r.start_time), wait_notified_at: null })),
+        now,
+        settings,
+      );
+      for (const id of ids) {
+        const { data: stamped } = await admin.from('bookings').update({ wait_notified_at: now.toISOString() }).eq('id', id).eq('shop_id', site.shopId).eq('status', 'checked_in').is('wait_notified_at', null).select('id,queue_number');
+        if (!stamped || stamped.length === 0) continue;
+        const queueNo = String(stamped[0].queue_number ?? id);
+        waited.push(queueNo);
+        await logBooking(admin, { companyId: site.companyId, shopId: site.shopId, bookingId: id, action: 'wait_notice', description: `${queueNo}: เลยเวลานัดแล้วท่ายังไม่ว่าง — แจ้งคนขับให้รอ`, to: { wait_notified_at: now.toISOString() }, actorKind: 'system' });
+        await safeNotifyDriver(admin, { shopId: site.shopId, bookingId: id, kind: 'waiting' });
+        await safeNotifyDriverPush(admin, { shopId: site.shopId, bookingId: id, kind: 'waiting' });
+      }
+    }
+
     await admin.from('site_settings').update({ auto_call_last_run_at: now.toISOString() }).eq('shop_id', site.shopId);
 
-    return NextResponse.json({ data: { swept, called: called.map((c) => c.queueNumber) } });
+    return NextResponse.json({ data: { swept, called: called.map((c) => c.queueNumber), waited } });
   } catch (e) {
     console.error('[cron/auto-call]', e instanceof Error ? e.message : e);
     return NextResponse.json({ error: 'cron failed' }, { status: 500 });

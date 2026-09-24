@@ -31,6 +31,47 @@ function after(now: Date, iso: string | null, extraMinutes = 0): boolean {
   return now.getTime() > t + extraMinutes * 60_000;
 }
 
+export type WaitNoticeSettings = {
+  wait_notice_enabled: boolean;
+  wait_notice_minutes: number;
+};
+
+export type WaitNoticeCandidate = {
+  id: string;
+  status: string;
+  booking_date: string;
+  start_time: string;
+  wait_notified_at: string | null;
+};
+
+/** Appointment start as epoch ms (Bangkok). NaN when malformed. */
+function appointmentMs(c: Pick<WaitNoticeCandidate, 'booking_date' | 'start_time'>): number {
+  const t = c.start_time.length === 5 ? `${c.start_time}:00` : c.start_time.slice(0, 8);
+  return new Date(`${c.booking_date.slice(0, 10)}T${t}+07:00`).getTime();
+}
+
+/**
+ * "กรุณารอสักครู่": checked-in trucks whose appointment start passed
+ * `wait_notice_minutes` ago and that are still not called (the dock is busy).
+ * One notice per booking — the caller stamps `wait_notified_at` conditionally.
+ *
+ * @param rows Live bookings (any status; only `checked_in` without a stamp qualify).
+ * @param now Server clock.
+ * @param settings Site settings.
+ * @returns Ids to notify.
+ */
+export function computeWaitNotices(rows: WaitNoticeCandidate[], now: Date, settings: WaitNoticeSettings): string[] {
+  if (!settings.wait_notice_enabled) return [];
+  const delayMs = Math.max(settings.wait_notice_minutes, 0) * 60_000;
+  return rows
+    .filter((r) => r.status === 'checked_in' && !r.wait_notified_at)
+    .filter((r) => {
+      const start = appointmentMs(r);
+      return !Number.isNaN(start) && now.getTime() >= start + delayMs;
+    })
+    .map((r) => r.id);
+}
+
 /**
  * @param rows Live bookings of the site (any status; irrelevant ones are ignored).
  * @param now Server clock.

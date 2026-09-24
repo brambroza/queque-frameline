@@ -16,9 +16,9 @@ const submitSchema = vehicleDetailsSchema.extend({
   vehicle_type_id: z.string().uuid(),
   booking_date: isoDateSchema,
   start_time: slotTimeSchema,
-  // The customer link always asks who receives / delivers the goods.
-  receiver_name: z.string().trim().min(1).max(120),
-  receiver_phone: z.string().trim().min(8).max(20).regex(/^[0-9+\-\s()]+$/),
+  // The customer link asks only for the vehicle and its driver; the driver's phone is the contact at the gate.
+  driver_name: z.string().trim().min(1).max(120),
+  driver_phone: z.string().trim().min(8).max(20).regex(/^[0-9+\-\s()]+$/),
 });
 
 /** Customer / supplier books a slot for their SO / PO. */
@@ -72,7 +72,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (!partnerId) {
       const { data: created, error: partnerError } = await admin
         .from('customers')
-        .insert({ company_id: doc.company_id, shop_id: doc.shop_id, partner_type: doc.doc_type === 'so' ? 'customer' : 'supplier', full_name: doc.partner_name ?? p.receiver_name })
+        .insert({ company_id: doc.company_id, shop_id: doc.shop_id, partner_type: doc.doc_type === 'so' ? 'customer' : 'supplier', full_name: doc.partner_name ?? p.driver_name })
         .select('id')
         .single();
       if (partnerError || !created) throw partnerError ?? new Error('partner create failed');
@@ -96,10 +96,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       p_source: 'customer_link',
       p_resource_id: null,
       p_document_id: doc.id,
-      p_driver_name: p.driver_name ?? null,
-      p_driver_phone: p.driver_phone ?? null,
-      p_receiver_name: p.receiver_name,
-      p_receiver_phone: p.receiver_phone,
+      p_driver_name: p.driver_name,
+      p_driver_phone: p.driver_phone,
+      p_receiver_name: p.receiver_name ?? null,
+      p_receiver_phone: p.receiver_phone ?? null,
       p_note: p.note ?? null,
       p_actor: null,
     });

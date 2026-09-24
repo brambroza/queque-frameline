@@ -25,8 +25,13 @@ describe('driverAlert', () => {
     expect(open.body).toContain('ยังเข้าได้');
   });
 
+  it('waiting names the busy dock when known', () => {
+    expect(driverAlert('waiting', 'b1', { queueNo: 'R-2', dock: 'ท่า 1' }).body).toContain('ท่า 1ยังไม่ว่าง');
+    expect(driverAlert('waiting', 'b1', { queueNo: 'R-2', dock: null }).body).toContain('ท่ายังไม่ว่าง');
+  });
+
   it('every kind yields non-empty Thai copy and a per-booking tag', () => {
-    for (const kind of ['called', 'late', 'cancelled', 'no_show'] as const) {
+    for (const kind of ['called', 'waiting', 'late', 'cancelled', 'no_show'] as const) {
       const a = driverAlert(kind, 'xyz', { queueNo: 'R-1', dock: null });
       expect(a.title.length).toBeGreaterThan(3);
       expect(a.body.length).toBeGreaterThan(3);
@@ -49,6 +54,16 @@ describe('alertKindForChange', () => {
     expect(alertKindForChange({ status: 'confirmed', call_count: 0 }, { status: 'late', call_count: 0 })).toBe('late');
     expect(alertKindForChange({ status: 'late', call_count: 0 }, { status: 'no_show', call_count: 0 })).toBe('no_show');
     expect(alertKindForChange({ status: 'confirmed', call_count: 0 }, { status: 'cancelled', call_count: 0 })).toBe('cancelled');
+  });
+
+  it('alerts once when the server stamps "please wait" on a checked-in truck', () => {
+    const before = { status: 'checked_in', call_count: 0, wait_notified_at: null };
+    const stamped = { status: 'checked_in', call_count: 0, wait_notified_at: '2026-09-24T04:05:00Z' };
+    expect(alertKindForChange(before, stamped)).toBe('waiting');
+    expect(alertKindForChange(stamped, stamped)).toBeNull();
+    // First load of an already-stamped booking stays quiet; a call after the wait still alerts.
+    expect(alertKindForChange(null, stamped)).toBeNull();
+    expect(alertKindForChange(stamped, { ...stamped, status: 'called', call_count: 1 })).toBe('called');
   });
 
   it('stays quiet for progress the driver already sees on screen', () => {

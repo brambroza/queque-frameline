@@ -22,9 +22,10 @@ type Meta = {
 type Day = { day: string; open_slots: number };
 type Slot = { slot_time: string; slot_end: string; capacity: number; remaining_capacity: number; is_past: boolean; too_soon: boolean; bookable: boolean };
 type Step = 'status' | 'vehicle' | 'date' | 'slot' | 'details' | 'confirm';
-type Details = { plate_number: string; driver_name: string; driver_phone: string; receiver_name: string; receiver_phone: string; note: string };
+/** The customer link asks only for the vehicle and its driver (the partner on the SO/PO is the contact). */
+type Details = { plate_number: string; driver_name: string; driver_phone: string };
 
-const EMPTY_DETAILS: Details = { plate_number: '', driver_name: '', driver_phone: '', receiver_name: '', receiver_phone: '', note: '' };
+const EMPTY_DETAILS: Details = { plate_number: '', driver_name: '', driver_phone: '' };
 const LIVE = new Set(['pending', 'confirmed', 'late', 'checked_in', 'called', 'serving']);
 const PHONE = /^[0-9+\-\s()]{8,20}$/;
 const btnPrimary = 'min-h-[48px] w-full rounded-xl bg-emerald-600 px-4 text-base font-semibold text-white active:bg-emerald-700 disabled:bg-slate-300';
@@ -113,9 +114,8 @@ export function BookingClient({ token }: { token: string }) {
   const errors = useMemo(() => {
     const e: Partial<Record<keyof Details, string>> = {};
     if (!matchesPlateFormat(details.plate_number, plateFormat)) e.plate_number = `ทะเบียนไม่ตรงรูปแบบ — ${PLATE_FORMAT_INFO[plateFormat].hint}`;
-    if (!details.receiver_name.trim()) e.receiver_name = 'กรอกชื่อผู้ติดต่อ';
-    if (!PHONE.test(details.receiver_phone.trim())) e.receiver_phone = 'กรอกเบอร์โทรที่ติดต่อได้';
-    if (details.driver_phone.trim() && !PHONE.test(details.driver_phone.trim())) e.driver_phone = 'เบอร์โทรไม่ถูกต้อง';
+    if (!details.driver_name.trim()) e.driver_name = 'กรอกชื่อคนขับ';
+    if (!PHONE.test(details.driver_phone.trim())) e.driver_phone = 'กรอกเบอร์โทรคนขับที่ติดต่อได้';
     return e;
   }, [details, plateFormat]);
 
@@ -326,26 +326,17 @@ export function BookingClient({ token }: { token: string }) {
       ) : null}
 
       {step === 'details' ? (
-        <StepCard title="4. ข้อมูลรถและผู้ติดต่อ" hint="ป้อมยามจะตรวจทะเบียนรถตามข้อมูลนี้">
+        <StepCard title="4. ข้อมูลรถและคนขับ" hint="ป้อมยามจะตรวจทะเบียนรถตามข้อมูลนี้ และติดต่อคนขับตามเบอร์ที่ให้ไว้">
           <Field label={`ทะเบียนรถ${vehicle ? ` (${vehicle.service_name})` : ''} *`} error={touched ? errors.plate_number : undefined}>
             <input className={inputCls} value={details.plate_number} onChange={(e) => setDetails((p) => ({ ...p, plate_number: formatPlateInput(e.target.value, plateFormat) }))}
               placeholder={`เช่น ${PLATE_FORMAT_INFO[plateFormat].example}`} inputMode={plateFormat === 'truck' ? 'numeric' : 'text'} maxLength={12} autoComplete="off" autoCorrect="off" spellCheck={false} />
             <span className="mt-1 block text-xs font-normal text-slate-500">{PLATE_FORMAT_INFO[plateFormat].hint}</span>
           </Field>
-          <Field label={outbound ? 'ชื่อผู้รับสินค้า *' : 'ชื่อผู้ติดต่อ *'} error={touched ? errors.receiver_name : undefined}>
-            <input className={inputCls} value={details.receiver_name} onChange={(e) => setDetails((p) => ({ ...p, receiver_name: e.target.value }))} autoComplete="name" />
+          <Field label="ชื่อคนขับ *" error={touched ? errors.driver_name : undefined}>
+            <input className={inputCls} value={details.driver_name} maxLength={120} onChange={(e) => setDetails((p) => ({ ...p, driver_name: e.target.value }))} autoComplete="name" />
           </Field>
-          <Field label="เบอร์โทร *" error={touched ? errors.receiver_phone : undefined}>
-            <input className={inputCls} value={details.receiver_phone} onChange={(e) => setDetails((p) => ({ ...p, receiver_phone: e.target.value }))} inputMode="tel" autoComplete="tel" placeholder="0812345678" />
-          </Field>
-          <Field label="ชื่อคนขับ">
-            <input className={inputCls} value={details.driver_name} onChange={(e) => setDetails((p) => ({ ...p, driver_name: e.target.value }))} />
-          </Field>
-          <Field label="เบอร์คนขับ" error={touched ? errors.driver_phone : undefined}>
-            <input className={inputCls} value={details.driver_phone} onChange={(e) => setDetails((p) => ({ ...p, driver_phone: e.target.value }))} inputMode="tel" />
-          </Field>
-          <Field label="หมายเหตุ">
-            <textarea className={inputCls} rows={2} maxLength={500} value={details.note} onChange={(e) => setDetails((p) => ({ ...p, note: e.target.value }))} />
+          <Field label="เบอร์โทรคนขับ *" error={touched ? errors.driver_phone : undefined}>
+            <input className={inputCls} value={details.driver_phone} onChange={(e) => setDetails((p) => ({ ...p, driver_phone: e.target.value }))} inputMode="tel" autoComplete="tel" placeholder="0812345678" />
           </Field>
           <div className="mt-2 grid gap-2">
             <button type="button" className={btnPrimary} onClick={() => { setTouched(true); if (Object.keys(errors).length === 0) setStep('confirm'); }}>ถัดไป</button>
@@ -360,8 +351,7 @@ export function BookingClient({ token }: { token: string }) {
             <dt className="text-slate-500">วันเวลา</dt><dd className="col-span-2 font-semibold text-slate-900">{longThaiDate(date)} · {time} น.</dd>
             <dt className="text-slate-500">ประเภทรถ</dt><dd className="col-span-2 text-slate-900">{vehicle?.service_name}</dd>
             <dt className="text-slate-500">ทะเบียน</dt><dd className="col-span-2 font-semibold text-slate-900">{details.plate_number}</dd>
-            <dt className="text-slate-500">{outbound ? 'ผู้รับ' : 'ผู้ติดต่อ'}</dt><dd className="col-span-2 text-slate-900">{details.receiver_name} · {details.receiver_phone}</dd>
-            {details.driver_name ? <><dt className="text-slate-500">คนขับ</dt><dd className="col-span-2 text-slate-900">{[details.driver_name, details.driver_phone].filter(Boolean).join(' · ')}</dd></> : null}
+            <dt className="text-slate-500">คนขับ</dt><dd className="col-span-2 text-slate-900">{details.driver_name} · {details.driver_phone}</dd>
           </dl>
           <p className="mt-3 rounded-xl bg-slate-100 p-3 text-xs text-slate-600">
             {meta.rules.require_admin_confirm ? 'เจ้าหน้าที่จะยืนยันคิวและออกเลข DO ให้ — กลับมาดูสถานะได้ที่ลิงก์เดิมนี้' : 'ระบบจะยืนยันคิวและออกเลข DO ให้ทันที'}

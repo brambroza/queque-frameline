@@ -10,6 +10,7 @@ type Settings = {
   called_timeout_minutes: number; auto_no_show_after_grace: boolean; booking_token_ttl_days: number; driver_token_ttl_days: number;
   booking_lead_min_hours: number; booking_horizon_days: number; require_admin_confirm: boolean; driver_self_checkin: boolean; do_number_format: string;
   item_minutes_enabled: boolean; minutes_per_item: number;
+  wait_notice_enabled: boolean; wait_notice_minutes: number;
   auto_call_last_run_at: string | null;
 };
 
@@ -112,6 +113,8 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
             </TextField>
             {s.auto_call_mode === 'time' || s.auto_call_mode === 'hybrid' ? num('auto_call_lead_minutes', 'เรียกก่อนเวลานัด (นาที)', '0 = ตรงเวลานัด', 0, 180) : null}
             {num('called_timeout_minutes', 'รอรถเข้าท่าหลังเรียก (นาที)', 'เกินนี้ระบบปิดคิวเป็น “ไม่มา” และเรียกคันถัดไป', 1, 240)}
+            {toggle('wait_notice_enabled', 'แจ้งคนขับที่เช็คอินแล้ว “ท่ายังไม่ว่าง กรุณารอสักครู่” เมื่อเลยเวลานัดแล้วยังไม่ได้เรียก (LINE + แจ้งเตือนมือถือ ครั้งเดียวต่อคิว)')}
+            {s.wait_notice_enabled ? num('wait_notice_minutes', 'แจ้งหลังเวลานัดกี่นาที', '0 = ทันทีที่ถึงเวลานัด', 0, 240) : null}
             <Typography variant="caption" color="text.secondary">
               ตรวจอัตโนมัติล่าสุด: {s.auto_call_last_run_at ? new Date(s.auto_call_last_run_at).toLocaleString('th-TH') : 'ยังไม่เคยทำงาน — ต้องตั้งค่า pg_cron + Vault (ดู README)'}
             </Typography>

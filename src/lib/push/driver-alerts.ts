@@ -5,7 +5,7 @@
  * always agree (and share a `tag`, so the OS replaces instead of stacking).
  */
 
-export type DriverAlertKind = 'called' | 'late' | 'cancelled' | 'no_show';
+export type DriverAlertKind = 'called' | 'waiting' | 'late' | 'cancelled' | 'no_show';
 
 export type DriverAlertInput = {
   queueNo: string;
@@ -50,6 +50,12 @@ export function driverAlert(kind: DriverAlertKind, bookingId: string, i: DriverA
         body: `เชิญนำรถเข้า${i.dock ?? 'ท่า'}ตอนนี้ หากไม่เข้าภายในเวลาที่กำหนด ระบบจะเรียกคิวถัดไป`,
       };
     }
+    case 'waiting':
+      return {
+        kind, tag, requireInteraction: false, vibrate: SOFT_PATTERN,
+        title: `คิว ${i.queueNo} ล่าช้ากว่ากำหนด`,
+        body: `${i.dock ? `${i.dock}ยังไม่ว่าง` : 'ท่ายังไม่ว่าง'} กรุณารอในลานจอดสักครู่ ระบบจะแจ้งทันทีเมื่อถึงคิวของคุณ`,
+      };
     case 'late':
       return {
         kind, tag, requireInteraction: true, vibrate: SOFT_PATTERN,
@@ -65,17 +71,18 @@ export function driverAlert(kind: DriverAlertKind, bookingId: string, i: DriverA
   }
 }
 
+export type AlertSnapshot = { status: string; call_count: number | null; wait_notified_at?: string | null };
+
 /**
- * Driver page: which alert (if any) a status change deserves. A repeat call
- * (status stays `called`, `call_count` goes up) alerts again.
+ * Driver page: which alert (if any) a poll result deserves. A repeat call
+ * (status stays `called`, `call_count` goes up) alerts again; the server's
+ * "please wait" stamp appearing while still `checked_in` alerts once.
  */
-export function alertKindForChange(
-  prev: { status: string; call_count: number | null } | null,
-  next: { status: string; call_count: number | null },
-): DriverAlertKind | null {
+export function alertKindForChange(prev: AlertSnapshot | null, next: AlertSnapshot): DriverAlertKind | null {
   if (!prev) return null;
   const s = next.status;
   if (s === 'called' && (prev.status !== 'called' || (next.call_count ?? 0) > (prev.call_count ?? 0))) return 'called';
+  if (s === 'checked_in' && prev.status === 'checked_in' && !prev.wait_notified_at && next.wait_notified_at) return 'waiting';
   if (s === prev.status) return null;
   if (s === 'late' || s === 'cancelled' || s === 'no_show') return s;
   return null;

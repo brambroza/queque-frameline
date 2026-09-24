@@ -22,6 +22,8 @@ export type PublicBooking = {
   do_issued_at: string | null;
   called_at: string | null;
   call_count: number | null;
+  /** Set once the driver was told "dock delayed, please wait" (checked in, past appointment, not yet called). */
+  wait_notified_at?: string | null;
   services: { service_name: string; plate_format?: string | null } | null;
   external_documents: { doc_no: string; doc_type: 'so' | 'po'; partner_name: string | null; items: PublicItem[] } | null;
   cancellable?: boolean;

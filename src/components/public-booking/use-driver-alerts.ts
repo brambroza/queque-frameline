@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { alertKindForChange, driverAlert } from '@/lib/push/driver-alerts';
+import { alertKindForChange, driverAlert, type AlertSnapshot, type DriverAlertKind } from '@/lib/push/driver-alerts';
 
 export type AlertSupport =
   /** No Notification API at all (old browser, or iOS Safari not installed to the Home Screen). */
@@ -24,7 +24,7 @@ export type DriverAlertsState = {
   iosNeedsInstall: boolean;
 };
 
-type BookingFacts = { id: string; status: string; call_count: number | null; queue_number: string; resource_name: string | null };
+type BookingFacts = AlertSnapshot & { id: string; queue_number: string; resource_name: string | null };
 
 const SW_URL = '/sw.js';
 const SW_SCOPE = '/driver/';
@@ -91,7 +91,7 @@ export function useDriverAlerts(api: string) {
   const [state, setState] = useState<DriverAlertsState>({ support: 'unsupported', permission: 'unsupported', subscribed: false, enabled: false, busy: false, error: null, iosNeedsInstall: false });
   const audioRef = useRef<AudioContext | null>(null);
   const bookingKeyRef = useRef<string | null>(null);
-  const prevRef = useRef<{ status: string; call_count: number | null } | null>(null);
+  const prevRef = useRef<AlertSnapshot | null>(null);
   // Refs so `observe` keeps one identity across renders (the page's poll effect depends on it).
   const pushKeyRef = useRef<string | null>(null);
   const enabledRef = useRef(false);
@@ -170,7 +170,7 @@ export function useDriverAlerts(api: string) {
   }, [api]);
 
   /** Sound + vibration + notification for an event, whichever channel this device has. */
-  const fire = useCallback(async (kind: 'called' | 'late' | 'cancelled' | 'no_show', b: BookingFacts) => {
+  const fire = useCallback(async (kind: DriverAlertKind, b: BookingFacts) => {
     const a = driverAlert(kind, b.id, { queueNo: b.queue_number, dock: b.resource_name, callCount: b.call_count });
     try { navigator.vibrate?.(a.vibrate); } catch { /* unsupported */ }
     if (audioRef.current) { try { await audioRef.current.resume(); beep(audioRef.current); } catch { /* muted */ } }
@@ -192,9 +192,10 @@ export function useDriverAlerts(api: string) {
    */
   const observe = useCallback((b: BookingFacts, pushPublicKey: string | null | undefined) => {
     pushKeyRef.current = pushPublicKey ?? null;
+    const snapshot: AlertSnapshot = { status: b.status, call_count: b.call_count, wait_notified_at: b.wait_notified_at ?? null };
     if (bookingKeyRef.current !== b.id) {
       bookingKeyRef.current = b.id;
-      prevRef.current = { status: b.status, call_count: b.call_count };
+      prevRef.current = snapshot;
       if (readFlag(b.id) && 'Notification' in window && Notification.permission === 'granted') {
         enabledRef.current = true;
         setState((s) => ({ ...s, enabled: true }));
@@ -202,8 +203,8 @@ export function useDriverAlerts(api: string) {
       }
       return;
     }
-    const kind = alertKindForChange(prevRef.current, { status: b.status, call_count: b.call_count });
-    prevRef.current = { status: b.status, call_count: b.call_count };
+    const kind = alertKindForChange(prevRef.current, snapshot);
+    prevRef.current = snapshot;
     if (kind && enabledRef.current) void fire(kind, b);
   }, [fire, syncSubscription]);
 

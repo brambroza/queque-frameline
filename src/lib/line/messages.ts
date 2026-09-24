@@ -159,6 +159,19 @@ export function bookingCalledFlex(b: BookingInput & { callCount?: number | null 
   });
 }
 
+/** "กรุณารอสักครู่" — checked in, appointment time passed, dock still busy. Driver only. */
+export function bookingWaitingFlex(b: BookingInput): Flex {
+  return card({
+    altText: `คิว ${b.queueNo} ล่าช้ากว่ากำหนด ${b.dock ?? 'ท่า'}ยังไม่ว่าง กรุณารอสักครู่`,
+    header: 'คิวล่าช้ากว่ากำหนด',
+    headerColor: COLOR.warn,
+    sub: `${b.dock ?? 'ท่า'}ยังไม่ว่าง · กรุณารอในลานจอดสักครู่`,
+    body: bookingRows(b),
+    footer: [button('เปิดหน้าคิว', b.driverUrl ?? b.statusUrl, 'secondary')],
+    note: 'ระบบจะแจ้งทันทีเมื่อถึงคิวของคุณ ขออภัยในความล่าช้า',
+  });
+}
+
 /**
  * "เลยเวลานัด" — the grace period passed and the truck has not checked in.
  * Sent to the driver (button opens the driver page) and the customer / supplier

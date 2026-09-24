@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { computeOverdueMoves } from './overdue';
+import { computeOverdueMoves, computeWaitNotices } from './overdue';
+
+describe('computeWaitNotices', () => {
+  // 2026-09-21 10:00 Bangkok = 03:00Z
+  const at = (hhmmZ: string) => new Date(`2026-09-21T${hhmmZ}:00Z`);
+  const wait = (o: Partial<{ id: string; status: string; booking_date: string; start_time: string; wait_notified_at: string | null }> = {}) => ({
+    id: 'w1', status: 'checked_in', booking_date: '2026-09-21', start_time: '10:00:00', wait_notified_at: null, ...o,
+  });
+  const cfg = { wait_notice_enabled: true, wait_notice_minutes: 5 };
+
+  it('notifies a checked-in truck once the appointment + delay has passed', () => {
+    expect(computeWaitNotices([wait()], at('03:04'), cfg)).toEqual([]);
+    expect(computeWaitNotices([wait()], at('03:05'), cfg)).toEqual(['w1']);
+    expect(computeWaitNotices([wait()], at('03:00'), { ...cfg, wait_notice_minutes: 0 })).toEqual(['w1']);
+    expect(computeWaitNotices([wait({ start_time: '10:00' })], at('03:05'), cfg)).toEqual(['w1']);
+  });
+  it('never repeats and skips other statuses, disabled sites and bad dates', () => {
+    expect(computeWaitNotices([wait({ wait_notified_at: '2026-09-21T03:05:00Z' })], at('04:00'), cfg)).toEqual([]);
+    expect(computeWaitNotices(['confirmed', 'late', 'called', 'serving'].map((status) => wait({ status })), at('04:00'), cfg)).toEqual([]);
+    expect(computeWaitNotices([wait()], at('04:00'), { ...cfg, wait_notice_enabled: false })).toEqual([]);
+    expect(computeWaitNotices([wait({ booking_date: 'nope' })], at('04:00'), cfg)).toEqual([]);
+  });
+});
 
 const settings = { grace_minutes: 30, auto_no_show_after_grace: true };
 const now = new Date('2026-09-21T03:00:00Z');

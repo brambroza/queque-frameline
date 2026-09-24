@@ -141,6 +141,12 @@ export function DriverClient({ token }: { token: string }) {
             <p className="text-3xl font-extrabold">เชิญเข้า{b.resource_name ?? 'ท่า'}</p>
           </div>
         ) : null}
+        {b.status === 'checked_in' && b.wait_notified_at ? (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-900" role="status">
+            <p className="font-semibold">คิวล่าช้ากว่ากำหนด — {b.resource_name ?? 'ท่า'}ยังไม่ว่าง</p>
+            <p className="mt-1 text-sm">กรุณารอในลานจอดสักครู่ ระบบจะแจ้งทันทีเมื่อถึงคิวของคุณ ขออภัยในความล่าช้า</p>
+          </div>
+        ) : null}
         {b.status === 'late' ? (
           <div className="rounded-2xl border border-orange-300 bg-orange-50 p-4 text-orange-900" role="status">
             <p className="font-semibold">เลยเวลานัด {b.start_time.slice(0, 5)} น. แล้ว — ยังเข้าได้</p>

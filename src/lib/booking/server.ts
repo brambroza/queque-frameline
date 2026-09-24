@@ -24,6 +24,10 @@ export type SiteSettings = {
   do_number_format: string;
   item_minutes_enabled: boolean;
   minutes_per_item: number;
+  /** Tell a checked-in driver "dock delayed, please wait" once the appointment time has passed. */
+  wait_notice_enabled: boolean;
+  /** Minutes after the appointment start before that notice goes out (0 = at start). */
+  wait_notice_minutes: number;
   auto_call_last_run_at: string | null;
 };
 
@@ -43,6 +47,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   do_number_format: 'DO-{YYYYMM}-{NNNN}',
   item_minutes_enabled: true,
   minutes_per_item: 10,
+  wait_notice_enabled: true,
+  wait_notice_minutes: 5,
   auto_call_last_run_at: null,
 };
 

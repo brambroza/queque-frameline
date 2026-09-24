@@ -8,7 +8,7 @@ import type { BookingDirection } from '@/types/db';
 import { pushMessage } from './client';
 import { getLineConfig, isLineConfigured, liffUrl, type LineConfig } from './config';
 import {
-  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingRescheduledFlex, bookingSubmittedFlex, driverJobFlex, noShowFlex, staffGroupText,
+  bookingCalledFlex, bookingCancelledFlex, bookingConfirmedFlex, bookingLateFlex, bookingRescheduledFlex, bookingSubmittedFlex, bookingWaitingFlex, driverJobFlex, noShowFlex, staffGroupText,
   type BookingInput, type StaffEvent,
 } from './messages';
 import { deriveLinkToken } from '@/lib/tokens';
@@ -20,7 +20,7 @@ import { isPaymentCleared } from '@/lib/booking/payment';
 export type NotifyResult = { sent: boolean; reason?: 'not_configured' | 'disabled' | 'not_linked' | 'not_found' | 'push_failed' | 'no_group' };
 
 export type PartnerKind = 'submitted' | 'confirmed' | 'called' | 'late' | 'rescheduled' | 'cancelled' | 'no_show';
-export type DriverKind = 'job' | 'called' | 'late';
+export type DriverKind = 'job' | 'called' | 'waiting' | 'late';
 
 /** `late` needs the site's grace rule to say how long the driver still has. */
 async function lateFacts(admin: SupabaseClient, shopId: string): Promise<{ graceMinutes: number; autoNoShow: boolean }> {
@@ -143,7 +143,7 @@ export async function safeNotifyPartner(
   }
 }
 
-/** Notify the driver bound to this booking (job card on confirm, "ถึงคิวแล้ว" on call, "เลยเวลานัด" when late). */
+/** Notify the driver bound to this booking (job card on confirm, "ถึงคิวแล้ว" on call, "กรุณารอสักครู่" when the dock runs late, "เลยเวลานัด" when late). */
 export async function safeNotifyDriver(admin: SupabaseClient, args: { shopId: string; bookingId: string; kind: DriverKind }): Promise<NotifyResult> {
   try {
     const cfg = await getLineConfig(admin, args.shopId);
@@ -159,7 +159,9 @@ export async function safeNotifyDriver(admin: SupabaseClient, args: { shopId: st
       ? bookingCalledFlex({ ...input, callCount: b.call_count })
       : args.kind === 'late'
         ? bookingLateFlex({ ...input, ...(await lateFacts(admin, args.shopId)), who: 'driver' })
-        : driverJobFlex({ ...input, driverUrl: input.driverUrl ?? input.statusUrl });
+        : args.kind === 'waiting'
+          ? bookingWaitingFlex(input)
+          : driverJobFlex({ ...input, driverUrl: input.driverUrl ?? input.statusUrl });
     const r = await push(cfg, to, [message]);
     await record(admin, b, 'driver', args.kind, r);
     return r;
