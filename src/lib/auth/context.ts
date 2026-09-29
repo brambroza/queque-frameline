@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { AppRole } from '@/types/db';
 import { AuthError } from './errors';
-import { resolveBranchScope, type BranchScope } from './branch-scope';
+import type { BranchScope } from './branch-scope';
+import { ROLE_CAPABILITY_SELECT, resolveCapabilities, type RoleAccessDef } from './role-capabilities';
 
 export { AuthError };
 export type { BranchScope };
@@ -50,7 +51,7 @@ function pickRoleIdsForShop(
  * invited account can use the portal without a manual fix.
  *
  * @param opts.roles Roles allowed to call the route; omit to allow any signed-in user.
- * @returns Session-scoped Supabase client, auth user, tenant profile, role tiers (`roles`), raw role codes and branch scope.
+ * @returns Session-scoped Supabase client, auth user, tenant profile, role tiers (`roles`), raw role codes, branch scope and role capabilities.
  */
 export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   const supabase = await createClient();
@@ -119,28 +120,40 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   const roleIds = pickRoleIdsForShop(roleRows, tenantProfile.shop_id);
   let roles: AppRole[] = [];
   let roleCodes: string[] = [];
+  let accessDefs: RoleAccessDef[] = [];
   if (roleIds.length > 0) {
-    const { data: roleDefs, error: roleDefsError } = await supabase
+    type RoleRow = { code: string | null; access_level: string | null; branch_ids?: string[] | null; can_export?: boolean | null; multi_branch?: boolean | null };
+    const withCaps = await supabase
       .from('roles')
-      .select('code, access_level')
+      .select(`code, access_level, ${ROLE_CAPABILITY_SELECT}`)
       .in('id', roleIds)
       .eq('is_deleted', false);
-    if (roleDefsError) throw new AuthError('Unable to read role definitions', 403);
-    const defs = (roleDefs ?? []) as Array<{ code: string | null; access_level: string | null }>;
+    let defs = (withCaps.data ?? []) as unknown as RoleRow[];
+    if (withCaps.error) {
+      // Capability columns come from 202609290001; until it is applied, read the
+      // role tiers alone so the portal keeps working (everyone unlimited, as before).
+      const plain = await supabase.from('roles').select('code, access_level').in('id', roleIds).eq('is_deleted', false);
+      if (plain.error) throw new AuthError('Unable to read role definitions', 403);
+      defs = (plain.data ?? []) as RoleRow[];
+    }
     roleCodes = defs.map((r) => r.code).filter((c): c is string => Boolean(c));
     // Route guards check the access level, so a custom role ("gate", "finance")
     // acts as the tier it was created with.
     roles = Array.from(new Set(defs.map((r) => r.access_level).filter(isAppRole)));
+    accessDefs = defs
+      .filter((r): r is RoleRow & { access_level: AppRole } => isAppRole(r.access_level))
+      .map((r) => ({ access_level: r.access_level, branch_ids: r.branch_ids, can_export: r.can_export, multi_branch: r.multi_branch }));
   }
 
   if (opts?.roles?.length && !ensureRole(roles, opts.roles)) {
     throw new AuthError(`Forbidden (roles=${roles.join(',') || 'none'})`, 403);
   }
 
-  // Branches this caller may read/write. `null` = every branch of the shop.
-  const branchScope = await resolveBranchScope(supabase, user.id, tenantProfile.shop_id, roles);
+  // Branches this caller may read/write (`null` = every branch) and the role switches.
+  const capabilities = resolveCapabilities(accessDefs);
+  const branchScope: BranchScope = capabilities.branchScope;
 
-  return { supabase, user, profile: tenantProfile, roles, roleCodes, branchScope };
+  return { supabase, user, profile: tenantProfile, roles, roleCodes, branchScope, capabilities };
 }
 
 /**

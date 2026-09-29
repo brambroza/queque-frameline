@@ -1,16 +1,12 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AppRole } from '@/types/db';
 import { AuthError } from './errors';
 
 /**
  * Branches the caller is allowed to see.
- * `null` means every branch of the shop (super_admin / shop_owner).
- * An empty array means the caller is bound to no branch yet — they see nothing.
+ * `null` means every branch of the site (admin-level roles, or a role without a
+ * branch list). An empty array means the caller holds no role — they see nothing.
+ * Resolved from the caller's roles in `role-capabilities.ts`.
  */
 export type BranchScope = string[] | null;
-
-/** Roles that always see the whole shop, so no branch lookup is needed. */
-const SHOP_WIDE_ROLES: AppRole[] = ['admin', 'staff'];
 
 /**
  * Minimal shape of a Supabase filter builder — enough to attach branch predicates.
@@ -27,55 +23,6 @@ type BranchFilterOps = {
 
 /** Sentinel so an empty scope matches no row instead of every row. */
 const NO_BRANCH = '00000000-0000-0000-0000-000000000000';
-
-/**
- * Resolve which branches a user may access inside one shop.
- *
- * Shop-wide roles short-circuit to `null` without extra queries. Everyone else is
- * mapped through `staff` (by auth user) then `staff_branches`.
- *
- * @param supabase Session-scoped Supabase client.
- * @param userId Authenticated auth.users id.
- * @param shopId Tenant shop id from the caller's profile; `null` yields an empty scope.
- * @param roles Roles already resolved for the caller.
- * @returns `null` for shop-wide access, otherwise the allowed branch ids.
- */
-export async function resolveBranchScope(
-  supabase: SupabaseClient,
-  userId: string,
-  shopId: string | null,
-  roles: AppRole[]
-): Promise<BranchScope> {
-  if (roles.some((role) => SHOP_WIDE_ROLES.includes(role))) return null;
-  if (!shopId) return [];
-
-  const { data: staffRows, error: staffError } = await supabase
-    .from('staff')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('shop_id', shopId)
-    .eq('is_deleted', false);
-
-  if (staffError) throw new AuthError('Unable to read branch assignments', 403);
-
-  const staffIds = (staffRows ?? []).map((row) => row.id as string);
-  if (staffIds.length === 0) return [];
-
-  const { data: branchRows, error: branchError } = await supabase
-    .from('staff_branches')
-    .select('branch_id')
-    .eq('shop_id', shopId)
-    .eq('is_deleted', false)
-    .in('staff_id', staffIds);
-
-  if (branchError) throw new AuthError('Unable to read branch assignments', 403);
-
-  const branchIds = (branchRows ?? [])
-    .map((row) => row.branch_id as string | null)
-    .filter((id): id is string => Boolean(id));
-
-  return Array.from(new Set(branchIds));
-}
 
 /** True when the caller may read/write rows of this branch. */
 export function isBranchAllowed(scope: BranchScope, branchId: string): boolean {
@@ -159,4 +106,16 @@ export function applyNullableBranchScope<Q>(
   if (scope === null) return query;
   if (scope.length === 0) return ops.is(column, null) as Q;
   return ops.or(`${column}.is.null,${column}.in.(${scope.join(',')})`) as Q;
+}
+
+/**
+ * Guard one row a service-role query returned: RLS did not run, so the branch
+ * check has to happen here. A null branch is a site-wide row and always passes.
+ *
+ * @throws AuthError 404 when the row's branch is outside the caller's scope — the
+ *   same answer as a row that does not exist, so ids of other branches are not confirmed.
+ */
+export function assertRowBranch(scope: BranchScope, branchId: string | null | undefined): void {
+  if (!branchId || isBranchAllowed(scope, branchId)) return;
+  throw new AuthError('Not found', 404);
 }

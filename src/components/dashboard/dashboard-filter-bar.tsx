@@ -21,6 +21,7 @@ export function DashboardFilterBar({
   resolvedFrom,
   resolvedTo,
   loading,
+  branchPicker,
 }: {
   value: DashboardFilter;
   onChange: (next: DashboardFilter) => void;
@@ -28,6 +29,8 @@ export function DashboardFilterBar({
   resolvedFrom?: string;
   resolvedTo?: string;
   loading?: boolean;
+  /** Branch and direction filters, shown after the range. */
+  branchPicker?: React.ReactNode;
 }) {
   const { t } = useTranslation('dashboard');
 
@@ -74,6 +77,8 @@ export function DashboardFilterBar({
               />
             </Stack>
           ) : null}
+
+          {branchPicker}
 
           <Stack direction="row" spacing={1} alignItems="center" sx={{ ml: { sm: 'auto' } }}>
             {label ? (

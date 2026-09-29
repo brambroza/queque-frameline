@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 import { ROLE_SELECT, type RoleDef } from '@/lib/auth/role-grants';
 import { validateRoleMenuKeys } from '@/lib/auth/menu-registry';
+import { validateRoleBranchIds } from '@/lib/auth/role-capabilities';
 
 const codeSchema = z.string().trim().regex(/^[a-z][a-z0-9_]{1,31}$/, 'รหัสใช้ a-z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2–32');
 
@@ -15,6 +16,10 @@ const createSchema = z.object({
   access_level: z.enum(['admin', 'staff']),
   /** null = every menu the level allows */
   menu_keys: z.array(z.string()).nullable(),
+  /** null = every branch */
+  branch_ids: z.array(z.string().uuid()).max(100).nullable().optional(),
+  can_export: z.boolean().optional(),
+  multi_branch: z.boolean().optional(),
 });
 
 const updateSchema = z.object({
@@ -23,6 +28,9 @@ const updateSchema = z.object({
   description: z.string().trim().max(200).optional().nullable(),
   access_level: z.enum(['admin', 'staff']).optional(),
   menu_keys: z.array(z.string()).nullable().optional(),
+  branch_ids: z.array(z.string().uuid()).max(100).nullable().optional(),
+  can_export: z.boolean().optional(),
+  multi_branch: z.boolean().optional(),
 });
 
 function fail(message: string, status = 400) {
@@ -34,6 +42,24 @@ function checkMenus(level: 'admin' | 'staff', keys: string[] | null | undefined)
   if (keys == null) return { keys: null };
   const v = validateRoleMenuKeys(level, keys);
   return v.ok ? { keys: v.keys as string[] } : { error: v.error };
+}
+
+/**
+ * Branch list + switches shared by create and update. Admin-level roles are
+ * never limited, so their values are forced open whatever the client sent.
+ */
+async function checkAccess(
+  admin: ReturnType<typeof createAdminClient>,
+  shopId: string,
+  level: 'admin' | 'staff',
+  input: { branch_ids?: string[] | null; can_export?: boolean; multi_branch?: boolean },
+): Promise<{ branch_ids: string[] | null; can_export: boolean; multi_branch: boolean; error?: undefined } | { error: string }> {
+  if (level === 'admin') return { branch_ids: null, can_export: true, multi_branch: true };
+  const { data, error } = await admin.from('branches').select('id').eq('shop_id', shopId).eq('is_deleted', false);
+  if (error) throw error;
+  const v = validateRoleBranchIds(level, input.branch_ids ?? null, (data ?? []).map((b) => b.id as string));
+  if (!v.ok) return { error: v.error };
+  return { branch_ids: v.branchIds, can_export: input.can_export ?? true, multi_branch: input.multi_branch ?? true };
 }
 
 /** Roles with how many active members hold each. Staff may read (pickers); admin manages. */
@@ -69,6 +95,8 @@ export async function POST(req: Request) {
     if (menus.error !== undefined) return fail(menus.error);
 
     const admin = createAdminClient();
+    const access = await checkAccess(admin, profile.shop_id, body.access_level, body);
+    if (access.error !== undefined) return fail(access.error);
     const { data: existing } = await admin.from('roles').select('id,is_deleted').eq('code', body.code).maybeSingle();
     if (existing && !existing.is_deleted) return fail('มีรหัสสิทธิ์นี้อยู่แล้ว', 409);
 
@@ -79,6 +107,9 @@ export async function POST(req: Request) {
       description: body.description ?? null,
       access_level: body.access_level,
       menu_keys: menus.keys,
+      branch_ids: access.branch_ids,
+      can_export: access.can_export,
+      multi_branch: access.multi_branch,
       is_system: false,
       sort_order: (count ?? 0) + 1,
       is_deleted: false,
@@ -115,11 +146,21 @@ export async function PATCH(req: Request) {
     const menus = checkMenus(level, body.menu_keys === undefined ? role.menu_keys : body.menu_keys);
     if (menus.error !== undefined) return fail(menus.error);
 
+    const access = await checkAccess(admin, profile.shop_id, level, {
+      branch_ids: body.branch_ids === undefined ? role.branch_ids : body.branch_ids,
+      can_export: body.can_export ?? role.can_export,
+      multi_branch: body.multi_branch ?? role.multi_branch,
+    });
+    if (access.error !== undefined) return fail(access.error);
+
     const patch = {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       access_level: level,
       menu_keys: menus.keys,
+      branch_ids: access.branch_ids,
+      can_export: access.can_export,
+      multi_branch: access.multi_branch,
       updated_by: user.id,
     };
     const { data, error } = await admin.from('roles').update(patch).eq('id', role.id).select(ROLE_SELECT).single();

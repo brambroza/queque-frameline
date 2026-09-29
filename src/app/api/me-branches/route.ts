@@ -8,12 +8,12 @@ import { applyBranchScope } from '@/lib/auth/branch-scope';
  */
 export async function GET() {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({
+    const { supabase, profile, branchScope, capabilities } = await requireAuthContext({
       roles: ['admin', 'staff'],
     });
 
     // A super_admin who has not picked a shop yet has no branches to offer.
-    if (!profile.shop_id) return NextResponse.json({ data: { scope: 'shop', branches: [] } });
+    if (!profile.shop_id) return NextResponse.json({ data: { scope: 'shop', branches: [], can_export: false, multi_branch: false } });
 
     const { data, error } = await applyBranchScope(
       supabase
@@ -34,6 +34,9 @@ export async function GET() {
         // 'branch' = bound to the listed branches only.
         scope: branchScope === null ? 'shop' : 'branch',
         branches: data ?? [],
+        // Role switches: export buttons and viewing several branches at once.
+        can_export: capabilities.canExport,
+        multi_branch: capabilities.multiBranch,
       },
     });
   } catch (e) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { DOCK_RELEASED_STATUSES, type DockDayResponse } from '@/lib/booking/dock-day';
 import { toBangkokStamp } from '@/lib/booking/slot-time';
 
@@ -22,7 +23,7 @@ type HoursRow = { open_time: string; close_time: string; break_start: string | n
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
 
     const { data: b } = await supabase
@@ -33,6 +34,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .eq('is_deleted', false)
       .maybeSingle();
     if (!b) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, b.branch_id as string | null);
 
     const now = toBangkokStamp(new Date());
     const self = { start_time: b.start_time, end_time: b.end_time, buffer_minutes: b.buffer_minutes };

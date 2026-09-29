@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { documentPaymentSchema } from '@/lib/booking/schemas';
 import { isPaymentCleared } from '@/lib/booking/payment';
@@ -12,7 +13,7 @@ import { notifyPaymentCleared } from '@/lib/booking/payment-notify';
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { user, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
     const parsed = documentPaymentSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'ข้อมูลการชำระเงินไม่ถูกต้อง' }, { status: 400 });
@@ -27,6 +28,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       .eq('is_deleted', false)
       .maybeSingle();
     if (!doc) return NextResponse.json({ error: 'ไม่พบเอกสาร' }, { status: 404 });
+    // Service role bypasses RLS: the branch check has to happen here.
+    assertRowBranch(branchScope, doc.branch_id as string | null);
+    assertBranchWritable(branchScope, doc.branch_id as string | null);
     if (doc.doc_type !== 'so') return NextResponse.json({ error: 'บันทึกการชำระเงินได้เฉพาะ SO', code: 'not_so' }, { status: 400 });
 
     const next = parsed.data.payment_status;

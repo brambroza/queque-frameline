@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { applyNullableBranchScope, assertRowBranch } from '@/lib/auth/branch-scope';
 import { DOCK_RELEASED_STATUSES, type DockBoardLane, type DockBoardResponse, type DockDayOther } from '@/lib/booking/dock-day';
 import { isoDateSchema } from '@/lib/booking/schemas';
 import { decorateSlots, toBangkokStamp, type SlotRow } from '@/lib/booking/slot-time';
@@ -26,7 +27,7 @@ type HoursRow = { open_time: string; close_time: string; break_start: string | n
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
     const dateParam = new URL(req.url).searchParams.get('date');
     const dateParsed = dateParam ? isoDateSchema.safeParse(dateParam) : null;
@@ -40,18 +41,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       .eq('is_deleted', false)
       .maybeSingle();
     if (!b) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, b.branch_id as string | null);
 
     const date: string = dateParsed?.success ? dateParsed.data : b.booking_date;
     const now = new Date();
 
     // Same rule as `eligible_docks`, evaluated here because `service_ids` is an array filter.
-    const { data: dockRows, error: dockError } = await supabase
-      .from('booking_resources')
-      .select('id,resource_name,resource_code,branch_id,direction,service_ids')
-      .eq('shop_id', profile.shop_id)
-      .eq('resource_type', 'dock')
-      .eq('active', true)
-      .eq('is_deleted', false)
+    const { data: dockRows, error: dockError } = await applyNullableBranchScope(
+      supabase
+        .from('booking_resources')
+        .select('id,resource_name,resource_code,branch_id,direction,service_ids')
+        .eq('shop_id', profile.shop_id)
+        .eq('resource_type', 'dock')
+        .eq('active', true)
+        .eq('is_deleted', false),
+      branchScope,
+    )
       .order('resource_code', { ascending: true, nullsFirst: false })
       .order('resource_name');
     if (dockError) throw dockError;

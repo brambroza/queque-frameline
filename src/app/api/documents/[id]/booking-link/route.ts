@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument, isDocType } from '@/lib/auth/document-access';
 import { getSiteSettings } from '@/lib/booking/server';
 import { deriveLinkToken, expiryFromNow, hashToken, tokenState } from '@/lib/tokens';
@@ -12,19 +13,21 @@ import { getLineConfig, liffUrl } from '@/lib/line/config';
  */
 async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: boolean) {
   const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
-  const { supabase, user, profile } = auth;
+  const { supabase, user, profile, branchScope } = auth;
   const { id } = await ctx.params;
 
   const { data: doc } = await supabase
     .from('external_documents')
-    .select('id,doc_no,doc_type,status,booking_token_hash,booking_token_version,booking_token_expires_at')
+    .select('id,doc_no,doc_type,status,branch_id,booking_token_hash,booking_token_version,booking_token_expires_at')
     .eq('id', id)
     .eq('shop_id', profile.shop_id)
     .eq('is_deleted', false)
     .maybeSingle();
   if (!doc) return NextResponse.json({ error: 'ไม่พบเอกสาร' }, { status: 404 });
+  assertRowBranch(branchScope, doc.branch_id as string | null);
   // Issuing a link is part of keying the document: admin, sales admin (SO) or purchasing (PO).
   if (!isDocType(doc.doc_type) || !canWriteDocument(doc.doc_type, auth)) return NextResponse.json({ error: 'ไม่มีสิทธิ์ออกลิงก์จองของเอกสารประเภทนี้' }, { status: 403 });
+  assertBranchWritable(branchScope, doc.branch_id as string | null);
   if (doc.status === 'cancelled' || doc.status === 'completed') {
     return NextResponse.json({ error: 'เอกสารนี้ปิดแล้ว ออกลิงก์จองไม่ได้' }, { status: 409 });
   }

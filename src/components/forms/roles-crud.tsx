@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useI18n } from '@/components/i18n/i18n-provider';
 import { ADMIN_LOCKED_MENUS, MENU_GROUPS, MENU_ITEMS, menuKeysForLevel, menuKeysOfRole, type MenuKey } from '@/lib/auth/menu-registry';
+import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import type { AppRole } from '@/types/db';
 
 type RoleRow = {
@@ -18,6 +19,9 @@ type RoleRow = {
   description: string | null;
   access_level: AppRole;
   menu_keys: string[] | null;
+  branch_ids: string[] | null;
+  can_export: boolean;
+  multi_branch: boolean;
   is_system: boolean;
   user_count: number;
 };
@@ -31,6 +35,11 @@ type FormState = {
   /** true = every menu the level allows (stored as null) */
   all_menus: boolean;
   menu_keys: MenuKey[];
+  /** true = every branch (stored as null) */
+  all_branches: boolean;
+  branch_ids: string[];
+  can_export: boolean;
+  multi_branch: boolean;
 };
 
 const LEVEL_LABEL: Record<AppRole, string> = { admin: 'ผู้ดูแลระบบ', staff: 'พนักงาน' };
@@ -39,7 +48,7 @@ const LEVEL_HINT: Record<AppRole, string> = {
   staff: 'งานหน้าคลัง: ดู/สร้างคิว เช็คอิน เรียกคิว บันทึกการชำระ — เมนูตั้งค่าเปิดดูได้แต่แก้ไม่ได้',
 };
 
-const emptyForm: FormState = { id: null, code: '', name: '', description: '', access_level: 'staff', all_menus: false, menu_keys: [] };
+const emptyForm: FormState = { id: null, code: '', name: '', description: '', access_level: 'staff', all_menus: false, menu_keys: [], all_branches: true, branch_ids: [], can_export: true, multi_branch: true };
 
 function toForm(r: RoleRow): FormState {
   return {
@@ -50,6 +59,10 @@ function toForm(r: RoleRow): FormState {
     access_level: r.access_level,
     all_menus: r.menu_keys == null,
     menu_keys: menuKeysOfRole(r),
+    all_branches: r.branch_ids == null,
+    branch_ids: r.branch_ids ?? [],
+    can_export: r.can_export !== false,
+    multi_branch: r.multi_branch !== false,
   };
 }
 
@@ -58,6 +71,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
   const { t } = useI18n();
+  const { branches } = useBranchScope();
   const [rows, setRows] = useState<RoleRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
@@ -79,6 +93,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
   async function save() {
     if (!form || saving) return;
     if (!form.name.trim()) { push('กรุณาตั้งชื่อสิทธิ์', 'error'); return; }
+    if (form.access_level === 'staff' && !form.all_branches && form.branch_ids.length === 0) { push('เลือกอย่างน้อย 1 สาขา หรือเปิด "เห็นทุกสาขา"', 'error'); return; }
     if (!form.id && !/^[a-z][a-z0-9_]{1,31}$/.test(form.code)) { push('รหัสใช้ a-z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2–32', 'error'); return; }
     setSaving(true);
     try {
@@ -88,6 +103,9 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
         description: form.description.trim() || null,
         access_level: form.access_level,
         menu_keys: form.all_menus ? null : form.menu_keys,
+        branch_ids: form.access_level === 'admin' || form.all_branches ? null : form.branch_ids,
+        can_export: form.access_level === 'admin' ? true : form.can_export,
+        multi_branch: form.access_level === 'admin' ? true : form.multi_branch,
       };
       const res = await fetch('/api/roles', { method: form.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -127,6 +145,21 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
     });
   }
 
+  function toggleBranch(id: string) {
+    setForm((p) => {
+      if (!p) return p;
+      const has = p.branch_ids.includes(id);
+      return { ...p, branch_ids: has ? p.branch_ids.filter((b) => b !== id) : [...p.branch_ids, id] };
+    });
+  }
+
+  /** One-line summary of a role's branch limit and switches for the list card. */
+  function accessSummary(r: RoleRow): string {
+    if (r.access_level === 'admin') return 'ทุกสาขา · Export ได้ · ดูหลายสาขาพร้อมกันได้';
+    const names = r.branch_ids == null ? 'ทุกสาขา' : r.branch_ids.map((id) => branches.find((b) => b.id === id)?.branch_name ?? 'สาขาที่ถูกลบ').join(', ');
+    return `${names} · ${r.can_export !== false ? 'Export ได้' : 'Export ไม่ได้'} · ${r.multi_branch !== false ? 'ดูหลายสาขาพร้อมกันได้' : 'ดูทีละสาขา'}`;
+  }
+
   function setLevel(level: AppRole) {
     setForm((p) => (p ? { ...p, access_level: level, menu_keys: p.menu_keys.filter((k) => menuKeysForLevel(level).includes(k)) } : p));
   }
@@ -164,6 +197,9 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
                     เมนู ({menus.length}/{MENU_ITEMS.length}): {r.menu_keys == null ? 'ทุกเมนูของระดับนี้ — ' : ''}
                     {menus.map((k) => { const m = MENU_ITEMS.find((x) => x.key === k)!; return t(m.labelKey, m.fallback); }).join(' · ') || 'ไม่มี'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                    สาขาและข้อมูล: {accessSummary(r)}
                   </Typography>
                 </Box>
                 {isAdmin ? (
@@ -215,6 +251,36 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                     </Box>
                   </Box>
                 )) : null}
+
+                <Divider />
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={700}>สาขาและข้อมูล</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {form.access_level === 'admin'
+                      ? 'ระดับผู้ดูแลระบบเห็นทุกสาขาและ Export ได้เสมอ เพื่อไม่ให้ล็อกตัวเองออกจากการตั้งค่า'
+                      : 'สาขาที่เลือกมีผลทุกหน้า: คิว บอร์ดคิว เอกสาร SO/PO ท่า และแดชบอร์ด'}
+                  </Typography>
+                </Box>
+                <FormControlLabel disabled={form.access_level === 'admin'}
+                  control={<Switch checked={form.access_level === 'admin' || form.all_branches} onChange={(e) => setForm((p) => (p ? { ...p, all_branches: e.target.checked } : p))} />}
+                  label="เห็นทุกสาขา" />
+                {form.access_level === 'staff' && !form.all_branches ? (
+                  branches.length === 0 ? <Alert severity="info">ยังไม่มีสาขา — เพิ่มสาขาก่อน</Alert> : (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+                      {branches.map((b) => (
+                        <FormControlLabel key={b.id}
+                          control={<Checkbox size="small" checked={form.branch_ids.includes(b.id)} onChange={() => toggleBranch(b.id)} />}
+                          label={<Typography variant="body2">{b.branch_name}</Typography>} />
+                      ))}
+                    </Box>
+                  )
+                ) : null}
+                <FormControlLabel disabled={form.access_level === 'admin'}
+                  control={<Switch checked={form.access_level === 'admin' || form.multi_branch} onChange={(e) => setForm((p) => (p ? { ...p, multi_branch: e.target.checked } : p))} />}
+                  label={<Box><Typography variant="body2">ดูหลายสาขาพร้อมกันบนแดชบอร์ด</Typography><Typography variant="caption" color="text.secondary">ปิด = เลือกดูได้ทีละสาขา</Typography></Box>} />
+                <FormControlLabel disabled={form.access_level === 'admin'}
+                  control={<Switch checked={form.access_level === 'admin' || form.can_export} onChange={(e) => setForm((p) => (p ? { ...p, can_export: e.target.checked } : p))} />}
+                  label={<Box><Typography variant="body2">Export ข้อมูล (Excel / CSV)</Typography><Typography variant="caption" color="text.secondary">ปิด = ไม่เห็นปุ่ม Export และเรียก API ส่งออกไม่ได้</Typography></Box>} />
               </Stack>
             </DialogContent>
             <DialogActions>

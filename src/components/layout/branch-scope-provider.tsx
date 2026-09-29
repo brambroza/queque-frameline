@@ -17,6 +17,10 @@ type BranchScopeValue = {
   withBranch: (params?: URLSearchParams) => URLSearchParams;
   /** `?branch_id=…` (or '') ready to append to a fetch URL that already has a query. */
   branchQuery: string;
+  /** Role switch: may export data. */
+  canExport: boolean;
+  /** Role switch: may view several branches together (dashboard). */
+  multiBranch: boolean;
 };
 
 const STORAGE_KEY = 'portal.branch_id';
@@ -34,6 +38,8 @@ export function BranchScopeProvider({ children }: { children: React.ReactNode })
   const [scope, setScope] = useState<'shop' | 'branch'>('shop');
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [branchId, setBranchIdState] = useState('');
+  const [canExport, setCanExport] = useState(false);
+  const [multiBranch, setMultiBranch] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +54,9 @@ export function BranchScopeProvider({ children }: { children: React.ReactNode })
         const nextScope = (json.data?.scope ?? 'shop') as 'shop' | 'branch';
         setBranches(list);
         setScope(nextScope);
+        // Older API responses carry no switches: keep the pre-capability behaviour.
+        setCanExport(json.data?.can_export !== false);
+        setMultiBranch(json.data?.multi_branch !== false);
 
         // URL wins over the remembered value so a shared link opens on the right branch.
         const fromUrl = new URLSearchParams(window.location.search).get('branch_id') ?? '';
@@ -106,8 +115,10 @@ export function BranchScopeProvider({ children }: { children: React.ReactNode })
       setBranchId,
       withBranch,
       branchQuery: branchId ? `branch_id=${encodeURIComponent(branchId)}` : '',
+      canExport,
+      multiBranch,
     }),
-    [loading, scope, branches, branchId, setBranchId, withBranch]
+    [loading, scope, branches, branchId, setBranchId, withBranch, canExport, multiBranch]
   );
 
   return <BranchScopeContext.Provider value={value}>{children}</BranchScopeContext.Provider>;
@@ -130,5 +141,7 @@ export function useBranchScope(): BranchScopeValue {
     setBranchId: () => {},
     withBranch: (params?: URLSearchParams) => new URLSearchParams(params ?? undefined),
     branchQuery: '',
+    canExport: true,
+    multiBranch: true,
   };
 }

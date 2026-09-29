@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { applyBranchScope, assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument, isDocType } from '@/lib/auth/document-access';
 import { LIVE_STATUSES } from '@/lib/booking/status-flow';
 
@@ -9,7 +10,7 @@ const patchSchema = z.object({ status: z.enum(['open', 'completed', 'cancelled']
 /** One document with its queues. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
     const { data: doc, error } = await supabase
       .from('external_documents')
@@ -20,13 +21,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       .maybeSingle();
     if (error) throw error;
     if (!doc) return NextResponse.json({ error: 'ไม่พบเอกสาร' }, { status: 404 });
+    assertRowBranch(branchScope, doc.branch_id as string | null);
 
-    const { data: bookings } = await supabase
-      .from('bookings')
-      .select('id,queue_number,booking_date,start_time,end_time,status,plate_number,plate_number_actual,resource_name,do_number,services(service_name)')
-      .eq('shop_id', profile.shop_id)
-      .eq('document_id', id)
-      .eq('is_deleted', false)
+    const { data: bookings } = await applyBranchScope(
+      supabase
+        .from('bookings')
+        .select('id,queue_number,booking_date,start_time,end_time,status,plate_number,plate_number_actual,resource_name,do_number,services(service_name)')
+        .eq('shop_id', profile.shop_id)
+        .eq('document_id', id)
+        .eq('is_deleted', false),
+      branchScope,
+    )
       .order('booking_date', { ascending: true })
       .order('start_time', { ascending: true });
 
@@ -43,13 +48,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 async function loadWritable(auth: Awaited<ReturnType<typeof requireAuthContext>>, id: string) {
   const { data } = await auth.supabase
     .from('external_documents')
-    .select('id,doc_type')
+    .select('id,doc_type,branch_id')
     .eq('id', id)
     .eq('shop_id', auth.profile.shop_id)
     .eq('is_deleted', false)
     .maybeSingle();
   if (!data || !isDocType(data.doc_type)) return { status: 404 as const, error: 'ไม่พบเอกสาร' };
+  // Another branch's document = 404 (thrown, handled by the route's catch).
+  assertRowBranch(auth.branchScope, data.branch_id as string | null);
   if (!canWriteDocument(data.doc_type, auth)) return { status: 403 as const, error: 'ไม่มีสิทธิ์แก้ไขเอกสารประเภทนี้' };
+  // A site-wide document (no branch) may only be changed by an unlimited caller.
+  assertBranchWritable(auth.branchScope, data.branch_id as string | null);
   return null;
 }
 

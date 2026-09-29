@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchWritable } from '@/lib/auth/branch-scope';
 import { directionSchema, isoDateSchema } from '@/lib/booking/schemas';
 import { decorateSlots, type SlotRow } from '@/lib/booking/slot-time';
 import { resolveDefaultBranchId } from '@/lib/booking/server';
@@ -10,7 +11,7 @@ import { resolveDefaultBranchId } from '@/lib/booking/server';
  */
 export async function GET(req: Request) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const sp = new URL(req.url).searchParams;
     const direction = directionSchema.safeParse(sp.get('direction'));
     const date = isoDateSchema.safeParse(sp.get('date'));
@@ -18,7 +19,9 @@ export async function GET(req: Request) {
     if (!direction.success || !date.success || !serviceId) {
       return NextResponse.json({ error: 'Missing direction, service_id or date' }, { status: 400 });
     }
-    const branchId = sp.get('branch_id') || (await resolveDefaultBranchId(supabase, profile.shop_id));
+    const branchId = sp.get('branch_id') || (await resolveDefaultBranchId(supabase, profile.shop_id, branchScope));
+    // Requested or default branch must be in scope; a limited caller never queries without a branch.
+    assertBranchWritable(branchScope, branchId);
 
     const { data, error } = await supabase.rpc('get_dock_slots', {
       p_shop_id: profile.shop_id,

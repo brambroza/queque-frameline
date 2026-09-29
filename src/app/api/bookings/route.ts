@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { applyBranchScope, assertBranchAllowed, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { bookingStatusPatchSchema, dockBookingSchema } from '@/lib/booking/schemas';
 import { normalizePlate } from '@/lib/booking/plate';
@@ -37,7 +38,7 @@ function sanitizeSearch(q: string) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { searchParams } = new URL(req.url);
     const page = toInt(searchParams.get('page'), 1);
     const pageSize = Math.min(toInt(searchParams.get('page_size'), 20), 200);
@@ -64,7 +65,8 @@ export async function GET(req: Request) {
     const q = sanitizeSearch(searchParams.get('q') ?? '');
 
     if (id) query = query.eq('id', id);
-    if (branchFilter) query = query.eq('branch_id', branchFilter);
+    // Out-of-scope `branch_id` = 403; no `branch_id` = the caller's branches only.
+    query = applyBranchScope(query, branchScope, branchFilter);
     if (date) query = query.eq('booking_date', date);
     if (dateFrom) query = query.gte('booking_date', dateFrom);
     if (dateTo) query = query.lte('booking_date', dateTo);
@@ -91,7 +93,7 @@ export async function GET(req: Request) {
 /** Create a queue from the portal. Admin/staff-created queues are confirmed at once and get their DO. */
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = dockBookingSchema.safeParse(await req.json());
     if (!parsed.success) return invalidPayload(parsed.error.issues);
     const payload = parsed.data;
@@ -124,8 +126,10 @@ export async function POST(req: Request) {
     }
     // An unpaid SO still gets its queue, but it waits as pending: no DO until the payment is recorded.
     const initialStatus = resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared });
-    branchId = branchId ?? (await resolveDefaultBranchId(supabase, profile.shop_id));
+    branchId = branchId ?? (await resolveDefaultBranchId(supabase, profile.shop_id, branchScope));
     if (!branchId) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่าสาขา/คลัง' }, { status: 400 });
+    // Final target branch (document's, requested or default) must be one the caller manages.
+    assertBranchAllowed(branchScope, branchId);
 
     if (partnerId) {
       const { data: partner } = await supabase.from('customers').select('id').eq('id', partnerId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
@@ -226,7 +230,7 @@ export async function POST(req: Request) {
 /** Status transition. Plate edits and reschedules have their own routes under /api/bookings/[id]. */
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = bookingStatusPatchSchema.safeParse(await req.json());
     if (!parsed.success) {
       const reasonIssue = parsed.error.issues.find((i) => i.path[0] === 'cancel_reason');
@@ -244,6 +248,7 @@ export async function PATCH(req: Request) {
       .eq('is_deleted', false)
       .maybeSingle();
     if (!before) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, before.branch_id as string | null);
 
     const from = String(before.status);
     const check = canTransition(from, status, actor);
@@ -388,18 +393,19 @@ export async function PATCH(req: Request) {
 /** Soft delete (admin). A live booking is cancelled first so its slot is released. */
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
     const id = new URL(req.url).searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,status,resource_id')
+      .select('id,queue_number,status,resource_id,branch_id')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
       .maybeSingle();
     if (!before) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, before.branch_id as string | null);
     if (before.status === 'called' || before.status === 'serving') {
       return NextResponse.json({ error: 'คิวนี้กำลังอยู่ที่ท่า ปิดงานหรือยกเลิกการเรียกก่อนลบ' }, { status: 409 });
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { actorFromRoles, getSiteSettings, logBooking } from '@/lib/booking/server';
 import { driverLinkExpiry, ensureDriverLink } from '@/lib/booking/driver-link';
 import { getLineConfig, liffUrl } from '@/lib/line/config';
@@ -10,17 +11,18 @@ import { deriveLinkToken } from '@/lib/tokens';
  * POST = regenerate: the previous link stops working.
  */
 async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: boolean) {
-  const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
+  const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
   const { id } = await ctx.params;
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id,queue_number,booking_date,driver_token_hash,driver_token_version,driver_token_expires_at')
+    .select('id,queue_number,booking_date,driver_token_hash,driver_token_version,driver_token_expires_at,branch_id')
     .eq('id', id)
     .eq('shop_id', profile.shop_id)
     .eq('is_deleted', false)
     .maybeSingle();
   if (!booking) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+  assertRowBranch(branchScope, booking.branch_id as string | null);
 
   const settings = await getSiteSettings(supabase, profile.shop_id);
   const needsIssue = regenerate || !booking.driver_token_hash;

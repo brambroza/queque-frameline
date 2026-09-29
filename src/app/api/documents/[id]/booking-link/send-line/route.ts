@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument, isDocType } from '@/lib/auth/document-access';
 import { getSiteSettings } from '@/lib/booking/server';
 import { getLineConfig, isLineConfigured, liffUrl } from '@/lib/line/config';
@@ -12,17 +13,19 @@ import { bookingUrl } from '@/lib/links';
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
-    const { supabase, user, profile } = auth;
+    const { supabase, user, profile, branchScope } = auth;
     const { id } = await ctx.params;
     const cfg = await getLineConfig(supabase, profile.shop_id);
     if (!isLineConfigured(cfg)) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่า LINE', code: 'not_configured' }, { status: 409 });
 
     const { data: doc } = await supabase
       .from('external_documents')
-      .select('id,doc_no,doc_type,status,partner_id,partner_name,due_date,booking_token_hash,booking_token_version,booking_token_expires_at,customers(line_user_id,line_users(line_user_id,display_name))')
+      .select('id,doc_no,doc_type,status,branch_id,partner_id,partner_name,due_date,booking_token_hash,booking_token_version,booking_token_expires_at,customers(line_user_id,line_users(line_user_id,display_name))')
       .eq('id', id).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
     if (!doc) return NextResponse.json({ error: 'ไม่พบเอกสาร' }, { status: 404 });
+    assertRowBranch(branchScope, doc.branch_id as string | null);
     if (!isDocType(doc.doc_type) || !canWriteDocument(doc.doc_type, auth)) return NextResponse.json({ error: 'ไม่มีสิทธิ์ส่งลิงก์จองของเอกสารประเภทนี้' }, { status: 403 });
+    assertBranchWritable(branchScope, doc.branch_id as string | null);
     if (doc.status === 'cancelled' || doc.status === 'completed') return NextResponse.json({ error: 'เอกสารนี้ปิดแล้ว' }, { status: 409 });
 
     const partner = doc.customers as unknown as { line_user_id: string | null; line_users: { line_user_id: string; display_name: string | null } | null } | null;

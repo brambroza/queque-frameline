@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 
 /** Audit timeline of one queue, oldest first. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
+    // `booking_logs` carries no branch: a branch-limited caller must own the queue itself.
+    if (branchScope !== null) {
+      const { data: booking } = await supabase.from('bookings').select('id,branch_id').eq('id', id).eq('shop_id', profile.shop_id).maybeSingle();
+      if (!booking) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+      assertRowBranch(branchScope, booking.branch_id as string | null);
+    }
     const { data, error } = await supabase
       .from('booking_logs')
       .select('id,action,description,from_value,to_value,actor_kind,created_by,created_at')

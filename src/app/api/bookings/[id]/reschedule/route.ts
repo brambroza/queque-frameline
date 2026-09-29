@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchAllowed, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { rescheduleSchema } from '@/lib/booking/schemas';
 import { normalizeSlotTime } from '@/lib/booking/slot-time';
@@ -12,19 +13,25 @@ import { safeNotifyPartner } from '@/lib/line/notify';
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
     const parsed = rescheduleSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'วันที่หรือเวลาไม่ถูกต้อง' }, { status: 400 });
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,booking_date,start_time,resource_id,resource_name,service_minutes')
+      .select('id,queue_number,booking_date,start_time,resource_id,resource_name,service_minutes,branch_id')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
       .maybeSingle();
     if (!before) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, before.branch_id as string | null);
+    // Destination dock: the RPC keeps the queue in its own branch, this is the API-layer guard.
+    if (branchScope !== null && parsed.data.resource_id) {
+      const { data: dock } = await supabase.from('booking_resources').select('id,branch_id').eq('id', parsed.data.resource_id).eq('shop_id', profile.shop_id).maybeSingle();
+      if (dock?.branch_id) assertBranchAllowed(branchScope, dock.branch_id as string);
+    }
 
     const { data: rows, error } = await createAdminClient().rpc('move_dock_booking', {
       p_shop_id: profile.shop_id,

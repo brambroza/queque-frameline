@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertBranchWritable } from '@/lib/auth/branch-scope';
 import { directionSchema, isoDateSchema } from '@/lib/booking/schemas';
 import { addDaysIso, toBangkokStamp } from '@/lib/booking/slot-time';
 import { resolveDefaultBranchId } from '@/lib/booking/server';
@@ -7,7 +8,7 @@ import { resolveDefaultBranchId } from '@/lib/booking/server';
 /** Days that still have an open slot — drives the portal calendar's enabled dates. */
 export async function GET(req: Request) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const sp = new URL(req.url).searchParams;
     const direction = directionSchema.safeParse(sp.get('direction'));
     const serviceId = sp.get('service_id');
@@ -19,7 +20,9 @@ export async function GET(req: Request) {
     const to = isoDateSchema.safeParse(sp.get('to'));
     const fromDate = from.success && from.data > today ? from.data : today;
     const toDate = to.success ? to.data : addDaysIso(fromDate, 41);
-    const branchId = sp.get('branch_id') || (await resolveDefaultBranchId(supabase, profile.shop_id));
+    const branchId = sp.get('branch_id') || (await resolveDefaultBranchId(supabase, profile.shop_id, branchScope));
+    // Requested or default branch must be in scope; a limited caller never queries without a branch.
+    assertBranchWritable(branchScope, branchId);
 
     const { data, error } = await supabase.rpc('get_available_days', {
       p_shop_id: profile.shop_id,

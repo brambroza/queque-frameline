@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { plateChangeSchema } from '@/lib/booking/schemas';
 import { normalizePlate, platesMatch } from '@/lib/booking/plate';
 import { actorFromRoles, logBooking } from '@/lib/booking/server';
@@ -13,19 +14,20 @@ import { safeNotifyStaffGroup } from '@/lib/line/notify';
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
     const parsed = plateChangeSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'ทะเบียนรถไม่ถูกต้อง' }, { status: 400 });
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,status,plate_number,plate_number_actual')
+      .select('id,queue_number,status,plate_number,plate_number_actual,branch_id')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
       .maybeSingle();
     if (!before) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, before.branch_id as string | null);
     if (isTerminalStatus(String(before.status))) return NextResponse.json({ error: 'คิวนี้ปิดแล้ว แก้ทะเบียนไม่ได้' }, { status: 409 });
 
     const next = normalizePlate(parsed.data.plate_number_actual);

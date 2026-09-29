@@ -9,7 +9,23 @@ import { buildInsights, pct, type HourCell, type WeekdayHourStat, type WeekdaySt
 import { compareStatus, statusOccupiesSlot } from '@/lib/booking/status-meta';
 import { fetchAllPages } from '@/lib/dashboard/fetch-all';
 import { customerLabel } from '@/lib/booking/customer-label';
-import type { DashboardData, DashboardDay, DashboardHeatmap, DashboardKpi, DashboardKpiPrev, DashboardNamedCount } from '@/types/dashboard';
+import { averageClosedMinutes, closedMinutes } from '@/lib/dashboard/queue-duration';
+import {
+  DEFAULT_THRESHOLDS,
+  bottleneck,
+  delayTrend,
+  floorStats,
+  latePartners,
+  latestQueues,
+  summarizeCore,
+  summarizeDocks,
+  summarizeVehicles,
+  timeQueues,
+  type DockInfo,
+  type WarehouseRow,
+} from '@/lib/dashboard/warehouse-kpi';
+import { resolveBranchSelection } from '@/lib/dashboard/branch-selection';
+import type { DashboardBranchKpi, DashboardWarehouse, DashboardData, DashboardDay, DashboardHeatmap, DashboardKpi, DashboardKpiPrev, DashboardNamedCount } from '@/types/dashboard';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -18,6 +34,9 @@ const QuerySchema = z.object({
   from: z.string().regex(ISO_DATE).optional(),
   to: z.string().regex(ISO_DATE).optional(),
   branch_id: z.string().uuid().optional(),
+  /** Several branches at once, comma separated. */
+  branch_ids: z.string().regex(/^[0-9a-fA-F-]{36}(,[0-9a-fA-F-]{36}){0,49}$/).optional(),
+  direction: z.enum(['inbound', 'outbound']).optional(),
   recent_page: z.coerce.number().int().min(1).default(1),
   recent_limit: z.coerce.number().int().min(1).max(50).default(10),
 });
@@ -36,7 +55,15 @@ type LightBooking = {
   customer_id: string | null;
   service_id: string | null;
   branch_id: string | null;
+  called_at: string | null;
+  completed_at: string | null;
 };
+
+/** Queue row of the warehouse KPIs as PostgREST returns it, with the document embedded. */
+type WarehouseDbRow = Omit<WarehouseRow, 'awaiting_payment'> & { external_documents: { doc_type?: string | null; payment_status?: string | null } | null };
+
+const WAREHOUSE_SELECT =
+  'id,queue_number,booking_date,start_time,status,direction,branch_id,resource_id,service_id,customer_id,service_minutes,checked_in_at,called_at,serving_started_at,completed_at,call_count,plate_number,plate_number_actual,external_documents(doc_type,payment_status)';
 
 type HeavyBooking = {
   id: string;
@@ -45,6 +72,9 @@ type HeavyBooking = {
   start_time: string;
   status: string;
   created_at: string;
+  called_at: string | null;
+  completed_at: string | null;
+  call_count: number | null;
   services: { service_name?: string } | null;
   branches: { branch_name?: string } | null;
   customers: { full_name?: string | null; nickname?: string | null } | null;
@@ -68,6 +98,7 @@ function hourCells(rows: LightBooking[], date: string, hours: number[], model: C
 }
 
 function summarize(rows: LightBooking[], from: string, to: string, model: CapacityModel): Omit<DashboardKpi, 'customers_new' | 'customers_returning'> {
+  // Call → close, over the queues of the range that were closed.
   const inRange = rows.filter((r) => r.booking_date >= from && r.booking_date <= to);
   const count = (pred: (s: string) => boolean) => inRange.filter((r) => pred(r.status)).length;
   const booked = count(statusOccupiesSlot);
@@ -82,17 +113,18 @@ function summarize(rows: LightBooking[], from: string, to: string, model: Capaci
     waiting: count((s) => s === 'waiting' || s === 'called' || s === 'checked_in' || s === 'seating'),
     capacity,
     utilization_pct: pct(booked, capacity),
+    avg_queue_minutes: averageClosedMinutes(inRange),
+    closed_queues: inRange.filter((r) => closedMinutes(r) !== null).length,
   };
 }
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, user, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, user, capabilities } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const url = new URL(req.url);
     const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid query' }, { status: 400 });
     const query = parsed.data;
-    const requestedBranchId = query.branch_id ?? null;
 
     let targetShopId = profile.shop_id;
     if (!targetShopId) {
@@ -110,6 +142,19 @@ export async function GET(req: Request) {
     // A super_admin picks the shop in the topbar (acting-shop cookie); no silent fallback
     // to an arbitrary shop, otherwise the numbers would not match what the shell shows.
     if (!targetShopId) return NextResponse.json({ error: 'Select a shop first', code: 'SHOP_REQUIRED' }, { status: 400 });
+
+    // Branches this view runs over: what was asked for, held to the caller's role.
+    const visible = await applyBranchScope(
+      supabase.from('branches').select('id', { count: 'exact', head: true }).eq('shop_id', targetShopId).eq('is_deleted', false),
+      capabilities.branchScope,
+      null,
+      'id',
+    );
+    if (visible.error) throw visible.error;
+    const selection = resolveBranchSelection(url.searchParams, capabilities, visible.count ?? 0);
+    if (!selection.ok) return NextResponse.json({ error: selection.error, code: selection.code }, { status: selection.status });
+    const branchScope = selection.scope;
+    const requestedBranchId = null;
 
     const today = getTodayISOInBangkok();
     const nowHour = getNowHourInBangkok();
@@ -129,7 +174,10 @@ export async function GET(req: Request) {
 
     const recentOffset = (query.recent_page - 1) * query.recent_limit;
 
-    const [branchesRes, servicesRes, lightRes, recentRes, whRes, holRes, shopRes] = await Promise.all([
+    /** Narrow a bookings query to the requested direction, when one was asked for. */
+    const byDirection = <Q,>(q: Q): Q => (query.direction ? ((q as unknown as { eq: (c: string, v: string) => Q }).eq('direction', query.direction)) : q);
+
+    const [branchesRes, servicesRes, lightRes, recentRes, whRes, holRes, shopRes, docksRes, warehouseRes] = await Promise.all([
       applyBranchScope(
         supabase.from('branches').select('id,branch_name').eq('shop_id', targetShopId).eq('is_deleted', false),
         branchScope,
@@ -142,13 +190,15 @@ export async function GET(req: Request) {
       // page it rather than let a single request silently truncate the KPIs.
       fetchAllPages<LightBooking>((from, to) =>
         applyBranchScope(
-          supabase
-            .from('bookings')
-            .select('booking_date,start_time,status,customer_id,service_id,branch_id')
-            .eq('shop_id', targetShopId)
-            .eq('is_deleted', false)
-            .gte('booking_date', windowFrom)
-            .lte('booking_date', windowTo),
+          byDirection(
+            supabase
+              .from('bookings')
+              .select('booking_date,start_time,status,customer_id,service_id,branch_id,called_at,completed_at')
+              .eq('shop_id', targetShopId)
+              .eq('is_deleted', false)
+              .gte('booking_date', windowFrom)
+              .lte('booking_date', windowTo),
+          ),
           branchScope,
           requestedBranchId,
         )
@@ -158,13 +208,15 @@ export async function GET(req: Request) {
           .range(from, to),
       ),
       applyBranchScope(
-        supabase
-          .from('bookings')
-          .select('id,queue_number,booking_date,start_time,status,created_at,services(service_name),branches(branch_name),customers(full_name,nickname)', { count: 'exact' })
-          .eq('shop_id', targetShopId)
-          .eq('is_deleted', false)
-          .gte('booking_date', range.from)
-          .lte('booking_date', range.to),
+        byDirection(
+          supabase
+            .from('bookings')
+            .select('id,queue_number,booking_date,start_time,status,created_at,called_at,completed_at,call_count,services(service_name),branches(branch_name),customers(full_name,nickname)', { count: 'exact' })
+            .eq('shop_id', targetShopId)
+            .eq('is_deleted', false)
+            .gte('booking_date', range.from)
+            .lte('booking_date', range.to),
+        ),
         branchScope,
         requestedBranchId,
       )
@@ -192,9 +244,36 @@ export async function GET(req: Request) {
         requestedBranchId,
       ),
       supabase.from('shops').select('id,demo_mode_enabled,demo_business_type,line_setup_completed,shop_key').eq('id', targetShopId).maybeSingle(),
+      applyNullableBranchScope(
+        supabase.from('booking_resources').select('id,resource_name,branch_id').eq('shop_id', targetShopId).eq('is_deleted', false).eq('resource_type', 'dock'),
+        branchScope,
+        requestedBranchId,
+      ).order('resource_name', { ascending: true }),
+      // Selected range + the period before it, with the timestamps the warehouse KPIs read.
+      fetchAllPages<WarehouseDbRow>((from, to) =>
+        applyBranchScope(
+          byDirection(
+            supabase
+              .from('bookings')
+              .select(WAREHOUSE_SELECT)
+              .eq('shop_id', targetShopId)
+              .eq('is_deleted', false)
+              .gte('booking_date', range.prev_from)
+              .lte('booking_date', range.to),
+          ),
+          branchScope,
+          requestedBranchId,
+        )
+          .order('booking_date', { ascending: true })
+          .order('start_time', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to) as unknown as PromiseLike<{ data: WarehouseDbRow[] | null; error: unknown }>,
+      ),
     ]);
 
     const firstError = branchesRes.error ?? servicesRes.error ?? lightRes.error ?? recentRes.error ?? whRes.error ?? holRes.error;
+    // The warehouse block reads newer columns; if it cannot load, the rest of the dashboard still answers.
+    const warehouseAvailable = !docksRes.error && !warehouseRes.error;
     if (firstError) throw firstError;
 
     const branches = (branchesRes.data ?? []) as Array<{ id: string; branch_name: string }>;
@@ -295,6 +374,7 @@ export async function GET(req: Request) {
         cancelled: prevBase.cancelled,
         no_show: prevBase.no_show,
         utilization_pct: prevBase.utilization_pct,
+        avg_queue_minutes: prevBase.avg_queue_minutes,
       },
     };
 
@@ -324,6 +404,93 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => b.count - a.count);
 
+    const branchKpi: DashboardBranchKpi[] = branches.map((b) => {
+      const single = new CapacityModel([b.id], (whRes.data ?? []) as WorkingHoursRow[], (holRes.data ?? []) as HolidayRow[]);
+      const base = summarize(rows.filter((r) => r.branch_id === b.id), range.from, range.to, single);
+      return { branch_id: b.id, name: b.branch_name, total: base.total, booked: base.booked, completed: base.completed, cancelled: base.cancelled, no_show: base.no_show, capacity: base.capacity, utilization_pct: base.utilization_pct };
+    });
+
+    // ── Warehouse KPIs ──
+    const workingHours = (whRes.data ?? []) as WorkingHoursRow[];
+    const holidayRows = (holRes.data ?? []) as HolidayRow[];
+    const branchModels = new Map(branches.map((b) => [b.id, new CapacityModel([b.id], workingHours, holidayRows)]));
+    /** Minutes one branch is open over the days given (hours with capacity × 60). */
+    const openMinutes = (branchId: string | null, days: string[]): number => {
+      const m = branchId ? branchModels.get(branchId) : undefined;
+      return m ? days.reduce((s, d) => s + m.hourlyProfile(d).size * 60, 0) : 0;
+    };
+    // Days still ahead carry no finished work, so they do not count as working days.
+    const elapsedDays = rangeDays.filter((d) => d <= today);
+    const prevDays = eachDay(range.prev_from, range.prev_to);
+    const dockRows = ((warehouseAvailable ? docksRes.data : null) ?? []) as Array<{ id: string; resource_name: string; branch_id: string | null }>;
+    const dockInfo = (days: string[]): DockInfo[] => dockRows.map((d) => ({ id: d.id, name: d.resource_name, branch_id: d.branch_id, open_minutes: openMinutes(d.branch_id, days) }));
+    const docksNow = dockInfo(elapsedDays);
+    const totalOpen = (list: DockInfo[]) => list.reduce((s, d) => s + d.open_minutes, 0);
+    const openDays = (days: string[]) => days.filter((d) => model.dailyCapacity(d) > 0).length;
+
+    const warehouseRows: WarehouseRow[] = (warehouseAvailable ? warehouseRes.data : []).map(({ external_documents: doc, ...r }) => ({
+      ...r,
+      awaiting_payment: doc?.doc_type === 'so' && (doc.payment_status ?? 'unpaid') === 'unpaid',
+    }));
+    const nowRows = warehouseRows.filter((r) => r.booking_date >= range.from && r.booking_date <= range.to);
+    const prevRows = warehouseRows.filter((r) => r.booking_date >= range.prev_from && r.booking_date <= range.prev_to);
+    const th = DEFAULT_THRESHOLDS;
+    const core = summarizeCore(nowRows, th, openDays(elapsedDays), totalOpen(docksNow));
+    const prevCore = summarizeCore(prevRows, th, openDays(prevDays), totalOpen(dockInfo(prevDays)));
+    const { timed } = timeQueues(nowRows, th);
+    const dockName = new Map(dockRows.map((d) => [d.id, d.resource_name]));
+    const branchName = new Map(branches.map((b) => [b.id, b.branch_name]));
+
+    const partners = latePartners(timed, range.days === 1 ? 1 : 3);
+    const partnerNames = new Map<string, string>();
+    if (partners.length > 0) {
+      const { data: named } = await supabase
+        .from('customers')
+        .select('id,full_name,nickname')
+        .eq('shop_id', targetShopId)
+        .in('id', partners.map((p) => p.customer_id));
+      for (const c of (named ?? []) as Array<{ id: string; full_name: string | null; nickname: string | null }>) partnerNames.set(c.id, customerLabel(c));
+    }
+
+    const activeDocks = summarizeDocks(timed, docksNow).filter((d) => d.count > 0).length;
+    const warehouse: DashboardWarehouse = {
+      available: warehouseAvailable,
+      thresholds: th,
+      kpi: {
+        ...core,
+        per_dock_hour: activeDocks && hours.length ? Math.round((core.per_day / (activeDocks * hours.length)) * 10) / 10 : 0,
+        prev: {
+          dock_avg: prevCore.dock_avg,
+          late: prevCore.late,
+          on_time_pct: prevCore.on_time_pct,
+          turnaround_avg: prevCore.turnaround_avg,
+          sla_pct: prevCore.sla_pct,
+          per_day: prevCore.per_day,
+          dock_utilization_pct: prevCore.dock_utilization_pct,
+          no_show_pct: prevCore.no_show_pct,
+        },
+      },
+      trend: range.days === 1 ? { mode: 'hour', points: delayTrend(timed, 'hour', hours.map(String)) } : { mode: 'day', points: delayTrend(timed, 'day', rangeDays) },
+      docks: summarizeDocks(timed, docksNow).map((d) => ({ ...d, branch_name: (d.branch_id && branchName.get(d.branch_id)) || '' })),
+      vehicles: summarizeVehicles(timed).map((v) => ({ ...v, name: serviceName.get(v.service_id) ?? '-' })),
+      bottleneck: { hours, rows: bottleneck(timed, docksNow, hours).map((r) => ({ ...r, name: dockName.get(r.dock_id) ?? '-' })) },
+      late_queues: latestQueues(timed).map((q) => ({
+        ...q,
+        service_name: (q.service_id && serviceName.get(q.service_id)) || '-',
+        dock_name: (q.resource_id && dockName.get(q.resource_id)) || '-',
+        branch_name: (q.branch_id && branchName.get(q.branch_id)) || '-',
+      })),
+      late_partners: partners.map((p) => ({ ...p, name: partnerNames.get(p.customer_id) ?? '-' })),
+      branches: branches.map((b) => {
+        const mine = docksNow.filter((d) => d.branch_id === b.id);
+        const single = branchModels.get(b.id);
+        const days = single ? elapsedDays.filter((d) => single.dailyCapacity(d) > 0).length : 0;
+        const c = summarizeCore(nowRows.filter((r) => r.branch_id === b.id), th, days, totalOpen(mine));
+        return { branch_id: b.id, name: b.branch_name, closed: c.closed, dock_avg: c.dock_avg, turnaround_avg: c.turnaround_avg, late: c.late, on_time_pct: c.on_time_pct, dock_utilization_pct: c.dock_utilization_pct };
+      }),
+      floor: floorStats(nowRows),
+    };
+
     const insights = buildInsights({
       today,
       now_hour: nowHour,
@@ -345,6 +512,9 @@ export async function GET(req: Request) {
       service_name: b.services?.service_name ?? '-',
       branch_name: b.branches?.branch_name ?? '-',
       created_at: b.created_at,
+      called_at: b.called_at ?? null,
+      completed_at: b.completed_at ?? null,
+      call_count: b.call_count ?? 0,
     }));
 
     const shopMeta = shopRes.data as { demo_mode_enabled?: boolean; demo_business_type?: string | null; line_setup_completed?: boolean; shop_key?: string | null } | null;
@@ -361,6 +531,8 @@ export async function GET(req: Request) {
       recent_bookings: { rows: recentRows, total: recentRes.count ?? recentRows.length, page: query.recent_page, limit: query.recent_limit },
       popular_services: popularServices,
       branch_summary: branchSummary,
+      branch_kpi: branchKpi,
+      warehouse,
       shop_meta: {
         demo_mode_enabled: Boolean(shopMeta?.demo_mode_enabled),
         demo_business_type: shopMeta?.demo_business_type ?? null,

@@ -13,11 +13,15 @@ export type RoleDef = {
   description: string | null;
   access_level: AppRole;
   menu_keys: string[] | null;
+  /** Branches members may see; null = every branch. */
+  branch_ids: string[] | null;
+  can_export: boolean;
+  multi_branch: boolean;
   is_system: boolean;
   sort_order: number;
 };
 
-export const ROLE_SELECT = 'id,code,name,description,access_level,menu_keys,is_system,sort_order';
+export const ROLE_SELECT = 'id,code,name,description,access_level,menu_keys,branch_ids,can_export,multi_branch,is_system,sort_order';
 
 /** Role row by code, or null. */
 export async function findRoleByCode(client: SupabaseClient, code: string): Promise<RoleDef | null> {

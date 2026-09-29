@@ -290,9 +290,16 @@ export function SimpleCrud({
             </div>
 
             <form ref={formRef} key={editingId ?? 'new'} onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
+              <p className="text-xs text-slate-500 sm:col-span-2">
+                ช่องที่มี <span className="font-semibold text-rose-600">*</span> จำเป็นต้องกรอก
+              </p>
               {allColumns.map((c) => (
                 <label key={c.key} className="text-sm">
-                  <span className="mb-1 block text-slate-600">{c.label}</span>
+                  <span className="mb-1 block text-slate-600">
+                    {c.label}
+                    {/* Checkboxes are never `required`; every other non-optional input is. */}
+                    {!c.optional && c.type !== 'checkbox' ? <span className="ml-0.5 font-semibold text-rose-600" aria-hidden="true">*</span> : null}
+                  </span>
                   {c.type === 'checkbox' ? (
                     <input type="checkbox" name={c.key} defaultChecked={Boolean(formSeed[c.key])} />
                   ) : (

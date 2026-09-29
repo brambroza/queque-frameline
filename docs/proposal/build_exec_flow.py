@@ -163,83 +163,139 @@ def svg_status(fig: Figure) -> list[str]:
     return out
 
 
-# ---------------------------------------------------------------- figure 1: before the appointment day
-SALES, OFFICE, PARTNER, SYS1 = range(4)
-FIG1 = Figure(
-    lanes=["ฝ่ายขาย / จัดซื้อ\nแอดมินเซล · ฝ่ายจัดซื้อ", "เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ลูกค้า / ผู้ขาย (Supplier)", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
+# ---------------------------------------------------------------- figures SO / PO: before the appointment day
+# Both tracks share lane order, column positions and step numbers, so the two drawings read side by side.
+# The PO track has no step 5 (payment) — the number is deliberately skipped, not renumbered.
+OWNER, OFFICE, PARTNER, SYS1 = range(4)
+GATE_COL = 4
+GATE_NO_TX = "ยังไม่ชำระเงิน"
+GATE_OK_TX = "ชำระแล้ว / ลูกค้าเครดิต"
+PO_SKIP_TX = "ไม่มีการตรวจการชำระเงิน · ยืนยันได้ทันที"
+
+
+def _shared_steps(partner_sub: str) -> dict[str, Step]:
+    """Steps 3, 4, 6, 7, 8 — identical in both tracks."""
+    return {
+        "3": Step(2, PARTNER, "3", "จองคิวด้วยตนเอง", partner_sub),
+        "4": Step(3, SYS1, "4", "จัดสรรท่าและออกเลขคิว", "ไม่ให้คิวซ้อนในท่าเดียวกัน", line=True, system=True),
+        "6": Step(6, OFFICE, "6", "ยืนยันคิว", "ระบบออกเลขใบ DO"),
+        "7": Step(7, SYS1, "7", "ส่งใบ DO ทาง LINE", "พร้อมลิงก์สำหรับคนขับ", line=True, system=True),
+        "8": Step(8, PARTNER, "8", "ส่งลิงก์ให้คนขับ", "ส่งต่อผ่าน LINE"),
+    }
+
+
+_SO = _shared_steps("เลือกประเภทรถ วัน และเวลา")
+SO_STEPS = {
+    "1": Step(0, OWNER, "1", "คีย์ใบสั่งขาย (SO)", "ทีละใบ · ไม่มีการนำเข้าไฟล์"),
+    "2": Step(1, OWNER, "2", "ส่งลิงก์จองคิว / QR", "ให้ลูกค้าที่มารับสินค้า", line=True),
+    "5": Step(5, OWNER, "5", "บันทึกการชำระเงิน", "ชำระแล้ว หรือลูกค้าเครดิต", line=True),
+    **_SO,
+}
+FIG_SO = Figure(
+    lanes=["ฝ่ายขาย\nแอดมินฝ่ายขาย", "เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ลูกค้า\nผู้มารับสินค้า", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
     system_lane=SYS1,
-    steps=[
-        Step(0, SALES, "1", "คีย์ใบ SO / PO ทีละใบ", "เซลคีย์ SO · จัดซื้อคีย์ PO"),
-        Step(1, SALES, "2", "ส่งลิงก์จองคิว / QR", "ผ่าน LINE หรือช่องทางอื่น", line=True),
-        Step(2, PARTNER, "3", "จองคิวด้วยตนเอง", "เลือกประเภทรถ วัน และเวลา"),
-        Step(3, SYS1, "4", "จัดสรรท่าและออกเลขคิว", "ไม่ให้คิวซ้อนในท่าเดียวกัน", line=True, system=True),
-        Step(5, OFFICE, "5", "บันทึกการชำระเงิน", "ชำระแล้ว หรือลูกค้าเครดิต", line=True),
-        Step(6, OFFICE, "6", "ยืนยันคิว", "ระบบออกเลขใบ DO"),
-        Step(7, SYS1, "7", "ส่งใบ DO ทาง LINE", "พร้อมลิงก์สำหรับคนขับ", line=True, system=True),
-        Step(8, PARTNER, "8", "ส่งลิงก์ให้คนขับ", "ส่งต่อผ่าน LINE"),
-    ],
+    steps=[SO_STEPS[k] for k in ("1", "2", "3", "4", "5", "6", "7", "8")],
     n_cols=9,
-    status=[(0, 1, "เอกสารรอจองคิว"), (2, 5, "รอยืนยัน · SO ที่ยังไม่ชำระเงินคงสถานะนี้"), (6, 8, "ยืนยันแล้ว · มีเลขใบ DO")],
-    aria="ก่อนวันนัด: แอดมินเซลคีย์ใบสั่งขาย ฝ่ายจัดซื้อคีย์ใบสั่งซื้อ แล้วส่งลิงก์ ลูกค้าจองคิว ระบบจองท่า ตรวจการชำระเงินของ SO แล้วทีมคลังยืนยันคิว ระบบออก DO และส่งลิงก์ให้คนขับ",
+    status=[(0, 1, "เอกสารรอจองคิว"), (2, 5, "รอยืนยัน · ยังไม่ชำระเงินคงสถานะนี้"), (6, 8, "ยืนยันแล้ว · มีเลขใบ DO")],
+    aria="ใบสั่งขาย ก่อนวันนัด: ฝ่ายขายคีย์ใบสั่งขายแล้วส่งลิงก์ให้ลูกค้า ลูกค้าจองคิว ระบบจัดสรรท่า ตรวจการชำระเงิน ถ้ายังไม่ชำระ ฝ่ายขายบันทึกการชำระเงินก่อน แล้วเจ้าหน้าที่คลังยืนยันคิว ระบบออก DO ลูกค้าส่งลิงก์ให้คนขับ",
 )
+SO_LINKS: list[tuple[Step, Step]] = [(SO_STEPS[a], SO_STEPS[b]) for a, b in
+                                     [("1", "2"), ("2", "3"), ("3", "4"), ("5", "6"), ("6", "7"), ("7", "8")]]
+
+_PO = _shared_steps("เลือกประเภทรถ วัน และเวลา")
+PO_STEPS = {
+    "1": Step(0, OWNER, "1", "คีย์ใบสั่งซื้อ (PO)", "ทีละใบ · ไม่มีการนำเข้าไฟล์"),
+    "2": Step(1, OWNER, "2", "ส่งลิงก์จองคิว / QR", "ให้ผู้ขายที่มาส่งสินค้า", line=True),
+    **_PO,
+}
+FIG_PO = Figure(
+    lanes=["ฝ่ายจัดซื้อ", "เจ้าหน้าที่คลัง\nผู้ดูแลระบบ / พนักงาน", "ผู้ขาย (Supplier)\nผู้มาส่งสินค้า", "ระบบ\nอัตโนมัติ + แจ้ง LINE"],
+    system_lane=SYS1,
+    steps=[PO_STEPS[k] for k in ("1", "2", "3", "4", "6", "7", "8")],
+    n_cols=9,
+    status=[(0, 1, "เอกสารรอจองคิว"), (2, 5, "รอยืนยัน"), (6, 8, "ยืนยันแล้ว · มีเลขใบ DO")],
+    aria="ใบสั่งซื้อ ก่อนวันนัด: ฝ่ายจัดซื้อคีย์ใบสั่งซื้อแล้วส่งลิงก์ให้ผู้ขาย ผู้ขายจองคิว ระบบจัดสรรท่า ไม่มีการตรวจการชำระเงิน เจ้าหน้าที่คลังยืนยันคิวได้ทันที ระบบออก DO ผู้ขายส่งลิงก์ให้คนขับ",
+)
+PO_LINKS: list[tuple[Step, Step]] = [(PO_STEPS[a], PO_STEPS[b]) for a, b in
+                                     [("1", "2"), ("2", "3"), ("3", "4"), ("6", "7"), ("7", "8")]]
+# 4 -> 6 runs straight through the empty gate columns; the label explains the gap
+PO_BYPASS = (PO_STEPS["4"], PO_STEPS["6"])
+
+# kept for callers that still think in "figure 1" terms
+FIG1 = FIG_SO
+FIG1_LINKS = SO_LINKS
 
 
-def build_fig1() -> str:
-    """Swimlane 1 — document in, booking, payment gate, confirmation, DO out."""
-    f = FIG1
-    s = {x.no: x for x in f.steps}
+def build_fig_so() -> str:
+    """SO swimlane — document in, booking, payment gate, sales records payment, warehouse confirms, DO out."""
+    f = FIG_SO
     out = svg_open(f)
-    gate_cx, gate_cy = col_cx(4), lane_cy(SYS1)
-    office_y = lane_cy(OFFICE)
+    gate_cx, gate_cy = col_cx(GATE_COL), lane_cy(SYS1)
 
-    for a, b in [("1", "2"), ("2", "3"), ("3", "4"), ("5", "6"), ("6", "7"), ("7", "8")]:
-        out.append(f'<path d="{elbow(s[a], s[b])}" class="link" marker-end="url(#ah)"/>')
+    for a, b in SO_LINKS:
+        out.append(f'<path d="{elbow(a, b)}" class="link" marker-end="url(#ah)"/>')
     # 4 -> payment gate
     out.append(f'<path d="M{box_x(3) + BOX_W},{gate_cy} H{gate_cx - DIAMOND_RX - 2}" class="link" marker-end="url(#ah)"/>')
-    # gate -> 5 (SO not yet paid)
-    out.append(f'<path d="M{gate_cx},{gate_cy - DIAMOND_RY} V{office_y} H{box_x(5) - 2}" class="link warn" marker-end="url(#ahw)"/>')
-    out.append(f'<text x="{gate_cx + 10}" y="{lane_cy(PARTNER) + 5}" class="edge warn-tx">SO ยังไม่ชำระเงิน</text>')
+    # gate -> 5 (not yet paid): up to the sales lane, then into the payment box
+    out.append(f'<path d="M{gate_cx},{gate_cy - DIAMOND_RY} V{lane_cy(OWNER)} H{box_x(5) - 2}" class="link warn" marker-end="url(#ahw)"/>')
+    out.append(f'<text x="{gate_cx + 10}" y="{lane_cy(PARTNER) + 5}" class="edge warn-tx">{GATE_NO_TX}</text>')
     # gate -> 6 (cleared) enters the confirm box from below
     out.append(f'<path d="M{gate_cx + DIAMOND_RX},{gate_cy} H{col_cx(6)} V{box_y(OFFICE) + BOX_H + 2}" class="link" marker-end="url(#ah)"/>')
-    out.append(f'<text x="{(gate_cx + DIAMOND_RX + col_cx(6)) / 2}" y="{gate_cy - 10}" text-anchor="middle" class="edge">ชำระแล้ว · ลูกค้าเครดิต · หรือเป็น PO</text>')
+    out.append(f'<text x="{(gate_cx + DIAMOND_RX + col_cx(6)) / 2}" y="{gate_cy - 10}" text-anchor="middle" class="edge">{GATE_OK_TX}</text>')
 
     # the gate itself
     pts = f"{gate_cx - DIAMOND_RX},{gate_cy} {gate_cx},{gate_cy - DIAMOND_RY} {gate_cx + DIAMOND_RX},{gate_cy} {gate_cx},{gate_cy + DIAMOND_RY}"
     out.append(f'<polygon points="{pts}" class="gate"/>')
     out.append(f'<text x="{gate_cx}" y="{gate_cy - 2}" text-anchor="middle" class="t1">ตรวจการชำระเงิน</text>')
-    out.append(f'<text x="{gate_cx}" y="{gate_cy + 16}" text-anchor="middle" class="t2">SO ชำระแล้วหรือไม่</text>')
+    out.append(f'<text x="{gate_cx}" y="{gate_cy + 16}" text-anchor="middle" class="t2">ชำระแล้วหรือไม่</text>')
 
     out += svg_boxes(f) + svg_status(f)
     out.append("</svg>")
     return "".join(out)
 
 
+def build_fig_po() -> str:
+    """PO swimlane — same shape as SO without the payment gate; confirmation follows booking directly."""
+    f = FIG_PO
+    out = svg_open(f)
+    for a, b in PO_LINKS:
+        out.append(f'<path d="{elbow(a, b)}" class="link" marker-end="url(#ah)"/>')
+    a, b = PO_BYPASS
+    x1, y1 = box_x(a.col) + BOX_W, lane_cy(a.lane)
+    out.append(f'<path d="M{x1},{y1} H{col_cx(b.col)} V{box_y(b.lane) + BOX_H + 2}" class="link" marker-end="url(#ah)"/>')
+    out.append(f'<text x="{(x1 + col_cx(b.col)) / 2}" y="{y1 - 10}" text-anchor="middle" class="edge">{PO_SKIP_TX}</text>')
+    out += svg_boxes(f) + svg_status(f)
+    out.append("</svg>")
+    return "".join(out)
+
+
 # ---------------------------------------------------------------- figure 2: the appointment day
-SYS2, DRIVER, STAFF = range(3)
+SYS2, DRIVER, STAFF, SALES2 = range(4)
 FIG2 = Figure(
-    lanes=["ระบบ\nอัตโนมัติ + แจ้ง LINE", "คนขับรถ", "เจ้าหน้าที่หน้างาน\nประตู / ลานจอด"],
+    lanes=["ระบบ\nอัตโนมัติ + แจ้ง LINE", "คนขับรถ", "เจ้าหน้าที่หน้างาน\nประตู / ลานจอด", "ฝ่ายขาย\nเจ้าของเอกสาร"],
     system_lane=SYS2,
     steps=[
         Step(0, DRIVER, "9", "เปิดลิงก์ดูใบ DO", "ทราบท่าและเวลานัด"),
         Step(1, DRIVER, "10", "เช็คอินเมื่อมาถึง", "ตรวจตำแหน่งในรัศมี 300 ม.", line=True),
-        Step(1, STAFF, "", "กรณีทะเบียนรถไม่ตรง", "แจ้งเจ้าหน้าที่แก้ไข", line=True),
+        Step(1, SALES2, "", "กรณีทะเบียนรถไม่ตรง", "ฝ่ายขายแก้ไขให้ในระบบ", line=True),
         Step(2, SYS2, "11", "เรียกคิวเมื่อท่าว่าง", "จอหน้าลาน + แจ้ง LINE คนขับ", line=True, system=True),
         Step(3, STAFF, "12", "ขึ้น / ลงสินค้า", "เสร็จแล้วกดปิดงาน"),
         Step(4, SYS2, "13", "เรียกคิวถัดไป", "อัตโนมัติเมื่อท่าว่าง", system=True),
     ],
     n_cols=5,
     status=[(0, 0, "ยืนยันแล้ว"), (1, 1, "มาถึงแล้ว"), (2, 2, "เรียกเข้าท่า"), (3, 3, "ขึ้น/ลงสินค้า → เสร็จสิ้น"), (4, 4, "ท่าว่าง")],
-    aria="วันนัด: คนขับเปิดลิงก์ดู DO กดเช็คอินเมื่อมาถึง กรณีทะเบียนรถไม่ตรงแจ้งเจ้าหน้าที่แก้ไข ระบบเรียกคิวเมื่อท่าว่าง เจ้าหน้าที่ขึ้นลงของแล้วปิดงาน ระบบเรียกคันถัดไป",
+    aria="วันนัด: คนขับเปิดลิงก์ดู DO กดเช็คอินเมื่อมาถึง กรณีทะเบียนรถไม่ตรง เจ้าหน้าที่หน้างานแจ้งฝ่ายขายแก้ไขทะเบียนในระบบ ระบบเรียกคิวเมื่อท่าว่าง เจ้าหน้าที่ขึ้นลงของแล้วปิดงาน ระบบเรียกคันถัดไป",
 )
+FIG2_CAPTION = "เส้นประ: กรณีทะเบียนรถไม่ตรงกับที่จอง เจ้าหน้าที่หน้างานแจ้งฝ่ายขายแก้ไขทะเบียนในระบบ แล้วเช็คอินต่อได้ ระบบแจ้งทีมคลังทาง LINE"
 
 
 def build_fig2() -> str:
     """Swimlane 2 — arrival, call, loading, next truck."""
     f = FIG2
-    open_do, arrive, gate_in, call, load, nxt = f.steps
+    open_do, arrive, plate_fix, call, load, nxt = f.steps
     out = svg_open(f)
-    out.append(f'<path d="{elbow(open_do, gate_in, -6)}" class="link dash" marker-end="url(#ahd)"/>')
-    out.append(f'<path d="{elbow(gate_in, call, -6)}" class="link dash" marker-end="url(#ahd)"/>')
+    out.append(f'<path d="{elbow(open_do, plate_fix, -6)}" class="link dash" marker-end="url(#ahd)"/>')
+    out.append(f'<path d="{elbow(plate_fix, call, -6)}" class="link dash" marker-end="url(#ahd)"/>')
     for a, b in [(open_do, arrive), (arrive, call), (call, load), (load, nxt)]:
         out.append(f'<path d="{elbow(a, b)}" class="link" marker-end="url(#ah)"/>')
     out += svg_boxes(f) + svg_status(f)
@@ -281,8 +337,11 @@ section{display:flex;flex-direction:column;gap:20px}
 figure{margin:0;display:flex;flex-direction:column;gap:12px;min-width:0}
 .scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
 .scroll svg{display:block;width:100%;height:auto;font-family:"Sarabun","IBM Plex Sans Thai","Tahoma",sans-serif}
-#fig1 svg{min-width:1180px}
+.wide svg{min-width:1180px}
 #fig2 svg{min-width:720px}
+.track{display:flex;flex-direction:column;gap:10px}
+.track h3{display:flex;align-items:center;gap:10px}
+.tag{font-size:13px;font-weight:700;letter-spacing:.04em;padding:1px 10px;border-radius:12px;background:var(--brand-soft);color:var(--brand)}
 figcaption{font-size:15px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center}
 .key{display:inline-flex;align-items:center;gap:8px}
 .sw{display:inline-block;width:24px;height:16px;border-radius:4px;border:1.5px solid var(--ink);background:var(--surface)}
@@ -345,16 +404,24 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 <header>
   <p class="eyebrow">Fameline Dock Queue · ระบบคิวรับ-ส่งสินค้าหน้าคลัง</p>
   <h1>เส้นทางของคิวหนึ่งคิว ตั้งแต่เอกสารเข้าจนรถออกจากท่า</h1>
-  <p class="lede">ผู้เกี่ยวข้อง 5 กลุ่มทำงานต่อเนื่องกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปพลิเคชันหรือสมัครสมาชิก</strong> ใช้เพียงลิงก์ที่ได้รับทาง LINE ส่วนงานที่ต้องติดตามตลอดเวลา เช่น การจัดสรรท่า การเรียกคิว และการแจ้งเตือน ระบบดำเนินการให้อัตโนมัติ</p>
+  <p class="lede">ผู้เกี่ยวข้อง 6 กลุ่มทำงานต่อเนื่องกันผ่านระบบเดียว <strong>ลูกค้าและคนขับไม่ต้องติดตั้งแอปพลิเคชันหรือสมัครสมาชิก</strong> ใช้เพียงลิงก์ที่ได้รับทาง LINE ส่วนงานที่ต้องติดตามตลอดเวลา เช่น การจัดสรรท่า การเรียกคิว และการแจ้งเตือน ระบบดำเนินการให้อัตโนมัติ</p>
 </header>
 
 <section id="before">
   <div class="sec-head">
     <h2>ก่อนวันนัด — จากเอกสารถึงใบ DO</h2>
-    <p>แอดมินฝ่ายขายคีย์ใบสั่งขาย (SO) และฝ่ายจัดซื้อคีย์ใบสั่งซื้อ (PO) เข้าระบบทีละใบ ไม่มีการนำเข้าไฟล์ คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และใบสั่งขายผ่านการตรวจการชำระเงินแล้ว</p>
+    <p>เอกสารเข้าระบบสองทางแยกกัน ใบสั่งขาย (SO) เป็นของฝ่ายขาย ใบสั่งซื้อ (PO) เป็นของฝ่ายจัดซื้อ คีย์ทีละใบ ไม่มีการนำเข้าไฟล์ ทั้งสองทางใช้เลขขั้นเดียวกัน ต่างกันที่ใบสั่งขายมีขั้นที่ 5 ตรวจการชำระเงินซึ่งฝ่ายขายเป็นผู้บันทึก ส่วนใบสั่งซื้อไม่มีขั้นนี้ คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน</p>
   </div>
-  <figure id="fig1">
-    <div class="scroll">__FIG1__</div>
+  <div class="track">
+    <h3><span class="tag">SO</span>ใบสั่งขาย — ลูกค้ามารับสินค้า</h3>
+    <figure id="fig-so" class="wide"><div class="scroll">__FIG_SO__</div></figure>
+  </div>
+  <div class="track">
+    <h3><span class="tag">PO</span>ใบสั่งซื้อ — ผู้ขายมาส่งสินค้า</h3>
+    <figure id="fig-po" class="wide"><div class="scroll">__FIG_PO__</div>
+    <figcaption>ใบสั่งซื้อไม่มีขั้นที่ 5 (ตรวจการชำระเงิน) เลขขั้นอื่นตรงกับใบสั่งขาย</figcaption></figure>
+  </div>
+  <figure>
     <figcaption>
       <span class="key"><span class="sw"></span>ขั้นตอนที่ผู้ใช้ดำเนินการ</span>
       <span class="key"><span class="sw sys"></span>ระบบดำเนินการอัตโนมัติ</span>
@@ -372,7 +439,7 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
   <div class="day">
     <figure id="fig2">
       <div class="scroll">__FIG2__</div>
-      <figcaption>เส้นประ: กรณีทะเบียนรถไม่ตรงกับที่จอง แจ้งเจ้าหน้าที่แก้ไขทะเบียนและเช็คอินให้ได้ ระบบแจ้งทีมคลังทาง LINE</figcaption>
+      <figcaption>__FIG2_CAPTION__</figcaption>
     </figure>
     <aside>
       <h3>ถ้าไม่เป็นไปตามแผน</h3>
@@ -402,7 +469,7 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
       <h3>ตรวจการชำระเงิน — ขั้นที่ 5</h3>
       <dl>
         <dt>กันอะไร</dt><dd>รถเข้ารับสินค้าทั้งที่ใบสั่งขายยังไม่ได้ชำระเงิน</dd>
-        <dt>ระบบทำ</dt><dd>ใบสั่งขายที่ยังไม่ชำระเงินจองคิวได้ แต่คิวคงสถานะ “รอยืนยัน” และออกใบ DO ไม่ได้ จนกว่าเจ้าหน้าที่จะบันทึกว่าชำระแล้วหรือเป็นลูกค้าเครดิต ส่วนใบสั่งซื้อ (PO) ไม่มีเงื่อนไขนี้</dd>
+        <dt>ระบบทำ</dt><dd>ใบสั่งขายที่ยังไม่ชำระเงินจองคิวได้ แต่คิวคงสถานะ “รอยืนยัน” และออกใบ DO ไม่ได้ จนกว่าฝ่ายขายจะบันทึกว่าชำระแล้วหรือเป็นลูกค้าเครดิต ส่วนใบสั่งซื้อ (PO) ไม่มีเงื่อนไขนี้</dd>
         <dt>ผลที่ได้</dt><dd>ไม่มีใบ DO ออกก่อนการชำระเงิน ไม่ว่าผู้ใดเป็นผู้กดยืนยัน</dd>
       </dl>
     </div>
@@ -418,7 +485,7 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
       <h3>เช็คอินด้วยตำแหน่งจริง — ขั้นที่ 10</h3>
       <dl>
         <dt>กันอะไร</dt><dd>คนขับเช็คอินขณะยังอยู่ระหว่างทาง แล้วได้ลำดับก่อนรถที่มาถึงจริง</dd>
-        <dt>ระบบทำ</dt><dd>เช็คอินได้เฉพาะวันนัด และต้องอยู่ในรัศมี 300 เมตรจากคลัง (ตั้งค่าได้ต่อสาขา) เจ้าหน้าที่ประตูยังตรวจทะเบียนซ้ำได้</dd>
+        <dt>ระบบทำ</dt><dd>เช็คอินได้เฉพาะวันนัด และต้องอยู่ในรัศมี 300 เมตรจากคลัง (ตั้งค่าได้ต่อสาขา) เจ้าหน้าที่ประตูยังตรวจทะเบียนซ้ำได้ ทะเบียนไม่ตรงให้ฝ่ายขายแก้ไขในระบบ</dd>
         <dt>ผลที่ได้</dt><dd>ลำดับการเรียกคิวอ้างอิงรถที่อยู่หน้าคลังจริง</dd>
       </dl>
     </div>
@@ -446,7 +513,7 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
       <tr><td class="n">1–2</td><td>ใบสั่งขาย (SO) / ใบสั่งซื้อ (PO) › คีย์เอกสาร, ลิงก์จอง + QR</td><td>ฝ่ายขาย / ฝ่ายจัดซื้อ</td><td class="f">02a-documents · 02b-documents-link-qr</td></tr>
       <tr><td class="n">3</td><td>หน้าจองของลูกค้า 5 ขั้น: รถ › วัน › เวลา › รายละเอียด › ยืนยัน</td><td>ลูกค้า / Supplier</td><td class="f">03a … 05c-book-submitted</td></tr>
       <tr><td class="n">4</td><td>สถานะคิวฝั่งลูกค้า, รายการคิวรอยืนยันฝั่งคลัง</td><td>ลูกค้า · ทีมคลัง</td><td class="f">05d-book-status · 06h-bookings-pending</td></tr>
-      <tr><td class="n">5</td><td>ใบสั่งขาย (SO) › บันทึกการชำระเงิน</td><td>ทีมคลัง</td><td>สาธิตสดจากระบบ</td></tr>
+      <tr><td class="n">5</td><td>ใบสั่งขาย (SO) › บันทึกการชำระเงิน (เฉพาะ SO)</td><td>ฝ่ายขาย</td><td>สาธิตสดจากระบบ</td></tr>
       <tr><td class="n">6–7</td><td>รายละเอียดคิว › อนุมัติคิว + ออก DO, ใบ DO</td><td>ทีมคลัง</td><td class="f">06b-booking-drawer · 06e-do-sheet</td></tr>
       <tr><td class="n">8–10</td><td>หน้าคนขับ: ใบ DO ท่า เวลานัด และปุ่มเช็คอิน</td><td>คนขับ</td><td class="f">08b-driver-full</td></tr>
       <tr><td class="n">11</td><td>บอร์ดคิววันนี้, จอหน้าลาน, หน้าคนขับเมื่อถูกเรียก</td><td>เจ้าหน้าที่ · คนขับ</td><td class="f">07-queue-board · 09-display-tv · 08a-driver-called</td></tr>
@@ -464,7 +531,8 @@ footer{font-size:14px;color:var(--muted);border-top:1px solid var(--rule);paddin
 
 def build_fragment() -> str:
     """The page fragment (artifact skeleton adds <html>/<head>/<body>)."""
-    return PAGE.replace("__FIG1__", build_fig1()).replace("__FIG2__", build_fig2())
+    return (PAGE.replace("__FIG_SO__", build_fig_so()).replace("__FIG_PO__", build_fig_po())
+            .replace("__FIG2__", build_fig2()).replace("__FIG2_CAPTION__", escape(FIG2_CAPTION)))
 
 
 def render(url: str, png: Path, width: int, height: int) -> None:
@@ -491,8 +559,8 @@ def main() -> None:
     print(f"{FRAGMENT_OUT.relative_to(HERE)}\n{LOCAL_OUT.relative_to(HERE)}")
     if "--no-png" in sys.argv:
         return
-    render(LOCAL_OUT.as_uri(), PNG_FULL, 1600, 2680)
-    render(LOCAL_OUT.as_uri() + "?only=swimlane", PNG_LANES, 1600, 1185)
+    render(LOCAL_OUT.as_uri(), PNG_FULL, 1600, 3430)
+    render(LOCAL_OUT.as_uri() + "?only=swimlane", PNG_LANES, 1600, 2010)
 
 
 if __name__ == "__main__":

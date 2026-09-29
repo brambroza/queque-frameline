@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getSiteSettings } from '@/lib/booking/server';
 import { ensureDriverLink } from '@/lib/booking/driver-link';
@@ -12,10 +13,11 @@ import { safeNotifyDriver, safeNotifyPartner } from '@/lib/line/notify';
  */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id } = await ctx.params;
-    const { data: b } = await supabase.from('bookings').select('id,booking_date,driver_token_version,driver_line_user_id,do_number').eq('id', id).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
+    const { data: b } = await supabase.from('bookings').select('id,booking_date,driver_token_version,driver_line_user_id,do_number,branch_id').eq('id', id).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
     if (!b) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
+    assertRowBranch(branchScope, b.branch_id as string | null);
     if (!b.do_number) return NextResponse.json({ error: 'ยืนยันคิวก่อนจึงส่งให้คนขับได้' }, { status: 409 });
 
     const settings = await getSiteSettings(supabase, profile.shop_id);

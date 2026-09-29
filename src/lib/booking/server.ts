@@ -126,14 +126,22 @@ export function dockErrorResponse(message: string | undefined | null): { status:
   return null;
 }
 
-/** The branch to use when the caller did not send one: the site's first active branch. */
-export async function resolveDefaultBranchId(client: SupabaseClient, shopId: string): Promise<string | null> {
-  const { data } = await client
+/**
+ * The branch to use when the caller did not send one: the site's first active
+ * branch, or the first one inside `scope` for a branch-limited caller.
+ *
+ * @param scope Caller's branch scope; omit or `null` for every branch.
+ */
+export async function resolveDefaultBranchId(client: SupabaseClient, shopId: string, scope: string[] | null = null): Promise<string | null> {
+  if (scope && scope.length === 0) return null;
+  let query = client
     .from('branches')
     .select('id')
     .eq('shop_id', shopId)
     .eq('is_deleted', false)
-    .eq('active', true)
+    .eq('active', true);
+  if (scope) query = query.in('id', scope);
+  const { data } = await query
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { SIGNATURE_BUCKET, isSignatureParty, signatureColumns } from '@/lib/booking/signatures';
 
@@ -10,17 +11,19 @@ import { SIGNATURE_BUCKET, isSignatureParty, signatureColumns } from '@/lib/book
  */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string; party: string }> }) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const { id, party } = await ctx.params;
     if (!isSignatureParty(party)) return NextResponse.json({ error: 'ไม่พบลายเซ็น' }, { status: 404 });
     const cols = signatureColumns(party);
     const { data: row } = await supabase
       .from('bookings')
-      .select(`id,${cols.path}`)
+      .select(`id,branch_id,${cols.path}`)
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
       .maybeSingle();
+    const rowBranchId = (row as Record<string, unknown> | null)?.branch_id;
+    assertRowBranch(branchScope, typeof rowBranchId === 'string' ? rowBranchId : null);
     const objectPath = (row as Record<string, unknown> | null)?.[cols.path];
     if (typeof objectPath !== 'string' || !objectPath.startsWith(`${profile.shop_id}/`)) {
       return NextResponse.json({ error: 'ไม่พบลายเซ็น' }, { status: 404 });

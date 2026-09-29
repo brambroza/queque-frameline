@@ -61,8 +61,16 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 - RLS `user_roles` เขียนได้เฉพาะ `has_access_level('admin')` (เดิมทุกคนในร้านเขียนได้ = self-grant admin ได้); `i18n_is_admin_or_owner()` ใช้ access_level แทน code
 - **หน้า SO / PO แยกกัน + สิทธิ์คีย์ตาม role code (2026-09-25, `202609250002_document_pages_roles`)** — เมนู `sales_orders` (`/portal/sales-orders`) และ `purchase_orders` (`/portal/purchase-orders`) แทน `documents` เดิม (migration remap `menu_keys`; `/portal/documents` redirect ไป SO); การเขียนเอกสาร (POST `/api/documents`, PATCH/DELETE `/api/documents/[id]`, booking-link GET/POST, send-line) = `canWriteDocument(docType, ctx)` ใน `src/lib/auth/document-access.ts` (pure + vitest): ระดับ admin หรือ `roleCodes` มี `sales_admin` (SO) / `purchasing` (PO) — role ทั้งสอง seed เป็น system role ระดับ staff เมนูเฉพาะหน้าตัวเอง + notifications; staff ธรรมดายังเปิดหน้าได้เพื่อบันทึกชำระเงินแต่ปุ่มเพิ่ม/แก้/ลิงก์ซ่อน (`canEdit` จาก `requirePageAccess` ที่คืน `roleCodes` ด้วย); **SO ไม่มีรายการสินค้าในฟอร์ม** (คอลัมน์/ส่วนรายการซ่อน เว้นแต่ ERP ส่งมา; เวลาแนะนำตอนอนุมัติจึงเป็นเวลารถ) ส่วน PO ยังกรอกรายการได้ (ไม่บังคับ); **ไม่มีนำเข้า CSV/Excel ใน UI แล้ว** (route `/api/documents/import` + `src/lib/integration/csv.ts` ยังอยู่ รอลบ)
 
+**สาขาต่อ role + สิทธิ์ export / ดูหลายสาขา (2026-09-29, `202609290001_role_branch_access`)**
+- `roles.branch_ids uuid[]` (null = ทุกสาขา), `roles.can_export`, `roles.multi_branch` — ตั้งที่ `/portal/staff` แท็บ "สิทธิ์และเมนู" section "สาขาและข้อมูล"; role ระดับ admin ถูกบังคับ ทุกสาขา + export + หลายสาขา เสมอ (กันล็อกตัวเอง); ถือหลาย role = union (role ใดไม่จำกัดสาขา = ไม่จำกัด)
+- กติกา pure + vitest: `src/lib/auth/role-capabilities.ts` (`resolveCapabilities`, `narrowBranchScope`, `isBranchCountAllowed`); `requireAuthContext()` คืน `branchScope` + `capabilities { canExport, multiBranch }`; ยังไม่รัน migration = อ่านคอลัมน์ไม่ได้ → fallback เป็นไม่จำกัด (portal ไม่พัง) แต่ `/api/roles` + `/api/staff` ใช้ `ROLE_SELECT` ที่มีคอลัมน์ใหม่ → **หน้าพนักงานพังจนกว่าจะรัน migration**
+- จำกัดสาขามีผล**ทั้งระบบ** 2 ชั้น: (1) RLS restrictive `p_<table>_branch` บน branches / bookings / external_documents / booking_resources / working_hours / holidays / notifications ผ่าน `can_access_branch()` (security definer) (2) API: list ใช้ `applyBranchScope` / `applyNullableBranchScope`, route ราย id ใช้ `assertRowBranch` (404), payload ใช้ `assertBranchAllowed` / `assertBranchWritable` — **route ใหม่ที่ใช้ `createAdminClient()` ต้องตรวจสาขาเอง** เพราะ service role ข้าม RLS; `resolveDefaultBranchId(client, shopId, branchScope)` เลือกสาขาแรกในขอบเขตของผู้ใช้
+- เอกสาร SO/PO ที่ `branch_id` เป็น null = ทั้ง site: role ที่จำกัดสาขาเห็นได้แต่แก้/บันทึกชำระ/ออกลิงก์ไม่ได้
+- `multi_branch` + `can_export` มีผลเฉพาะแดชบอร์ด: `/api/dashboard` + `/api/dashboard/export` รับ `?branch_ids=a,b` (`resolveBranchSelection` ใน `src/lib/dashboard/branch-selection.ts`; ไม่มี multi_branch แล้วขอ >1 สาขา = 400 `BRANCH_REQUIRED`, ไม่มี can_export = 403 `EXPORT_FORBIDDEN`)
+- แดชบอร์ด: `DashboardBranchPicker` (เริ่มจากสาขาบน topbar และตาม topbar เมื่อเปลี่ยน), `data.branch_kpi` = KPI ต่อสาขา; Export: ไฟล์รวม (แผ่น "สาขา" เปรียบเทียบ) หรือ "สาขาละไฟล์" เป็น `.zip` (jszip)
+
 - `requireAuthContext({ roles: ['admin'] })` สำหรับงานตั้งค่า/ยืนยัน · `['admin', 'staff']` สำหรับงานหน้างาน
-- ทั้งสอง role เห็นทั้ง site (`SHOP_WIDE_ROLES` ใน `src/lib/auth/branch-scope.ts`, `is_branch_bound()` คืน false)
+- ค่าเริ่มต้นทุก role เห็นทั้ง site (`branch_ids` null); จำกัดสาขาได้ต่อ role — ดูหัวข้อด้านบน
 - สร้าง admin คนแรก: `node scripts/create-admin.mjs <email> <password> "ชื่อ" admin` · คนอื่น ๆ เชิญทางอีเมลจาก `/portal/staff` (`inviteUserByEmail` → ลิงก์ไป `/auth/callback` → `/set-password`); ไม่มีหน้าสมัครเอง
 - Supabase Auth → URL Configuration ต้องมี redirect URL `<APP_URL>/auth/callback` (ทั้ง localhost และ production) ไม่งั้นลิงก์เชิญเด้งไป Site URL แทน
 
@@ -155,6 +163,16 @@ Enum ใน DB ยังมีค่าเก่าของ Queue (`waiting`, `
 - ส่งไปกับ `PATCH /api/bookings` เป็น `signatures: { staff?, customer? }` (`bookingSignaturesSchema`, PNG data URL ≤ 200 KB/ช่อง, อ่านเฉพาะ `status = 'completed'`) → อัปโหลด bucket private `booking-signatures` path `<shop>/<booking>/<party>.png` ผ่าน service role **ก่อน** update status; update stale (409) = ลบ object ที่เพิ่งอัป; คอลัมน์ `bookings.sign_staff_path/name`, `sign_customer_path/name`, `signed_at`; log `status_change` ต่อท้าย "ลงชื่อ: …"
 - ดูรูป: `GET /api/bookings/[id]/signature/{staff|customer}` (admin+staff, ตรวจ shop + path prefix แล้ว stream PNG) → drawer tab "ข้อมูล" section "ลงชื่อปิดงาน" + พิมพ์บนใบ DO (`DoDocumentData.signatures/signedAt`, ช่อง "ผู้รับ/ส่งสินค้า" = ลูกค้า, "เจ้าหน้าที่คลัง" = staff, รปภ. ยังเว้นว่าง); หน้า public (`/book`, `/driver`) ไม่แสดงลายเซ็น
 - กติกา pure `src/lib/booking/signatures.ts` (vitest)
+
+## Dashboard KPI คลัง (2026-09-29)
+
+- `/portal/dashboard` มี 2 แท็บ (`?tab=`): **KPI คลัง** (ค่าเริ่มต้น, `src/components/dashboard/warehouse/`) และ **ภาพรวมคิว** (ของเดิม, `dashboard-queues-tab.tsx`); รายการคิวอยู่ใต้แท็บเสมอ; ตัวกรองร่วม: ช่วงเวลา, สาขา (`branch_ids`), ขาเข้า/ขาออก (`direction`)
+- กติกา pure + vitest: `src/lib/dashboard/warehouse-kpi.ts` — เวลาที่ท่า = `serving_started_at → completed_at`; รอในลาน = `checked_in_at → called_at`; เวลารวม = `checked_in_at → completed_at`; **ล่าช้า** = เริ่มงานช้ากว่า `start_time` เกิน `on_time_tolerance_min` แยกสาเหตุ รถมาสาย (เช็คอินช้า) / คลังเริ่มช้า; เกินแผน = เวลาที่ท่า > `service_minutes` + `overrun_tolerance_min`; คิวปิดงานที่ timestamp ไม่ครบ/ผิดลำดับ **ตัดออก** แล้วนับใน `incomplete`
+- เกณฑ์เป็นค่าคงที่ `DEFAULT_THRESHOLDS` (10 / 60 / 5 นาที) — ยังไม่มีหน้าตั้งค่า/คอลัมน์ใน `site_settings`
+- `/api/dashboard` คืน `data.warehouse` (เพิ่ม 2 query: ท่า + คิวของช่วงและช่วงก่อนหน้า); query ฝั่งคลังพัง = `warehouse.available = false` แท็บขึ้น error แต่แท็บภาพรวมคิวยังใช้ได้; การใช้ท่า = นาทีที่ท่า ÷ (ชั่วโมงที่สาขาเปิด × 60) นับเฉพาะวันที่ผ่านมาแล้ว
+- Motion: `gsap` ผ่าน `useDashboardMotion` (mark `data-grow="x|y"`, `data-pop`) + `<CountUp>` (state ของ React ไม่แตะ DOM ตรง); ปิดเองเมื่อ `prefers-reduced-motion`
+- Export เพิ่ม 4 แผ่น: KPI คลัง (พร้อมเกณฑ์ที่ใช้), ท่า, เวลาตามประเภทรถ, คิวล่าช้า
+- ข้อความบนหน้า: หัวข้อ + ตัวเลข ไม่ใส่คำอธิบายใต้หัวข้อ
 
 ## Driver self check-in + geofence (2026-09-19)
 

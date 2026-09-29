@@ -13,8 +13,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from build_exec_flow import (
-    BOX_H, BOX_W, DIAMOND_RX, DIAMOND_RY, FIG1, FIG2, LABEL_W, LANE_H, OFFICE, PARTNER, SYS1, TOP,
-    Figure, Step, box_x, box_y, col_cx, lane_cy,
+    BOX_H, BOX_W, DIAMOND_RX, DIAMOND_RY, FIG2, FIG2_CAPTION, FIG_PO, FIG_SO, GATE_COL, GATE_NO_TX, GATE_OK_TX,
+    LABEL_W, LANE_H, PO_BYPASS, PO_LINKS, PO_SKIP_TX, SO_LINKS, SO_STEPS, SYS1, TOP, Figure, Step, box_x, box_y, col_cx, lane_cy,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -137,25 +137,34 @@ def draw_figure(doc: Doc, fig: Figure, oy: float, title: str, subtitle: str) -> 
     return ids
 
 
-def build_fig1(doc: Doc, oy: float) -> None:
-    ids = draw_figure(doc, FIG1, oy, "ก่อนวันนัด — จากเอกสารถึงใบ DO",
-                      "ฝ่ายขายคีย์ SO ฝ่ายจัดซื้อคีย์ PO ทีละใบ · คิวจะได้รับเลขใบ DO เมื่อเจ้าหน้าที่คลังยืนยัน และ SO ผ่านการตรวจการชำระเงินแล้ว")
-    s = {x.no: x for x in FIG1.steps}
-    for a, b in [("1", "2"), ("2", "3"), ("3", "4"), ("5", "6"), ("6", "7"), ("7", "8")]:
-        doc.edge(ids[s[a]], ids[s[b]], EDGE + anchors(1, 0.5, 0, 0.5))
+def build_fig_so(doc: Doc, oy: float) -> None:
+    ids = draw_figure(doc, FIG_SO, oy, "ก่อนวันนัด · ใบสั่งขาย (SO) — ลูกค้ามารับสินค้า",
+                      "ฝ่ายขายคีย์ SO ทีละใบแล้วส่งลิงก์ให้ลูกค้า · คิวต้องผ่านการตรวจการชำระเงิน (ฝ่ายขายบันทึก) ก่อนเจ้าหน้าที่คลังยืนยันและออกเลขใบ DO")
+    s = SO_STEPS
+    for a, b in SO_LINKS:
+        doc.edge(ids[a], ids[b], EDGE + anchors(1, 0.5, 0, 0.5))
 
-    gate_cx, gate_cy = col_cx(4), oy + lane_cy(SYS1)
-    gate = doc.vertex("gate", f"<b>ตรวจการชำระเงิน</b><br><font style=\"font-size:12.5px\" color=\"{C['muted']}\">SO ชำระแล้วหรือไม่</font>",
+    gate_cx, gate_cy = col_cx(GATE_COL), oy + lane_cy(SYS1)
+    gate = doc.vertex("gate", f"<b>ตรวจการชำระเงิน</b><br><font style=\"font-size:12.5px\" color=\"{C['muted']}\">ชำระแล้วหรือไม่</font>",
                       f"rhombus;whiteSpace=nowrap;html=1;overflow=visible;fillColor={C['warn_soft']};strokeColor={C['warn']};strokeWidth=1.6;"
                       f"fontFamily={FONT};fontSize=14;fontColor={C['ink']};",
                       gate_cx - DIAMOND_RX, gate_cy - DIAMOND_RY, DIAMOND_RX * 2, DIAMOND_RY * 2)
     doc.edge(ids[s["4"]], gate, EDGE + anchors(1, 0.5, 0, 0.5))
     warn = EDGE.replace(f"strokeColor={C['ink']}", f"strokeColor={C['warn']}").replace(f"fontColor={C['muted']}", f"fontColor={C['warn']}") + "dashed=1;dashPattern=5 4;"
-    doc.edge(gate, ids[s["5"]], warn + anchors(0.5, 0, 0, 0.5), "SO ยังไม่ชำระเงิน")
-    doc.edge(gate, ids[s["6"]], EDGE + anchors(1, 0.5, 0.5, 1), "ชำระแล้ว · ลูกค้าเครดิต · หรือเป็น PO")
+    doc.edge(gate, ids[s["5"]], warn + anchors(0.5, 0, 0, 0.5), GATE_NO_TX)
+    doc.edge(gate, ids[s["6"]], EDGE + anchors(1, 0.5, 0.5, 1), GATE_OK_TX)
+
+
+def build_fig_po(doc: Doc, oy: float) -> None:
+    ids = draw_figure(doc, FIG_PO, oy, "ก่อนวันนัด · ใบสั่งซื้อ (PO) — ผู้ขายมาส่งสินค้า",
+                      "ฝ่ายจัดซื้อคีย์ PO ทีละใบแล้วส่งลิงก์ให้ผู้ขาย · ไม่มีขั้นที่ 5 ตรวจการชำระเงิน เจ้าหน้าที่คลังยืนยันได้ทันที · เลขขั้นอื่นตรงกับ SO")
+    for a, b in PO_LINKS:
+        doc.edge(ids[a], ids[b], EDGE + anchors(1, 0.5, 0, 0.5))
+    a, b = PO_BYPASS
+    doc.edge(ids[a], ids[b], EDGE + anchors(1, 0.5, 0.5, 1), PO_SKIP_TX)
 
     # legend under the strip
-    ly = oy + FIG1.height + 22
+    ly = oy + FIG_PO.height + 22
     x = box_x(0)
     for style, text, w in [
         (f"rounded=1;arcSize=25;fillColor={C['surface']};strokeColor={C['ink']};strokeWidth=1.5;", "ขั้นตอนที่ผู้ใช้ดำเนินการ", 24),
@@ -171,25 +180,26 @@ def build_fig1(doc: Doc, oy: float) -> None:
 def build_fig2(doc: Doc, oy: float) -> None:
     ids = draw_figure(doc, FIG2, oy, "วันนัด — จากรถมาถึงจนปิดงาน",
                       "เมื่อท่าว่าง ระบบเรียกคิวถัดไปโดยอัตโนมัติ เจ้าหน้าที่ไม่ต้องติดตามลำดับคิวเอง")
-    open_do, arrive, gate_in, call, load, nxt = FIG2.steps
+    open_do, arrive, plate_fix, call, load, nxt = FIG2.steps
     dash = EDGE.replace(f"strokeColor={C['ink']}", f"strokeColor={C['muted']}") + "dashed=1;dashPattern=5 4;"
-    doc.edge(ids[open_do], ids[gate_in], dash + anchors(1, 0.5, 0, 0.5))
-    doc.edge(ids[gate_in], ids[call], dash + anchors(1, 0.5, 0, 0.5))
+    doc.edge(ids[open_do], ids[plate_fix], dash + anchors(1, 0.5, 0, 0.5))
+    doc.edge(ids[plate_fix], ids[call], dash + anchors(1, 0.5, 0, 0.5))
     for a, b in [(open_do, arrive), (arrive, call), (call, load), (load, nxt)]:
         doc.edge(ids[a], ids[b], EDGE + anchors(1, 0.5, 0, 0.5))
-    doc.vertex("cap", "เส้นประ: กรณีทะเบียนรถไม่ตรงกับที่จอง แจ้งเจ้าหน้าที่แก้ไขทะเบียนและเช็คอินให้ได้ ระบบแจ้งทีมคลังทาง LINE",
-               text_style(15, C["muted"]), 0, oy + FIG2.height + 12, FIG2.width, 26)
+    doc.vertex("cap", FIG2_CAPTION, text_style(15, C["muted"]), 0, oy + FIG2.height + 12, FIG2.width, 26)
 
 
 def main() -> None:
     """Write the .drawio file (plain, uncompressed XML)."""
     doc = Doc()
     oy1 = TITLE_H + 10
-    build_fig1(doc, oy1)
-    oy2 = oy1 + FIG1.height + FIG_GAP
+    build_fig_so(doc, oy1)
+    oy_po = oy1 + FIG_SO.height + FIG_GAP - 40
+    build_fig_po(doc, oy_po)
+    oy2 = oy_po + FIG_PO.height + FIG_GAP
     build_fig2(doc, oy2)
 
-    page_w, page_h = FIG1.width + 40, oy2 + FIG2.height + 60
+    page_w, page_h = FIG_SO.width + 40, oy2 + FIG2.height + 60
     model = ET.Element("mxGraphModel", dx="1400", dy="900", grid="1", gridSize="10", guides="1", tooltips="1", connect="1",
                        arrows="1", fold="1", page="1", pageScale="1", pageWidth=str(int(page_w)), pageHeight=str(int(page_h)),
                        math="0", shadow="0", background=C["surface"])

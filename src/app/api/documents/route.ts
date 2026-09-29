@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { applyBranchScope, applyNullableBranchScope, assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument } from '@/lib/auth/document-access';
 import { documentUpsertSchema } from '@/lib/integration/schemas';
 import { upsertDocument } from '@/lib/integration/upsert';
@@ -18,7 +19,7 @@ const createSchema = documentUpsertSchema.extend({ doc_type: z.enum(['so', 'po']
 /** SO / PO list. `q` matches doc no or partner; `bookable=1` = open/booked only (create-queue picker). */
 export async function GET(req: Request) {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const sp = new URL(req.url).searchParams;
     const page = toInt(sp.get('page'), 1);
     const pageSize = Math.min(toInt(sp.get('page_size'), 20), 100);
@@ -36,7 +37,8 @@ export async function GET(req: Request) {
     const q = (sp.get('q') ?? '').replace(/[,()%*\\]/g, ' ').trim().slice(0, 60);
     if (docType === 'so' || docType === 'po') query = query.eq('doc_type', docType);
     const branchId = sp.get('branch_id');
-    if (branchId) query = query.eq('branch_id', branchId);
+    // Site-wide documents (no branch) stay visible; an out-of-scope `branch_id` = 403.
+    query = applyNullableBranchScope(query, branchScope, branchId);
     if (status) query = query.eq('status', status);
     const payment = sp.get('payment');
     if (payment === 'unpaid' || payment === 'paid' || payment === 'credit') query = query.eq('doc_type', 'so').eq('payment_status', payment);
@@ -50,13 +52,16 @@ export async function GET(req: Request) {
     const ids = (data ?? []).map((d) => d.id as string);
     const counts = new Map<string, number>();
     if (ids.length > 0) {
-      const { data: bookings } = await supabase
-        .from('bookings')
-        .select('document_id,status')
-        .eq('shop_id', profile.shop_id)
-        .eq('is_deleted', false)
-        .in('document_id', ids)
-        .not('status', 'in', '(cancelled,no_show)');
+      const { data: bookings } = await applyBranchScope(
+        supabase
+          .from('bookings')
+          .select('document_id,status')
+          .eq('shop_id', profile.shop_id)
+          .eq('is_deleted', false)
+          .in('document_id', ids)
+          .not('status', 'in', '(cancelled,no_show)'),
+        branchScope,
+      );
       (bookings ?? []).forEach((b) => counts.set(b.document_id as string, (counts.get(b.document_id as string) ?? 0) + 1));
     }
 
@@ -79,7 +84,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
-    const { supabase, user, profile } = ctx;
+    const { supabase, user, profile, branchScope } = ctx;
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) {
       const fields = Array.from(new Set(parsed.error.issues.map((i) => i.path.join('.'))));
@@ -90,6 +95,22 @@ export async function POST(req: Request) {
     if (branchId) {
       const { data: branch } = await supabase.from('branches').select('id').eq('id', branchId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
       if (!branch) return NextResponse.json({ error: 'ไม่พบสาขาที่เลือก' }, { status: 400 });
+    }
+    if (branchScope !== null) {
+      // Branch-limited caller: the target branch must be theirs, and the same doc_no
+      // must not already belong to a branch they do not manage (upsert would overwrite it).
+      assertBranchWritable(branchScope, branchId ?? null);
+      const { data: existing } = await supabase
+        .from('external_documents')
+        .select('id,branch_id')
+        .eq('shop_id', profile.shop_id)
+        .eq('doc_type', docType)
+        .eq('doc_no', doc.doc_no)
+        .maybeSingle();
+      if (existing) {
+        assertRowBranch(branchScope, existing.branch_id as string | null);
+        assertBranchWritable(branchScope, existing.branch_id as string | null);
+      }
     }
     const outcome = await upsertDocument(supabase, { shopId: profile.shop_id, companyId: profile.company_id }, docType, 'manual', doc, user.id, { branchId });
     if (!outcome.ok) return NextResponse.json({ error: outcome.message, code: outcome.code }, { status: outcome.code === 'has_live_bookings' ? 409 : 400 });
