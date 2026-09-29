@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { applyBranchScope, assertBranchAllowed, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { bookingStatusPatchSchema, dockBookingSchema } from '@/lib/booking/schemas';
@@ -215,6 +216,18 @@ export async function POST(req: Request) {
       actorKind: 'admin',
       actorId: user.id,
     });
+    await logCrud({ user, profile }, 'create', 'bookings', created.booking_id, {
+      queue_number: created.queue_number,
+      do_number: created.do_number,
+      status: initialStatus,
+      direction: payload.direction,
+      booking_date: payload.booking_date,
+      start_time: payload.start_time,
+      branch_id: branchId,
+      dock_id: created.resource_id,
+      document_id: payload.document_id ?? null,
+      partner_id: partnerId,
+    });
 
     return NextResponse.json({
       data: {
@@ -336,6 +349,13 @@ export async function PATCH(req: Request) {
       actorKind: actor,
       actorId: user.id,
     });
+    await logCrud({ user, profile }, 'update', 'bookings', id, {
+      queue_number: queueLabel,
+      status: { from, to: status },
+      do_number: doNumber,
+      cancel_reason: status === 'cancelled' ? cancelReason ?? null : null,
+      signed_by: Object.keys(signed),
+    });
 
     if (status === 'cancelled' || status === 'no_show' || isConfirmTransition(from, status)) {
       await safeCreateNotification(supabase, {
@@ -429,6 +449,11 @@ export async function DELETE(req: Request) {
       to: { status: nextStatus, is_deleted: true },
       actorKind: 'admin',
       actorId: user.id,
+    });
+    await logCrud({ user, profile }, 'delete', 'bookings', id, {
+      queue_number: before.queue_number ?? null,
+      status: { from, to: nextStatus },
+      soft_delete: true,
     });
     return NextResponse.json({ data: true });
   } catch (e) {

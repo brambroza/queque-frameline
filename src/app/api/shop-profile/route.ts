@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 const BUCKET = 'shop-assets';
@@ -74,6 +75,13 @@ export async function PATCH(req: Request) {
 
     const { error } = await supabase.from('shops').update(updatePayload).eq('id', profile.shop_id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'shops', profile.shop_id, {
+      name,
+      phone,
+      email,
+      address,
+      logo: logoUrl === undefined ? 'unchanged' : logoUrl === null ? 'removed' : 'replaced',
+    });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

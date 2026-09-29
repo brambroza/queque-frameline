@@ -325,6 +325,17 @@ import { xxx } from '../../lib/...';  // ผิด
 - Mail helper กลาง `src/lib/mail/send.ts` (`getSmtpConfig` / `safeSendMail`, nodemailer, ไม่ log credential) — ใช้ต่อกับ DO/ลิงก์ได้; SMTP ครึ่ง ๆ (ขาด host/user/pass) = ปิด
 - `feedback_reports.status` (new|acknowledged|in_progress|done|rejected) + RLS อ่าน/แก้เฉพาะ admin เตรียมไว้สำหรับหน้า `/portal/feedback` ในอนาคต (ยังไม่มี UI)
 
+## Audit log — CRUD ทุกหน้า portal (2026-09-29)
+
+- ทุก route ของ portal ที่เขียนข้อมูล (POST/PATCH/PUT/DELETE) เรียก `logCrud({ user, profile }, 'create'|'update'|'delete', '<table>', id, payload)` (`src/lib/audit/activity-log.ts`) หลังเขียนสำเร็จ → ตาราง `activity_logs` (มีตั้งแต่ `202605090001_init`, **ไม่มี migration ใหม่**) action `data_created` / `data_updated` / `data_deleted`; route ที่มี action เฉพาะ (`role_*`, `api_key_*`, `feedback_submitted`, payment) ยังใช้ `writeAuditLog` ตรง
+- Best-effort: ไม่ throw, log พังไม่ทำให้ request ล้ม; `sanitizeAuditPayload` ปิดค่า string ใต้ key ที่ดูเป็น secret (token/secret/password/key/base64/signature), ตัด string > 500, array > 50, ลึก > 4; `target_id` เป็น uuid เท่านั้น — id แบบอื่นไปอยู่ `payload.ref`
+- คิวลงทั้ง `booking_logs` (timeline ใน drawer) และ `activity_logs` (trail รวม); ลิงก์จอง/ลิงก์คนขับ log แค่ version + วันหมดอายุ
+- **ไม่ครอบ:** `/api/public/*` (ลูกค้า/คนขับ → `booking_logs`), `/api/integration/*` (→ `integration_logs`), cron, webhook, mark-read ของ notification, ปุ่ม test/send-line
+- Route ใหม่ที่เขียนข้อมูล = ต้องเรียก `logCrud`; insert ให้ต่อ `.select('id').maybeSingle()` เพื่อได้ id
+- **หน้าดู log** `/portal/activity-logs` (menu key `activity_logs`, admin, อ่านอย่างเดียว) → `GET /api/activity-logs` กรอง การกระทำ / ข้อมูล / ผู้ใช้ / ช่วงวัน (วันตามเวลาไทย) + แบ่งหน้า; ชื่อผู้ใช้มาจาก `users_profile` (query ที่สอง เพราะ `user_id` ชี้ `auth.users`); กติกา pure `src/lib/audit/activity-view.ts` (vitest): `parseActivityFilters` ทิ้งค่าที่ผิดรูปแบบ, `opOfAction`, `summarizePayload`; เพิ่มตารางใหม่ที่ log = เพิ่ม entry ใน `ACTIVITY_TABLES`
+- **`202609290002_activity_logs_readonly`** — ถอด policy `for all` เดิม เหลือ select เฉพาะระดับ admin + index 4 ตัว; เขียนได้ทาง service role เท่านั้น (ไม่มี write policy โดยตั้งใจ); **ยังไม่รัน** — ไม่รัน = หน้ายังใช้ได้ แต่สมาชิก shop ยังแก้/ลบ log ผ่าน client ได้
+- role ระดับ admin ที่ตั้ง `menu_keys` เจาะจงไว้จะไม่เห็นเมนูใหม่เอง ต้องติ๊กเพิ่มที่ `/portal/staff` แท็บ "สิทธิ์และเมนู" (`menu_keys` null = เห็นทันที)
+
 ## Notification System
 
 `safeCreateNotification(supabase, {...})` (`src/lib/notifications/createNotification.ts`) = notification center ของ **staff/admin** เท่านั้น ไม่ throw

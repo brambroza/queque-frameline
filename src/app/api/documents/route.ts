@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { applyBranchScope, applyNullableBranchScope, assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument } from '@/lib/auth/document-access';
 import { documentUpsertSchema } from '@/lib/integration/schemas';
@@ -114,6 +115,14 @@ export async function POST(req: Request) {
     }
     const outcome = await upsertDocument(supabase, { shopId: profile.shop_id, companyId: profile.company_id }, docType, 'manual', doc, user.id, { branchId });
     if (!outcome.ok) return NextResponse.json({ error: outcome.message, code: outcome.code }, { status: outcome.code === 'has_live_bookings' ? 409 : 400 });
+    await logCrud({ user, profile }, outcome.created ? 'create' : 'update', 'external_documents', outcome.id, {
+      doc_type: docType,
+      doc_no: outcome.doc_no,
+      branch_id: outcome.branch_id,
+      partner_name: outcome.partner_name,
+      source: 'manual',
+      warnings: outcome.warnings,
+    });
     return NextResponse.json({ data: outcome });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

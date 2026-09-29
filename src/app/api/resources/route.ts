@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyNullableBranchScope, assertBranchWritable } from '@/lib/auth/branch-scope';
 import { bookingResourceSchema } from '@/lib/booking/schemas';
-import { writeAuditLog } from '@/lib/audit/activity-log';
+import { logCrud } from '@/lib/audit/activity-log';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     const serviceLink = await resolveServiceIds(supabase, profile.shop_id, parsed.data.service_ids);
     if (!serviceLink.ok) return NextResponse.json({ error: serviceLink.error }, { status: 400 });
 
-    const { error } = await supabase.from('booking_resources').insert({
+    const { data: created, error } = await supabase.from('booking_resources').insert({
       company_id: profile.company_id,
       shop_id: profile.shop_id,
       branch_id: branchId,
@@ -138,7 +138,7 @@ export async function POST(req: Request) {
       direction: parsed.data.direction ?? null,
       created_by: user.id,
       updated_by: user.id,
-    });
+    }).select('id').maybeSingle();
 
     if (error) {
       if (error.code === '23505') {
@@ -149,6 +149,7 @@ export async function POST(req: Request) {
       }
       throw error;
     }
+    await logCrud({ user, profile }, 'create', 'booking_resources', created?.id, { ...parsed.data, branch_id: branchId });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json(getErrorPayload(e), { status: getErrorStatus(e) });
@@ -233,15 +234,7 @@ export async function PATCH(req: Request) {
       }
       throw error;
     }
-    await writeAuditLog({
-      companyId: profile.company_id,
-      shopId: profile.shop_id,
-      userId: user.id,
-      action: 'data_updated',
-      targetTable: 'booking_resources',
-      targetId: id,
-      payload: { resource_type: parsed.data.resource_type, resource_name: parsed.data.resource_name, unit_price: parsed.data.unit_price },
-    });
+    await logCrud({ user, profile }, 'update', 'booking_resources', id, { ...parsed.data, branch_id: branchId });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json(getErrorPayload(e), { status: getErrorStatus(e) });
@@ -262,6 +255,7 @@ export async function DELETE(req: Request) {
       .eq('shop_id', profile.shop_id);
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'booking_resources', id, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json(getErrorPayload(e), { status: getErrorStatus(e) });

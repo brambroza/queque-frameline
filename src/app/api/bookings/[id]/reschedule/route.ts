@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { assertBranchAllowed, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { rescheduleSchema } from '@/lib/booking/schemas';
@@ -61,6 +62,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       to: { booking_date: parsed.data.booking_date, start_time: parsed.data.start_time, dock_id: moved?.resource_id, queue_number: moved?.queue_number, service_minutes: parsed.data.service_minutes ?? before.service_minutes },
       actorKind: actorFromRoles(roles),
       actorId: user.id,
+    });
+
+    await logCrud({ user, profile }, 'update', 'bookings', id, {
+      queue_number: moved?.queue_number ?? before.queue_number ?? null,
+      booking_date: { from: before.booking_date, to: parsed.data.booking_date },
+      start_time: { from: before.start_time, to: parsed.data.start_time },
+      dock_id: { from: before.resource_id ?? null, to: moved?.resource_id ?? null },
+      service_minutes: parsed.data.service_minutes ?? before.service_minutes ?? null,
     });
 
     await safeNotifyPartner(createAdminClient(), { shopId: profile.shop_id, bookingId: id, kind: 'rescheduled', prev: { date: String(before.booking_date), time: String(before.start_time) } });

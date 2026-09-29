@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const upsertSchema = z.object({
   id: z.string().uuid().optional(),
@@ -51,13 +52,13 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['admin'] });
+    const { user, profile } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const parsed = upsertSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     const payload = parsed.data;
 
-    const { error } = await admin.from('translations').insert({
+    const { data: created, error } = await admin.from('translations').insert({
       namespace_id: payload.namespace_id,
       language_code: payload.language_code,
       translation_key: payload.translation_key,
@@ -66,8 +67,9 @@ export async function POST(req: Request) {
       active: payload.active ?? true,
       created_by: user.id,
       updated_by: user.id,
-    });
+    }).select('id').maybeSingle();
     if (error) throw error;
+    await logCrud({ user, profile }, 'create', 'translations', created?.id, { ...payload });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -76,7 +78,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['admin'] });
+    const { user, profile } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const parsed = upsertSchema.safeParse(await req.json());
     if (!parsed.success || !parsed.data.id) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
@@ -95,6 +97,7 @@ export async function PATCH(req: Request) {
       })
       .eq('id', payload.id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'translations', payload.id, { ...payload });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -103,7 +106,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { user } = await requireAuthContext({ roles: ['admin'] });
+    const { user, profile } = await requireAuthContext({ roles: ['admin'] });
     const admin = createAdminClient();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -114,6 +117,7 @@ export async function DELETE(req: Request) {
       .update({ active: false, updated_by: user.id })
       .eq('id', id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'translations', id, { deactivated: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

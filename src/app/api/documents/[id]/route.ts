@@ -4,6 +4,7 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope, assertBranchWritable, assertRowBranch } from '@/lib/auth/branch-scope';
 import { canWriteDocument, isDocType } from '@/lib/auth/document-access';
 import { LIVE_STATUSES } from '@/lib/booking/status-flow';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const patchSchema = z.object({ status: z.enum(['open', 'completed', 'cancelled']) });
 
@@ -96,6 +97,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       .select('id');
     if (error) throw error;
     if (!data || data.length === 0) return NextResponse.json({ error: 'ไม่พบเอกสาร' }, { status: 404 });
+    await logCrud({ user, profile }, 'update', 'external_documents', id, { status });
     return NextResponse.json({ data: { ok: true, status } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -124,6 +126,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
       .eq('id', id)
       .eq('shop_id', profile.shop_id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'external_documents', id, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

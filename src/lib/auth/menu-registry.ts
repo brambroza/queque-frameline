@@ -13,7 +13,7 @@ import type { AppRole } from '@/types/db';
 export type MenuKey =
   | 'dashboard' | 'dock_queues' | 'sales_orders' | 'purchase_orders' | 'calendar' | 'queue_board' | 'queue_display' | 'notifications'
   | 'branches' | 'vehicle_types' | 'docks' | 'working_hours' | 'holidays' | 'staff' | 'partners'
-  | 'reports' | 'site_settings' | 'line_settings' | 'api_keys' | 'settings' | 'translations';
+  | 'reports' | 'activity_logs' | 'site_settings' | 'line_settings' | 'api_keys' | 'settings' | 'translations';
 
 export type MenuGroupKey = 'overview' | 'group_site' | 'group_insights';
 
@@ -50,6 +50,7 @@ export const MENU_ITEMS: MenuItemDef[] = [
   { key: 'staff', href: '/portal/staff', labelKey: 'menu.staff', fallback: 'พนักงาน', group: 'group_site', adminOnly: true },
   { key: 'partners', href: '/portal/partners', labelKey: 'menu.partners', fallback: 'คู่ค้า', group: 'group_site' },
   { key: 'reports', href: '/portal/reports', labelKey: 'menu.reports', fallback: 'รายงาน', group: 'group_insights', adminOnly: true },
+  { key: 'activity_logs', href: '/portal/activity-logs', labelKey: 'menu.activity_logs', fallback: 'ประวัติการใช้งาน', group: 'group_insights', adminOnly: true },
   { key: 'site_settings', href: '/portal/site-settings', labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', group: 'group_insights' },
   { key: 'line_settings', href: '/portal/line-settings', labelKey: 'menu.line_settings', fallback: 'เชื่อมต่อ LINE', group: 'group_insights', adminOnly: true },
   { key: 'api_keys', href: '/portal/api-keys', labelKey: 'menu.api_keys', fallback: 'เชื่อมต่อ ERP', group: 'group_insights', adminOnly: true },

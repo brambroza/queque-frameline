@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { plateChangeSchema } from '@/lib/booking/schemas';
 import { normalizePlate, platesMatch } from '@/lib/booking/plate';
@@ -56,6 +57,13 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       to: { plate_number_actual: actual, reason: parsed.data.reason ?? null },
       actorKind: actorFromRoles(roles),
       actorId: user.id,
+    });
+
+    await logCrud({ user, profile }, 'update', 'bookings', id, {
+      queue_number: before.queue_number ?? null,
+      plate_number: before.plate_number ?? null,
+      plate_number_actual: { from: before.plate_number_actual ?? null, to: actual },
+      reason: parsed.data.reason ?? null,
     });
 
     if (actual) {

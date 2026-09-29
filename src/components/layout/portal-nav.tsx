@@ -31,6 +31,7 @@ import ShoppingCartRoundedIcon from '@mui/icons-material/ShoppingCartRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import ChatRoundedIcon from '@mui/icons-material/ChatRounded';
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
 import { useRouter } from 'next/navigation';
@@ -58,6 +59,7 @@ const MENU_ICONS: Record<MenuKey, React.ReactNode> = {
   staff: <GroupRoundedIcon fontSize="small" />,
   partners: <PeopleRoundedIcon fontSize="small" />,
   reports: <InsightsRoundedIcon fontSize="small" />,
+  activity_logs: <HistoryRoundedIcon fontSize="small" />,
   site_settings: <TuneRoundedIcon fontSize="small" />,
   line_settings: <ChatRoundedIcon fontSize="small" />,
   api_keys: <KeyRoundedIcon fontSize="small" />,

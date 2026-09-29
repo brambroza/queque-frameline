@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { getLineConfig, isLineConfigured } from '@/lib/line/config';
 import { clearDefaultRichMenu, createRichMenu, deleteRichMenu, getDefaultRichMenuId, setDefaultRichMenu, uploadRichMenuImage } from '@/lib/line/client';
 import { RICH_MENU_IMAGE_MAX_BYTES, richMenuImageProblem, richMenuRequest } from '@/lib/line/rich-menu';
@@ -55,6 +56,11 @@ export async function POST(req: Request) {
       .upsert({ shop_id: profile.shop_id, company_id: profile.company_id, rich_menu_id: richMenuId, rich_menu_published_at: publishedAt, updated_by: user.id }, { onConflict: 'shop_id' });
     if (error) throw error;
     if (previous && previous !== richMenuId) await deleteRichMenu(token, previous).catch((e) => console.error('[line] delete old rich menu failed:', e instanceof Error ? e.message : e));
+    await logCrud({ user, profile }, 'update', 'line_config', profile.shop_id, {
+      rich_menu: 'published',
+      rich_menu_id: richMenuId,
+      previous_rich_menu_id: previous ?? null,
+    });
     return NextResponse.json({ data: { rich_menu_id: richMenuId, rich_menu_published_at: publishedAt } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -78,6 +84,10 @@ export async function DELETE() {
     }
     const { error } = await supabase.from('line_config').update({ rich_menu_id: null, rich_menu_published_at: null, updated_by: user.id }).eq('shop_id', profile.shop_id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'line_config', profile.shop_id, {
+      rich_menu: 'removed',
+      rich_menu_id: cfg.rich_menu_id ?? null,
+    });
     return NextResponse.json({ data: { rich_menu_id: null, rich_menu_published_at: null } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

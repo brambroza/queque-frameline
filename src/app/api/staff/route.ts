@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { writeAuditLog } from '@/lib/audit/activity-log';
+import { logCrud } from '@/lib/audit/activity-log';
 import { ROLE_SELECT, countOtherAdmins, findRoleByCode, revokeUserRoles, rolesOfUser, setUserRole, type RoleDef } from '@/lib/auth/role-grants';
 
 /** Role codes come from the admin-managed `roles` table (see /api/roles). */
@@ -295,6 +295,14 @@ export async function POST(req: Request) {
     });
     if (mapError) throw mapError;
 
+    await logCrud({ user, profile }, 'create', 'staff', inserted.id, {
+      user_id: staffUserId,
+      display_name: payload.display_name,
+      active: payload.active,
+      role: role.code,
+      branch_ids: payload.branch_ids,
+      invited: !payload.user_id,
+    });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -344,6 +352,12 @@ export async function PATCH(req: Request) {
     });
     if (mapError) throw mapError;
 
+    await logCrud({ user, profile }, 'update', 'staff', id, {
+      display_name: payload.display_name,
+      active: payload.active,
+      role: payload.role ?? null,
+      branch_ids: payload.branch_ids,
+    });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -384,14 +398,9 @@ export async function DELETE(req: Request) {
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false);
 
-    await writeAuditLog({
-      companyId: profile.company_id,
-      shopId: profile.shop_id,
-      userId: user.id,
-      action: 'data_deleted',
-      targetTable: 'staff',
-      targetId: id,
-      payload: { soft_delete: true, cascade_soft_delete: ['staff_branches', 'user_roles'] },
+    await logCrud({ user, profile }, 'delete', 'staff', id, {
+      soft_delete: true,
+      cascade_soft_delete: ['staff_branches', 'user_roles'],
     });
 
     return NextResponse.json({ data: true });

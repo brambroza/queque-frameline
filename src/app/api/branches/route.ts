@@ -3,7 +3,7 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope, assertBranchAllowed } from '@/lib/auth/branch-scope';
 import { branchSchema } from '@/lib/booking/schemas';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { writeAuditLog } from '@/lib/audit/activity-log';
+import { logCrud } from '@/lib/audit/activity-log';
 
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       updated_by: user.id,
     };
 
-    const { error } = await supabase.from('branches').insert(branchInsertPayload);
+    const { data: created, error } = await supabase.from('branches').insert(branchInsertPayload).select('id').maybeSingle();
 
     if (error) {
       return NextResponse.json(
@@ -126,6 +126,13 @@ export async function POST(req: Request) {
       );
     }
 
+    await logCrud(
+      { user, profile: { company_id: targetCompanyId, shop_id: targetShopId } },
+      'create',
+      'branches',
+      created?.id,
+      { ...payload },
+    );
     return NextResponse.json({ data: true });
   } catch (e) {
     console.log("error : branch :>>> " , e);
@@ -162,15 +169,7 @@ export async function PATCH(req: Request) {
       .eq('shop_id', profile.shop_id);
 
     if (error) throw error;
-    await writeAuditLog({
-      companyId: profile.company_id,
-      shopId: profile.shop_id,
-      userId: user.id,
-      action: 'data_updated',
-      targetTable: 'branches',
-      targetId: id,
-      payload: { branch_name: parsed.data.branch_name, active: parsed.data.active },
-    });
+    await logCrud({ user, profile }, 'update', 'branches', id, { ...parsed.data });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -191,6 +190,7 @@ export async function DELETE(req: Request) {
       .eq('shop_id', profile.shop_id);
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'branches', id, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

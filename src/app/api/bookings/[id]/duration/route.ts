@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { bookingDurationSchema } from '@/lib/booking/schemas';
 import { actorFromRoles, dockErrorResponse, logBooking } from '@/lib/booking/server';
@@ -45,6 +46,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       from: { service_minutes: before.service_minutes, end_time: before.end_time },
       to: { service_minutes: row.service_minutes, end_time: row.end_time },
       actorKind: actorFromRoles(roles), actorId: user.id,
+    });
+
+    await logCrud({ user, profile }, 'update', 'bookings', id, {
+      queue_number: before.queue_number ?? null,
+      service_minutes: { from: before.service_minutes ?? null, to: row.service_minutes },
     });
 
     return NextResponse.json({ data: { ok: true, service_minutes: row.service_minutes, end_time: row.end_time } });

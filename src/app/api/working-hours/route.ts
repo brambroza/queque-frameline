@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { applyBranchScope, assertBranchAllowed } from '@/lib/auth/branch-scope';
 import { workingHourSchema } from '@/lib/booking/schemas';
-import { writeAuditLog } from '@/lib/audit/activity-log';
+import { logCrud } from '@/lib/audit/activity-log';
 
 export async function GET(req: Request) {
   try {
@@ -36,15 +36,16 @@ export async function POST(req: Request) {
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     assertBranchAllowed(branchScope, parsed.data.branch_id);
 
-    const { error } = await supabase.from('working_hours').insert({
+    const { data: created, error } = await supabase.from('working_hours').insert({
       ...parsed.data,
       company_id: profile.company_id,
       shop_id: profile.shop_id,
       created_by: user.id,
       updated_by: user.id,
-    });
+    }).select('id').maybeSingle();
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'create', 'working_hours', created?.id, { ...parsed.data });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -65,15 +66,7 @@ export async function DELETE(req: Request) {
       .eq('shop_id', profile.shop_id);
 
     if (error) throw error;
-    await writeAuditLog({
-      companyId: profile.company_id,
-      shopId: profile.shop_id,
-      userId: user.id,
-      action: 'data_deleted',
-      targetTable: 'working_hours',
-      targetId: id,
-      payload: { soft_delete: true },
-    });
+    await logCrud({ user, profile }, 'delete', 'working_hours', id, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -108,6 +101,7 @@ export async function PATCH(req: Request) {
       .eq('is_deleted', false);
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'working_hours', id, { ...parsed.data });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

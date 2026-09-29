@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { phoneSchema } from '@/lib/booking/schemas';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const blank = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
 const partnerSchema = z.object({
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
       if (error.code === '23505') return NextResponse.json({ error: duplicateMessage(error.message) }, { status: 409 });
       throw error;
     }
+    await logCrud({ user, profile }, 'create', 'customers', data?.id, { ...p });
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -100,6 +102,7 @@ export async function PATCH(req: Request) {
       throw error;
     }
     if (!data || data.length === 0) return NextResponse.json({ error: 'ไม่พบคู่ค้า' }, { status: 404 });
+    await logCrud({ user, profile }, 'update', 'customers', id.data, { ...p });
     return NextResponse.json({ data: data[0] });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -115,6 +118,7 @@ export async function PUT(req: Request) {
     if (!id.success || body.action !== 'unlink_line') return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
     const { error } = await supabase.from('customers').update({ line_user_id: null, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'customers', id.data, { unlink_line: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -129,6 +133,7 @@ export async function DELETE(req: Request) {
     if (!id.success) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const { error } = await supabase.from('customers').update({ is_deleted: true, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'customers', id.data, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

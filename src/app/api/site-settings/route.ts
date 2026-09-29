@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { getSiteSettings } from '@/lib/booking/server';
 
 const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
@@ -61,6 +62,7 @@ export async function PATCH(req: Request) {
       .from('site_settings')
       .upsert({ shop_id: profile.shop_id, company_id: profile.company_id, ...parsed.data, updated_by: user.id }, { onConflict: 'shop_id' });
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'site_settings', profile.shop_id, { ...parsed.data });
     return NextResponse.json({ data: await getSiteSettings(supabase, profile.shop_id) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

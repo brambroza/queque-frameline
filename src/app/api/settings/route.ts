@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
-import { writeAuditLog } from '@/lib/audit/activity-log';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const settingSchema = z.object({
   key: z.string().min(2),
@@ -54,16 +54,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Reserved setting key' }, { status: 400 });
     }
 
-    const { error } = await supabase.from('settings').insert({
+    const { data: created, error } = await supabase.from('settings').insert({
       company_id: profile.company_id,
       shop_id: profile.shop_id,
       key: payload.key,
       value: payload.value,
       created_by: user.id,
       updated_by: user.id,
-    });
+    }).select('id').maybeSingle();
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'create', 'settings', created?.id, { key: payload.key });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -96,15 +97,7 @@ export async function PATCH(req: Request) {
       .eq('shop_id', profile.shop_id);
 
     if (error) throw error;
-    await writeAuditLog({
-      companyId: profile.company_id,
-      shopId: profile.shop_id,
-      userId: user.id,
-      action: 'data_deleted',
-      targetTable: 'settings',
-      targetId: id,
-      payload: { soft_delete: true },
-    });
+    await logCrud({ user, profile }, 'update', 'settings', id, { key: payload.key });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -126,6 +119,7 @@ export async function DELETE(req: Request) {
       .neq('key', 'google_calendar_oauth');
 
     if (error) throw error;
+    await logCrud({ user, profile }, 'delete', 'settings', id, { soft_delete: true });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

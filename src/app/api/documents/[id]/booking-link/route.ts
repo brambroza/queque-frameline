@@ -6,6 +6,7 @@ import { getSiteSettings } from '@/lib/booking/server';
 import { deriveLinkToken, expiryFromNow, hashToken, tokenState } from '@/lib/tokens';
 import { bookingUrl } from '@/lib/links';
 import { getLineConfig, liffUrl } from '@/lib/line/config';
+import { logCrud } from '@/lib/audit/activity-log';
 
 /**
  * GET  = the document's self-booking link (issued on first use, re-issued when expired).
@@ -48,6 +49,13 @@ async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: bool
       .eq('id', id)
       .eq('shop_id', profile.shop_id);
     if (error) throw error;
+    // Version + expiry only — the link itself must never reach a log.
+    await logCrud({ user, profile }, 'update', 'external_documents', id, {
+      doc_no: doc.doc_no,
+      booking_link: regenerate ? 'regenerated' : expired ? 'reissued' : 'issued',
+      version,
+      expires_at: expiresAt,
+    });
   }
   const line = await getLineConfig(supabase, profile.shop_id);
   return NextResponse.json({ data: { url: bookingUrl(token), liff_url: liffUrl(line, `/book/${token}`), expires_at: expiresAt, doc_no: doc.doc_no } });

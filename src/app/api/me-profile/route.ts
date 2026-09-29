@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const schema = z.object({
   full_name: z.string().min(1).max(120),
@@ -24,7 +25,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user } = await requireAuthContext();
+    const { supabase, user, profile } = await requireAuthContext();
     const parsed = schema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
 
@@ -38,6 +39,10 @@ export async function PATCH(req: Request) {
       })
       .eq('id', user.id);
     if (error) throw error;
+    await logCrud({ user, profile }, 'update', 'users_profile', user.id, {
+      full_name: payload.full_name.trim(),
+      phone: payload.phone?.trim() || null,
+    });
     return NextResponse.json({ data: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

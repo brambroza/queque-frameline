@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { getLineConfig, liffUrl } from '@/lib/line/config';
 import { isValidLiffId, normalizeLiffId } from '@/lib/line/liff-id';
 
@@ -69,6 +70,11 @@ export async function PATCH(req: Request) {
     if (clearGroup) { patch.staff_group_id = null; patch.staff_group_name = null; }
     const { error } = await supabase.from('line_config').upsert(patch, { onConflict: 'shop_id' });
     if (error) throw error;
+    // Token / secret values are masked by logCrud; only the fact that they changed is kept.
+    await logCrud({ user, profile }, 'update', 'line_config', profile.shop_id, {
+      ...fields,
+      staff_group_cleared: Boolean(clearGroup),
+    });
     return NextResponse.json({ data: await view(supabase, profile.shop_id) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });

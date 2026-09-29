@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { actorFromRoles, getSiteSettings, logBooking } from '@/lib/booking/server';
 import { driverLinkExpiry, ensureDriverLink } from '@/lib/booking/driver-link';
@@ -40,6 +41,13 @@ async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: bool
       to: { version, expires_at: expiresAt },
       actorKind: actorFromRoles(roles),
       actorId: user.id,
+    });
+    // Version + expiry only — the link itself must never reach a log.
+    await logCrud({ user, profile }, 'update', 'bookings', id, {
+      queue_number: booking.queue_number ?? null,
+      driver_link: regenerate ? 'regenerated' : 'issued',
+      version,
+      expires_at: expiresAt,
     });
   }
   const line = await getLineConfig(supabase, profile.shop_id);

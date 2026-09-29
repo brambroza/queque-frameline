@@ -5,6 +5,7 @@ import { documentPortalPath } from '@/lib/auth/document-access';
 import { CSV_MAX_ROWS, parseDocumentsCsv } from '@/lib/integration/csv';
 import { upsertDocument } from '@/lib/integration/upsert';
 import { safeCreateNotification } from '@/lib/notifications/createNotification';
+import { logCrud } from '@/lib/audit/activity-log';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -64,6 +65,14 @@ export async function POST(req: Request) {
       color: '#1565c0',
       metadata: { doc_type: docType, created, updated, failed: failed.length },
       createdBy: user.id,
+    });
+
+    await logCrud({ user, profile }, 'create', 'external_documents', null, {
+      source: 'csv',
+      doc_type: docType,
+      created,
+      updated,
+      failed: failed.length,
     });
 
     return NextResponse.json({ data: { ...summary, created, updated, failed } });
