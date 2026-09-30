@@ -9,6 +9,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { PageHeader } from '@/components/shared/page-header';
@@ -18,6 +19,7 @@ import { TablePaginationControls } from '@/components/ui/table-pagination-contro
 import { useToast } from '@/components/ui/toast';
 import { PaymentDialog, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import { STATUS_LABEL as BOOKING_STATUS_LABEL, hhmm } from '@/components/bookings/booking-types';
+import { WalkInDialog } from '@/components/bookings/walk-in-dialog';
 import { PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
@@ -86,6 +88,8 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
   const [status, setStatus] = useState('');
   const [payment, setPayment] = useState('');
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
+  /** Truck at the gate without a booking: queue it against this document. */
+  const [walkInDoc, setWalkInDoc] = useState<DocRow | null>(null);
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -400,6 +404,7 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
                       <TableCell><Chip size="small" color={STATUS[d.status].color} variant={d.status === 'open' ? 'outlined' : 'filled'} label={STATUS[d.status].label} /></TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         {docType === 'so' && live && paymentStatusOf(d) === 'unpaid' ? <Button size="small" color="success" variant="outlined" sx={{ mr: 0.5 }} onClick={() => setPaymentTarget(d)}>บันทึกชำระเงิน</Button> : null}
+                        {live ? <Tooltip title="Walk-in — รถมาถึงแล้วโดยไม่ได้จอง สร้างคิววันนี้และเช็คอิน"><IconButton size="small" color="primary" onClick={() => setWalkInDoc(d)} aria-label="Walk-in"><LocalShippingRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
                         {canEdit && live ? <Button size="small" variant={d.has_link ? 'text' : 'contained'} startIcon={<QrCode2RoundedIcon />} onClick={() => void openLink(d)}>{d.has_link ? 'ดูลิงก์' : 'ส่งลิงก์จอง'}</Button> : null}
                         {canEdit && live ? <Tooltip title="แก้ไข"><IconButton size="small" onClick={() => void openEdit(d)} aria-label="แก้ไข"><EditRoundedIcon fontSize="small" /></IconButton></Tooltip> : null}
                         {canEdit && live ? <Button size="small" color="inherit" onClick={() => void setDocStatus(d, 'completed')}>ปิด</Button> : null}
@@ -426,6 +431,8 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
           void load();
         }}
       />
+
+      <WalkInDialog open={Boolean(walkInDoc)} document={walkInDoc} onClose={() => setWalkInDoc(null)} onCreated={() => void load()} />
 
       {/* Booking link */}
       <Dialog open={Boolean(linkDoc)} onClose={() => setLinkDoc(null)} fullWidth maxWidth="xs">
@@ -629,6 +636,9 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
         </DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 0.5 }}>
           <Button color="inherit" onClick={() => setViewDoc(null)}>ปิด</Button>
+          {viewDoc && (viewDoc.status === 'open' || viewDoc.status === 'booked') ? (
+            <Button startIcon={<LocalShippingRoundedIcon />} onClick={() => { const d = viewDoc; setViewDoc(null); setWalkInDoc(d); }}>Walk-in</Button>
+          ) : null}
           {viewDoc && canEdit && (viewDoc.status === 'open' || viewDoc.status === 'booked') ? (
             <>
               <Button startIcon={<QrCode2RoundedIcon />} onClick={() => { const d = viewDoc; setViewDoc(null); void openLink(d); }}>{viewDoc.has_link ? 'ดูลิงก์จอง' : 'ส่งลิงก์จอง'}</Button>

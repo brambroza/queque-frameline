@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { bookingDurationSchema, bookingStatusPatchSchema, customerVehicleChangeSchema, documentPaymentSchema, rescheduleSchema } from './schemas';
+import { bookingDurationSchema, bookingStatusPatchSchema, customerVehicleChangeSchema, dockBookingSchema, documentPaymentSchema, rescheduleSchema } from './schemas';
+
+describe('dockBookingSchema', () => {
+  const doc = '33333333-3333-4333-8333-333333333333';
+  const base = { direction: 'outbound', service_id: '44444444-4444-4444-8444-444444444444', booking_date: '2026-09-30', start_time: '10:00', plate_number: '70-1234' };
+  it('takes a partner name or a document for an ordinary queue', () => {
+    expect(dockBookingSchema.safeParse({ ...base, partner_name: 'ลูกค้า ก' }).success).toBe(true);
+    expect(dockBookingSchema.safeParse({ ...base, document_id: doc }).success).toBe(true);
+    expect(dockBookingSchema.safeParse(base).success).toBe(false);
+  });
+  it('requires an SO/PO for a walk-in', () => {
+    expect(dockBookingSchema.safeParse({ ...base, walk_in: true, document_id: doc }).success).toBe(true);
+    const r = dockBookingSchema.safeParse({ ...base, walk_in: true, partner_name: 'ลูกค้า ก', document_id: '' });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.some((i) => i.path[0] === 'document_id')).toBe(true);
+    expect(dockBookingSchema.safeParse({ ...base, walk_in: false, partner_name: 'ลูกค้า ก' }).success).toBe(true);
+    expect(dockBookingSchema.safeParse({ ...base, walk_in: 'yes', document_id: doc }).success).toBe(false);
+  });
+});
 
 describe('customerVehicleChangeSchema', () => {
   const id = '22222222-2222-4222-8222-222222222222';

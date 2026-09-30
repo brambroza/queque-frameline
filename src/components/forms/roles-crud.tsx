@@ -11,6 +11,7 @@ import { useI18n } from '@/components/i18n/i18n-provider';
 import { ADMIN_LOCKED_MENUS, MENU_GROUPS, MENU_ITEMS, menuKeysForLevel, menuKeysOfRole, type MenuKey } from '@/lib/auth/menu-registry';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import type { AppRole } from '@/types/db';
+import { APP_ROLES, LEVEL_LABEL } from '@/lib/auth/levels';
 
 type RoleRow = {
   id: string;
@@ -42,11 +43,13 @@ type FormState = {
   multi_branch: boolean;
 };
 
-const LEVEL_LABEL: Record<AppRole, string> = { admin: 'ผู้ดูแลระบบ', staff: 'พนักงาน' };
 const LEVEL_HINT: Record<AppRole, string> = {
   admin: 'ทำได้ทุกอย่างรวมถึงตั้งค่า อนุมัติ และจัดการพนักงาน',
+  manager: 'ทุกอย่างของพนักงาน + รายงาน และแก้ท่า ประเภทรถ เวลาทำการ วันหยุด คู่ค้า ตั้งค่าคิว — ไม่จัดการพนักงาน สิทธิ์ สาขา LINE หรือ ERP',
   staff: 'งานหน้าคลัง: ดู/สร้างคิว เช็คอิน เรียกคิว บันทึกการชำระ — เมนูตั้งค่าเปิดดูได้แต่แก้ไม่ได้',
+  viewer: 'ดูอย่างเดียว: แดชบอร์ด ปฏิทิน บอร์ดคิว รายงาน — แก้ไขหรือกดเปลี่ยนสถานะไม่ได้',
 };
+const LEVEL_CHIP: Record<AppRole, 'primary' | 'secondary' | 'default' | 'info'> = { admin: 'primary', manager: 'secondary', staff: 'default', viewer: 'info' };
 
 const emptyForm: FormState = { id: null, code: '', name: '', description: '', access_level: 'staff', all_menus: false, menu_keys: [], all_branches: true, branch_ids: [], can_export: true, multi_branch: true };
 
@@ -93,7 +96,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
   async function save() {
     if (!form || saving) return;
     if (!form.name.trim()) { push('กรุณาตั้งชื่อสิทธิ์', 'error'); return; }
-    if (form.access_level === 'staff' && !form.all_branches && form.branch_ids.length === 0) { push('เลือกอย่างน้อย 1 สาขา หรือเปิด "เห็นทุกสาขา"', 'error'); return; }
+    if (form.access_level !== 'admin' && !form.all_branches && form.branch_ids.length === 0) { push('เลือกอย่างน้อย 1 สาขา หรือเปิด "เห็นทุกสาขา"', 'error'); return; }
     if (!form.id && !/^[a-z][a-z0-9_]{1,31}$/.test(form.code)) { push('รหัสใช้ a-z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2–32', 'error'); return; }
     setSaving(true);
     try {
@@ -170,7 +173,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
         <Box>
           <Typography variant="subtitle1" fontWeight={700}>สิทธิ์และเมนู</Typography>
           <Typography variant="body2" color="text.secondary">
-            แต่ละสิทธิ์กำหนดระดับ (ผู้ดูแลระบบ / พนักงาน) และเมนูที่เห็น — พนักงาน 1 คนมี 1 สิทธิ์ เมนูที่ไม่ได้ติ๊กจะไม่แสดงและเปิดตรงไม่ได้
+            แต่ละสิทธิ์กำหนดระดับ (ผู้ดูแลระบบ / ผู้จัดการ / พนักงาน / ดูอย่างเดียว) และเมนูที่เห็น — พนักงาน 1 คนมี 1 สิทธิ์ เมนูที่ไม่ได้ติ๊กจะไม่แสดงและเปิดตรงไม่ได้
           </Typography>
         </Box>
         {isAdmin ? <Button variant="contained" onClick={() => setForm(emptyForm)}>เพิ่มสิทธิ์</Button> : null}
@@ -189,7 +192,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                     <Typography fontWeight={800}>{r.name}</Typography>
                     <Chip size="small" label={r.code} variant="outlined" />
-                    <Chip size="small" color={r.access_level === 'admin' ? 'primary' : 'default'} label={LEVEL_LABEL[r.access_level]} />
+                    <Chip size="small" color={LEVEL_CHIP[r.access_level] ?? 'default'} label={LEVEL_LABEL[r.access_level] ?? r.access_level} />
                     {r.is_system ? <Chip size="small" variant="outlined" label="พื้นฐาน" /> : null}
                     <Chip size="small" variant="outlined" label={`${r.user_count} คน`} />
                   </Stack>
@@ -228,8 +231,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                 <TextField size="small" label="คำอธิบาย" value={form.description} onChange={(e) => setForm((p) => (p ? { ...p, description: e.target.value } : p))} />
                 <TextField select size="small" label="ระดับสิทธิ์" value={form.access_level} helperText={LEVEL_HINT[form.access_level]}
                   disabled={rows?.find((r) => r.id === form.id)?.is_system ?? false} onChange={(e) => setLevel(e.target.value as AppRole)}>
-                  <MenuItem value="staff">{LEVEL_LABEL.staff}</MenuItem>
-                  <MenuItem value="admin">{LEVEL_LABEL.admin}</MenuItem>
+                  {[...APP_ROLES].reverse().map((l) => <MenuItem key={l} value={l}>{LEVEL_LABEL[l]}</MenuItem>)}
                 </TextField>
 
                 <Divider />
@@ -264,7 +266,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                 <FormControlLabel disabled={form.access_level === 'admin'}
                   control={<Switch checked={form.access_level === 'admin' || form.all_branches} onChange={(e) => setForm((p) => (p ? { ...p, all_branches: e.target.checked } : p))} />}
                   label="เห็นทุกสาขา" />
-                {form.access_level === 'staff' && !form.all_branches ? (
+                {form.access_level !== 'admin' && !form.all_branches ? (
                   branches.length === 0 ? <Alert severity="info">ยังไม่มีสาขา — เพิ่มสาขาก่อน</Alert> : (
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
                       {branches.map((b) => (

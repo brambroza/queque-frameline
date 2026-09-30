@@ -50,7 +50,7 @@ type ExportRow = {
  */
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, user, capabilities } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, user, capabilities } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     if (!capabilities.canExport) return NextResponse.json({ error: 'สิทธิ์ของคุณส่งออกข้อมูลไม่ได้', code: 'EXPORT_FORBIDDEN' }, { status: 403 });
     const url = new URL(req.url);
     const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));

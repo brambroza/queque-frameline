@@ -5,7 +5,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 import { ROLE_SELECT, type RoleDef } from '@/lib/auth/role-grants';
 import { validateRoleMenuKeys } from '@/lib/auth/menu-registry';
+import { APP_ROLES } from '@/lib/auth/levels';
+import type { AppRole } from '@/types/db';
 import { validateRoleBranchIds } from '@/lib/auth/role-capabilities';
+
+const levelSchema = z.enum(APP_ROLES as [AppRole, ...AppRole[]]);
 
 const codeSchema = z.string().trim().regex(/^[a-z][a-z0-9_]{1,31}$/, 'รหัสใช้ a-z 0-9 _ ขึ้นต้นด้วยตัวอักษร ยาว 2–32');
 
@@ -13,7 +17,7 @@ const createSchema = z.object({
   code: codeSchema,
   name: z.string().trim().min(2).max(60),
   description: z.string().trim().max(200).optional().nullable(),
-  access_level: z.enum(['admin', 'staff']),
+  access_level: levelSchema,
   /** null = every menu the level allows */
   menu_keys: z.array(z.string()).nullable(),
   /** null = every branch */
@@ -26,7 +30,7 @@ const updateSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(2).max(60).optional(),
   description: z.string().trim().max(200).optional().nullable(),
-  access_level: z.enum(['admin', 'staff']).optional(),
+  access_level: levelSchema.optional(),
   menu_keys: z.array(z.string()).nullable().optional(),
   branch_ids: z.array(z.string().uuid()).max(100).nullable().optional(),
   can_export: z.boolean().optional(),
@@ -38,7 +42,7 @@ function fail(message: string, status = 400) {
 }
 
 /** Menu list check shared by create and update. Returns the cleaned list or a 400. */
-function checkMenus(level: 'admin' | 'staff', keys: string[] | null | undefined): { keys: string[] | null; error?: undefined } | { error: string; keys?: undefined } {
+function checkMenus(level: AppRole, keys: string[] | null | undefined): { keys: string[] | null; error?: undefined } | { error: string; keys?: undefined } {
   if (keys == null) return { keys: null };
   const v = validateRoleMenuKeys(level, keys);
   return v.ok ? { keys: v.keys as string[] } : { error: v.error };
@@ -51,7 +55,7 @@ function checkMenus(level: 'admin' | 'staff', keys: string[] | null | undefined)
 async function checkAccess(
   admin: ReturnType<typeof createAdminClient>,
   shopId: string,
-  level: 'admin' | 'staff',
+  level: AppRole,
   input: { branch_ids?: string[] | null; can_export?: boolean; multi_branch?: boolean },
 ): Promise<{ branch_ids: string[] | null; can_export: boolean; multi_branch: boolean; error?: undefined } | { error: string }> {
   if (level === 'admin') return { branch_ids: null, can_export: true, multi_branch: true };

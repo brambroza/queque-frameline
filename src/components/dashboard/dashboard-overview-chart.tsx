@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Card, CardContent, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import { useTranslation } from '@/lib/i18n/useTranslation';
+import { useMenuAccess } from '@/components/layout/access-provider';
 import type { DashboardData } from '@/types/dashboard';
 import { hourLabel, longThaiDate, shortThaiDate, weekdayName, weekdayOfISO } from './dashboard-utils';
 
@@ -187,6 +188,7 @@ function TimelineHeatmap({ data, nowHour }: { data: DashboardData; nowHour: numb
   const { t } = useTranslation('dashboard');
   const theme = useTheme();
   const { heatmap } = data;
+  const canOpenQueues = useMenuAccess().can('dock_queues');
   const isWeekday = heatmap.mode === 'weekday';
   const primary = theme.palette.primary.main;
 
@@ -244,7 +246,7 @@ function TimelineHeatmap({ data, nowHour }: { data: DashboardData; nowHour: numb
                   const pctText = c.capacity > 0 ? `${Math.round((c.count / c.capacity) * 100)}%` : '';
                   const title = level === 'closed' ? `${rowLabel(row.key)} ${hourLabel(c.hour)} · ${t('closed', 'ปิด')}` : `${rowLabel(row.key)} ${hourLabel(c.hour)} · ${c.count}/${c.capacity} (${pctText})`;
                   const isNow = isTodayRow && data.range.kind === 'today' && c.hour === nowHour;
-                  const href = isWeekday ? undefined : `/portal/bookings?date=${row.key}`;
+                  const href = isWeekday || !canOpenQueues ? undefined : `/portal/bookings?date=${row.key}`;
                   const cell = (
                     <Box
                       component={href ? 'a' : 'div'}

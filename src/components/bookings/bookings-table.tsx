@@ -10,7 +10,7 @@ import { TablePaginationControls } from '@/components/ui/table-pagination-contro
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
 import { formatDateDMY } from '@/lib/utils/date-format';
 import { PaymentChip, isPaymentBlocked, paymentOf } from './booking-action-dialogs';
-import { DIRECTION_META, NEXT_STATUSES, customerName, hhmm, type BookingRow } from './booking-types';
+import { DIRECTION_META, NEXT_STATUSES, customerName, hhmm, isWalkIn, type BookingRow } from './booking-types';
 
 function DirectionChip({ b }: { b: BookingRow }) {
   const d = DIRECTION_META[b.direction] ?? DIRECTION_META.outbound;
@@ -141,6 +141,7 @@ export function BookingsTable({
                       <StatusChip status={b.status} />
                       {['pending', 'confirmed', 'late'].includes(b.status) ? <PaymentChip status={paymentOf(b)} /> : null}
                       {b.status === 'called' && b.auto_called ? <Chip size="small" variant="outlined" color="success" label="อัตโนมัติ" /> : null}
+                      {isWalkIn(b) ? <Chip size="small" variant="outlined" color="secondary" label="Walk-in" /> : null}
                     </Stack>
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>

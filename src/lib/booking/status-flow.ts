@@ -11,8 +11,13 @@
  */
 import type { BookingStatus } from '@/types/db';
 
-/** How the booking entered the system. */
-export type BookingSource = 'customer_link' | 'admin' | 'api';
+/** How the booking entered the system. `walk_in` = staff queued a truck that arrived without a booking. */
+export type BookingSource = 'customer_link' | 'admin' | 'api' | 'walk_in';
+
+/** Whether a booking was raised at the gate for a truck already on site. */
+export function isWalkInSource(source: string | null | undefined): boolean {
+  return source === 'walk_in';
+}
 
 /** Who is asking for a transition. `system` = cron sweep / auto-call. */
 export type TransitionActor = 'admin' | 'staff' | 'customer' | 'system';
@@ -82,13 +87,14 @@ export function isTerminalStatus(status: string): boolean {
 
 /**
  * Initial status of a new booking.
- * Admin-created queues are confirmed at once (DO issued); a customer/supplier
- * link booking waits for the admin unless the site turned confirmation off.
+ * Queues raised in the portal (admin "สร้างคิว" and walk-ins) are confirmed at
+ * once (DO issued); a customer/supplier link booking waits for the admin
+ * unless the site turned confirmation off.
  */
 export function resolveInitialBookingStatus(input: { source: BookingSource; requireAdminConfirm: boolean; paymentCleared?: boolean }): 'pending' | 'confirmed' {
   // An unpaid SO can be booked but never starts confirmed, whoever creates the queue.
   if (input.paymentCleared === false) return 'pending';
-  if (input.source === 'admin') return 'confirmed';
+  if (input.source === 'admin' || input.source === 'walk_in') return 'confirmed';
   return input.requireAdminConfirm ? 'pending' : 'confirmed';
 }
 

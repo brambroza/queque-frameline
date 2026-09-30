@@ -52,7 +52,7 @@ describe('computeUnpaidActions', () => {
   });
   it('never touches disabled sites, staff-made queues, other statuses or bad rows', () => {
     expect(computeUnpaidActions([row()], at('06:00'), { ...cfg, unpaid_cancel_enabled: false })).toEqual({ warn: [], cancel: [] });
-    expect(computeUnpaidActions([row({ booking_source: 'admin' }), row({ id: 'u2', booking_source: 'api' })], at('06:00'), cfg)).toEqual({ warn: [], cancel: [] });
+    expect(computeUnpaidActions([row({ booking_source: 'admin' }), row({ id: 'u2', booking_source: 'api' }), row({ id: 'u3', booking_source: 'walk_in' })], at('06:00'), cfg)).toEqual({ warn: [], cancel: [] });
     expect(computeUnpaidActions(['confirmed', 'late', 'cancelled'].map((status) => row({ status })), at('06:00'), cfg)).toEqual({ warn: [], cancel: [] });
     expect(computeUnpaidActions([row({ created_at: 'nope' })], at('06:00'), cfg)).toEqual({ warn: [], cancel: [] });
   });

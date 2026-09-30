@@ -86,6 +86,9 @@ export const vehicleDetailsSchema = z.object({
 /**
  * Portal "สร้างคิว". The partner comes from `partner_id`, from the linked
  * document, or is created from `partner_name` + `partner_phone`.
+ *
+ * `walk_in` = the truck is already on site: today only, the running slot is
+ * allowed, the queue is checked in at once and an SO/PO is mandatory.
  */
 export const dockBookingSchema = vehicleDetailsSchema
   .extend({
@@ -99,10 +102,15 @@ export const dockBookingSchema = vehicleDetailsSchema
     partner_id: optionalUuid,
     partner_name: optionalText(160),
     partner_phone: z.preprocess(emptyToUndefined, phoneSchema.optional()),
+    walk_in: z.boolean().optional(),
   })
   .refine((v) => Boolean(v.partner_id || v.document_id || v.partner_name), {
     message: 'ต้องระบุคู่ค้า หรือเลือกเอกสาร SO/PO',
     path: ['partner_name'],
+  })
+  .refine((v) => !v.walk_in || Boolean(v.document_id), {
+    message: 'คิว Walk-in ต้องเลือกเอกสาร SO/PO',
+    path: ['document_id'],
   });
 
 /** Minutes at the dock for one queue (the vehicle type's duration is only the default). */

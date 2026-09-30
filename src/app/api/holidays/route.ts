@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const parsed = holidaySchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     assertBranchWritable(branchScope, parsed.data.branch_id);
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const body = await req.json();
     const id = String(body?.id ?? '');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -93,7 +93,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

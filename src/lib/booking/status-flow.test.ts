@@ -8,6 +8,7 @@ import {
   isCallTransition,
   isConfirmTransition,
   isTerminalStatus,
+  isWalkInSource,
   resolveInitialBookingStatus,
   transitionStamps,
 } from './status-flow';
@@ -24,6 +25,18 @@ describe('resolveInitialBookingStatus', () => {
     expect(resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared: false })).toBe('pending');
     expect(resolveInitialBookingStatus({ source: 'customer_link', requireAdminConfirm: false, paymentCleared: false })).toBe('pending');
     expect(resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared: true })).toBe('confirmed');
+  });
+  it('confirms a walk-in at once, whatever the site setting, unless the SO is unpaid', () => {
+    expect(resolveInitialBookingStatus({ source: 'walk_in', requireAdminConfirm: true })).toBe('confirmed');
+    expect(resolveInitialBookingStatus({ source: 'walk_in', requireAdminConfirm: false, paymentCleared: true })).toBe('confirmed');
+    expect(resolveInitialBookingStatus({ source: 'walk_in', requireAdminConfirm: true, paymentCleared: false })).toBe('pending');
+  });
+});
+
+describe('isWalkInSource', () => {
+  it('only matches the walk-in source', () => {
+    expect(isWalkInSource('walk_in')).toBe(true);
+    for (const s of ['admin', 'customer_link', 'api', '', null, undefined]) expect(isWalkInSource(s)).toBe(false);
   });
 });
 

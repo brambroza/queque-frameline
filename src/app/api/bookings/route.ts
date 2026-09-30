@@ -5,8 +5,9 @@ import { applyBranchScope, assertBranchAllowed, assertRowBranch } from '@/lib/au
 import { createAdminClient } from '@/lib/supabase/admin';
 import { bookingStatusPatchSchema, dockBookingSchema } from '@/lib/booking/schemas';
 import { normalizePlate } from '@/lib/booking/plate';
-import { normalizeSlotTime } from '@/lib/booking/slot-time';
-import { canTransition, freesDock, isConfirmTransition, resolveInitialBookingStatus, transitionDenialMessage, transitionStamps } from '@/lib/booking/status-flow';
+import { SLOT_PAST_CODE, SLOT_PAST_MESSAGE, decorateWalkInSlots, normalizeSlotTime, toBangkokStamp, walkInSlotProblem, type SlotRow } from '@/lib/booking/slot-time';
+import { canTransition, freesDock, isConfirmTransition, isWalkInSource, resolveInitialBookingStatus, transitionDenialMessage, transitionStamps } from '@/lib/booking/status-flow';
+import { announceWalkInArrival, checkInWalkIn } from '@/lib/booking/walk-in';
 import { isPaymentCleared } from '@/lib/booking/payment';
 import { actorFromRoles, dockErrorResponse, getSiteSettings, logBooking, resolveDefaultBranchId } from '@/lib/booking/server';
 import { runAutoCall } from '@/lib/booking/auto-call-runner';
@@ -39,7 +40,7 @@ function sanitizeSearch(q: string) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const { searchParams } = new URL(req.url);
     const page = toInt(searchParams.get('page'), 1);
     const pageSize = Math.min(toInt(searchParams.get('page_size'), 20), 200);
@@ -91,28 +92,44 @@ export async function GET(req: Request) {
   }
 }
 
-/** Create a queue from the portal. Admin/staff-created queues are confirmed at once and get their DO. */
+/**
+ * Create a queue from the portal. Admin/staff-created queues are confirmed at once and get their DO.
+ *
+ * `walk_in: true` = the truck is already on site: today only, the running slot
+ * may be taken, and a confirmed queue is checked in straight away.
+ */
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
     const parsed = dockBookingSchema.safeParse(await req.json());
     if (!parsed.success) return invalidPayload(parsed.error.issues);
     const payload = parsed.data;
+    const walkIn = payload.walk_in === true;
+    const actor = actorFromRoles(roles);
+    const now = new Date();
+    const today = toBangkokStamp(now).date;
+    if (walkIn && payload.booking_date !== today) {
+      return NextResponse.json({ error: 'คิว Walk-in สร้างได้เฉพาะวันนี้', code: 'walk_in_today_only' }, { status: 400 });
+    }
 
     let branchId = payload.branch_id ?? null;
 
     // Linked SO/PO must belong to this site and match the direction (SO = outbound, PO = inbound).
     let partnerId = payload.partner_id ?? null;
     let paymentCleared = true;
+    let docNo: string | null = null;
+    let docPartnerName: string | null = null;
     if (payload.document_id) {
       const { data: doc } = await supabase
         .from('external_documents')
-        .select('id,doc_type,status,partner_id,branch_id,payment_status')
+        .select('id,doc_no,doc_type,status,partner_id,partner_name,branch_id,payment_status')
         .eq('id', payload.document_id)
         .eq('shop_id', profile.shop_id)
         .eq('is_deleted', false)
         .maybeSingle();
       if (!doc) return NextResponse.json({ error: 'ไม่พบเอกสารที่เลือก' }, { status: 400 });
+      docNo = (doc.doc_no as string | null) ?? null;
+      docPartnerName = (doc.partner_name as string | null) ?? null;
       if (doc.status === 'cancelled' || doc.status === 'completed') {
         return NextResponse.json({ error: 'เอกสารนี้ปิดแล้ว ไม่สามารถสร้างคิวได้' }, { status: 409 });
       }
@@ -126,12 +143,33 @@ export async function POST(req: Request) {
       paymentCleared = isPaymentCleared(doc.doc_type as string, doc.payment_status as string | null);
     }
     // An unpaid SO still gets its queue, but it waits as pending: no DO until the payment is recorded.
-    const initialStatus = resolveInitialBookingStatus({ source: 'admin', requireAdminConfirm: true, paymentCleared });
+    const source = walkIn ? 'walk_in' : 'admin';
+    const initialStatus = resolveInitialBookingStatus({ source, requireAdminConfirm: true, paymentCleared });
     branchId = branchId ?? (await resolveDefaultBranchId(supabase, profile.shop_id, branchScope));
     if (!branchId) return NextResponse.json({ error: 'ยังไม่ได้ตั้งค่าสาขา/คลัง' }, { status: 400 });
     // Final target branch (document's, requested or default) must be one the caller manages.
     assertBranchAllowed(branchScope, branchId);
 
+    // Walk-in: the same rule the slot grid shows (today, not finished, a dock still free).
+    // create_dock_booking re-checks the capacity under the day lock.
+    if (walkIn) {
+      const { data: slotRows, error: slotError } = await supabase.rpc('get_dock_slots', {
+        p_shop_id: profile.shop_id,
+        p_branch_id: branchId,
+        p_direction: payload.direction,
+        p_service_id: payload.service_id,
+        p_date: today,
+        p_resource_id: payload.resource_id ?? null,
+        p_exclude_booking_id: null,
+      });
+      if (slotError) throw slotError;
+      const problem = walkInSlotProblem(decorateWalkInSlots(today, (slotRows ?? []) as SlotRow[], now), payload.start_time);
+      if (problem) {
+        return NextResponse.json({ error: problem === SLOT_PAST_CODE ? SLOT_PAST_MESSAGE : 'ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาใหม่', code: problem }, { status: 409 });
+      }
+    }
+
+    const admin = createAdminClient();
     if (partnerId) {
       const { data: partner } = await supabase.from('customers').select('id').eq('id', partnerId).eq('shop_id', profile.shop_id).eq('is_deleted', false).maybeSingle();
       if (!partner) return NextResponse.json({ error: 'ไม่พบคู่ค้าที่เลือก' }, { status: 400 });
@@ -159,7 +197,8 @@ export async function POST(req: Request) {
             company_id: profile.company_id,
             shop_id: profile.shop_id,
             partner_type: partnerType,
-            full_name: payload.partner_name,
+            // A document without a partner row still names its partner; never create a nameless one.
+            full_name: payload.partner_name ?? docPartnerName ?? payload.driver_name ?? docNo,
             phone,
             created_by: user.id,
             updated_by: user.id,
@@ -169,10 +208,16 @@ export async function POST(req: Request) {
         if (partnerError || !created) throw partnerError ?? new Error('Partner create failed');
         partnerId = created.id as string;
       }
+      // Give the document its partner, so its next queue reuses this row.
+      if (payload.document_id) {
+        await admin.from('external_documents').update({ partner_id: partnerId, updated_by: user.id }).eq('id', payload.document_id).eq('shop_id', profile.shop_id).is('partner_id', null);
+      }
     }
 
+    // Loaded before the RPC so a walk-in can be checked in with the very next statement.
+    const createSettings = await getSiteSettings(supabase, profile.shop_id);
+
     // create_dock_booking is service-role only: it locks the day, picks the dock, numbers the queue and issues the DO.
-    const admin = createAdminClient();
     const { data: rows, error } = await admin.rpc('create_dock_booking', {
       p_shop_id: profile.shop_id,
       p_branch_id: branchId,
@@ -183,7 +228,7 @@ export async function POST(req: Request) {
       p_customer_id: partnerId,
       p_plate_number: normalizePlate(payload.plate_number),
       p_status: initialStatus,
-      p_source: 'admin',
+      p_source: source,
       p_resource_id: payload.resource_id ?? null,
       p_document_id: payload.document_id ?? null,
       p_driver_name: payload.driver_name ?? null,
@@ -201,7 +246,12 @@ export async function POST(req: Request) {
     const created = (rows as Array<{ booking_id: string; queue_number: string; resource_id: string; do_number: string | null }> | null)?.[0];
     if (!created) throw new Error('Create booking failed');
 
-    const createSettings = await getSiteSettings(supabase, profile.shop_id);
+    // The truck is here: check a confirmed walk-in in before anything else, so the
+    // cron sweep never sees it as a booked queue whose slot has already started.
+    const arrivalInput = { shopId: profile.shop_id, companyId: profile.company_id, bookingId: created.booking_id, actorId: user.id, settings: createSettings, now };
+    const arrival = walkIn && initialStatus === 'confirmed' ? await checkInWalkIn(admin, arrivalInput) : null;
+    const finalStatus = arrival?.checkedIn ? 'checked_in' : initialStatus;
+
     if (initialStatus === 'confirmed') {
       await ensureDriverLink(admin, { id: created.booking_id, shopId: profile.shop_id, bookingDate: payload.booking_date, version: 0 }, createSettings.driver_token_ttl_days);
     }
@@ -211,15 +261,16 @@ export async function POST(req: Request) {
       shopId: profile.shop_id,
       bookingId: created.booking_id,
       action: 'create',
-      description: `Created ${created.queue_number}${created.do_number ? ` · ${created.do_number}` : ''}`,
-      to: { status: initialStatus, queue_number: created.queue_number, do_number: created.do_number, dock_id: created.resource_id },
-      actorKind: 'admin',
+      description: `Created ${created.queue_number}${created.do_number ? ` · ${created.do_number}` : ''}${walkIn ? ' · Walk-in' : ''}`,
+      to: { status: initialStatus, queue_number: created.queue_number, do_number: created.do_number, dock_id: created.resource_id, source },
+      actorKind: actor,
       actorId: user.id,
     });
     await logCrud({ user, profile }, 'create', 'bookings', created.booking_id, {
       queue_number: created.queue_number,
       do_number: created.do_number,
-      status: initialStatus,
+      status: finalStatus,
+      source,
       direction: payload.direction,
       booking_date: payload.booking_date,
       start_time: payload.start_time,
@@ -229,10 +280,50 @@ export async function POST(req: Request) {
       partner_id: partnerId,
     });
 
+    let autoCalled: string[] = [];
+    if (walkIn) {
+      const plate = normalizePlate(payload.plate_number);
+      const pending = initialStatus === 'pending';
+      // Someone in sales may have raised it: the warehouse team must see a truck it did not expect.
+      await safeCreateNotification(supabase, {
+        companyId: profile.company_id,
+        shopId: profile.shop_id,
+        branchId,
+        userId: user.id,
+        type: 'booking_walk_in',
+        category: 'bookings',
+        priority: pending ? 'high' : 'medium',
+        title: `Walk-in ${created.queue_number}${pending ? ' — รอชำระเงิน' : ''}`,
+        message: `${docNo ?? '-'} · ${docPartnerName ?? '-'} · ทะเบียน ${plate || '-'} · ${payload.start_time.slice(0, 5)}${arrival?.dockName ? ` · ${arrival.dockName}` : ''}`,
+        relatedType: 'booking',
+        relatedId: created.booking_id,
+        actionUrl: '/portal/queue-board',
+        icon: 'EventAvailable',
+        color: pending ? '#ed6c02' : '#2e7d32',
+        metadata: { walk_in: true, status: finalStatus, document_id: payload.document_id ?? null },
+        createdBy: user.id,
+      });
+      if (arrival?.checkedIn) {
+        autoCalled = await announceWalkInArrival(admin, { ...arrivalInput, queueNumber: created.queue_number, plate, dockId: arrival.dockId, dockName: arrival.dockName, actorKind: actor });
+      }
+    }
+
+    let notice: string | null = null;
+    if (initialStatus === 'pending') {
+      notice = walkIn
+        ? 'SO นี้ยังไม่ชำระเงิน — สร้างคิวเป็น "รอยืนยัน" แล้ว เมื่อบันทึกการชำระเงินและอนุมัติ ระบบจะออก DO และเช็คอินให้ทันที'
+        : 'SO นี้ยังไม่ชำระเงิน — สร้างคิวเป็น "รอยืนยัน" แล้ว จะอนุมัติและออก DO ได้หลังบันทึกการชำระเงิน';
+    } else if (walkIn && !arrival?.checkedIn) {
+      notice = 'สร้างคิวและออก DO แล้ว แต่เช็คอินอัตโนมัติไม่สำเร็จ — กด "รถมาถึงแล้ว" ที่บอร์ดคิว';
+    }
+
     return NextResponse.json({
       data: {
-        ok: true, id: created.booking_id, queue_number: created.queue_number, do_number: created.do_number, status: initialStatus,
-        notice: initialStatus === 'pending' ? 'SO นี้ยังไม่ชำระเงิน — สร้างคิวเป็น "รอยืนยัน" แล้ว จะอนุมัติและออก DO ได้หลังบันทึกการชำระเงิน' : null,
+        ok: true, id: created.booking_id, queue_number: created.queue_number, do_number: created.do_number,
+        // The dock may have been free: the auto-call can send this very truck in before we answer.
+        status: autoCalled.includes(created.queue_number) ? 'called' : finalStatus,
+        resource_id: created.resource_id, checked_in: Boolean(arrival?.checkedIn), auto_called: autoCalled,
+        notice,
       },
     });
   } catch (e) {
@@ -255,7 +346,7 @@ export async function PATCH(req: Request) {
 
     const { data: before } = await supabase
       .from('bookings')
-      .select('id,queue_number,status,branch_id,resource_id,resource_name,call_count,do_number,booking_date,start_time,driver_token_version,plate_number,plate_number_actual,customers(full_name)')
+      .select('id,queue_number,status,branch_id,resource_id,resource_name,call_count,do_number,booking_date,start_time,driver_token_version,plate_number,plate_number_actual,booking_source,customers(full_name)')
       .eq('id', id)
       .eq('shop_id', profile.shop_id)
       .eq('is_deleted', false)
@@ -271,6 +362,10 @@ export async function PATCH(req: Request) {
     const settings = await getSiteSettings(supabase, profile.shop_id);
     let doNumber = (before.do_number as string | null) ?? null;
     let confirmedMinutes: number | null = null;
+    // A walk-in held back by the payment gate is still parked outside: approving it today checks it in.
+    const now = new Date();
+    const walkInArrivalInput = { shopId: profile.shop_id, companyId: profile.company_id, bookingId: id, actorId: user.id, settings, now };
+    let walkInArrival: Awaited<ReturnType<typeof checkInWalkIn>> | null = null;
 
     // Close sign-off: upload each party's PNG first (service role, private
     // bucket), then stamp the paths in the same update as the status. Skipped
@@ -310,6 +405,10 @@ export async function PATCH(req: Request) {
       if (!row) return NextResponse.json({ error: 'คิวนี้ถูกเปลี่ยนสถานะไปแล้ว กรุณารีเฟรช', code: 'stale' }, { status: 409 });
       doNumber = row.do_number;
       confirmedMinutes = row.service_minutes;
+      // Next statement after the confirm: its grace deadline may be long gone, and the cron would mark it late.
+      if (isWalkInSource(before.booking_source as string | null) && String(before.booking_date) === toBangkokStamp(now).date) {
+        walkInArrival = await checkInWalkIn(admin, walkInArrivalInput);
+      }
       await ensureDriverLink(admin, { id, shopId: profile.shop_id, bookingDate: String(before.booking_date), version: Number(before.driver_token_version ?? 0) }, settings.driver_token_ttl_days);
     } else {
       const stamps = transitionStamps(from, status, {
@@ -403,8 +502,16 @@ export async function PATCH(req: Request) {
       const result = await runAutoCall(admin, { shopId: profile.shop_id, companyId: profile.company_id }, { dockId: before.resource_id as string, settings });
       autoCalled = result.called.map((c) => c.queueNumber);
     }
+    if (walkInArrival?.checkedIn) {
+      autoCalled = await announceWalkInArrival(admin, {
+        ...walkInArrivalInput, queueNumber: queueLabel, plate: effectivePlate(before), dockId: walkInArrival.dockId, dockName: walkInArrival.dockName, actorKind: actor,
+      });
+    }
 
-    return NextResponse.json({ data: { ok: true, status, do_number: doNumber, auto_called: autoCalled, signed: Object.keys(signed) } });
+    const walkInStatus = autoCalled.includes(queueLabel) ? 'called' : 'checked_in';
+    return NextResponse.json({
+      data: { ok: true, status: walkInArrival?.checkedIn ? walkInStatus : status, do_number: doNumber, auto_called: autoCalled, signed: Object.keys(signed), checked_in: Boolean(walkInArrival?.checkedIn) },
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }

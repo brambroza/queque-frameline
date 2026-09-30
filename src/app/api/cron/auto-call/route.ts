@@ -98,14 +98,17 @@ export async function GET(req: Request) {
     if (settings.wait_notice_enabled) {
       const { data: waiting } = await admin
         .from('bookings')
-        .select('id,queue_number,booking_date,start_time,wait_notified_at')
+        .select('id,queue_number,booking_date,start_time,wait_notified_at,booking_source,checked_in_at')
         .eq('shop_id', site.shopId)
         .eq('is_deleted', false)
         .eq('booking_date', today)
         .eq('status', 'checked_in')
         .is('wait_notified_at', null);
       const ids = computeWaitNotices(
-        (waiting ?? []).map((r) => ({ id: r.id as string, status: 'checked_in', booking_date: String(r.booking_date), start_time: String(r.start_time), wait_notified_at: null })),
+        (waiting ?? []).map((r) => ({
+          id: r.id as string, status: 'checked_in', booking_date: String(r.booking_date), start_time: String(r.start_time), wait_notified_at: null,
+          booking_source: (r.booking_source as string | null) ?? null, checked_in_at: (r.checked_in_at as string | null) ?? null,
+        })),
         now,
         settings,
       );

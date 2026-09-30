@@ -85,6 +85,29 @@ describe('toTimedQueue', () => {
     expect(q.truck_late).toBe(false);
   });
 
+  it('never blames a walk-in truck for a slot that had already started', () => {
+    // Queued at 09:12 into the 09:00 slot, work starts 09:20: on time, measured from the check-in.
+    const onTime = toTimedQueue(queue(12, 15, 20, 50, { booking_source: 'walk_in' }), TH)!;
+    expect(onTime.cause).toBeNull();
+    expect(onTime.truck_late).toBe(false);
+    expect(onTime.late_min).toBe(8);
+    // Same truck left waiting 30 minutes after check-in: that one is on the warehouse.
+    const slow = toTimedQueue(queue(12, 40, 42, 72, { booking_source: 'walk_in' }), TH)!;
+    expect(slow.cause).toBe('warehouse');
+    expect(slow.truck_late).toBe(false);
+    expect(slow.late_min).toBe(30);
+    // The same timestamps on a booked queue stay the truck's fault.
+    expect(toTimedQueue(queue(12, 15, 25, 55, { booking_source: 'admin' }), TH)!.cause).toBe('truck');
+  });
+
+  it('measures a walk-in that took a later slot from that slot', () => {
+    // Checked in 08:40 for the 09:00 slot.
+    expect(toTimedQueue(queue(-20, 0, 5, 35, { booking_source: 'walk_in' }), TH)!.cause).toBeNull();
+    const q = toTimedQueue(queue(-20, 10, 15, 45, { booking_source: 'walk_in' }), TH)!;
+    expect(q.cause).toBe('warehouse');
+    expect(q.late_min).toBe(15);
+  });
+
   it('flags dock time beyond plan plus tolerance', () => {
     expect(toTimedQueue(queue(-5, 0, 2, 37), TH)!.overrun).toBe(false);
     expect(toTimedQueue(queue(-5, 0, 2, 38), TH)!.overrun).toBe(true);

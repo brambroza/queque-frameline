@@ -37,6 +37,8 @@ export type WarehouseRow = {
   call_count: number | null;
   plate_number: string | null;
   plate_number_actual: string | null;
+  /** `walk_in` = queued at the gate, so the truck cannot be late for its own slot. */
+  booking_source?: string | null;
   /** Pending queue on a sales order that is not paid yet. */
   awaiting_payment?: boolean;
 };
@@ -153,8 +155,12 @@ export function toTimedQueue(row: WarehouseRow, th: WarehouseThresholds): TimedQ
   if (checkin > called || called > serve || serve > done) return null;
 
   const tol = th.on_time_tolerance_min * MS_PER_MIN;
-  const late = serve > start + tol;
-  const truckLate = checkin > start + tol;
+  // A walk-in may be put into a slot that already started: the warehouse is
+  // measured from the moment the truck was queued, and the truck is never late.
+  const walkIn = row.booking_source === 'walk_in';
+  const due = walkIn ? Math.max(start, checkin) : start;
+  const late = serve > due + tol;
+  const truckLate = !walkIn && checkin > start + tol;
   const dockMin = (done - serve) / MS_PER_MIN;
   return {
     row,
@@ -163,7 +169,7 @@ export function toTimedQueue(row: WarehouseRow, th: WarehouseThresholds): TimedQ
     response_min: (serve - called) / MS_PER_MIN,
     dock_min: dockMin,
     turnaround_min: (done - checkin) / MS_PER_MIN,
-    late_min: Math.max(0, (serve - start) / MS_PER_MIN),
+    late_min: Math.max(0, (serve - due) / MS_PER_MIN),
     cause: late ? (truckLate ? 'truck' : 'warehouse') : null,
     truck_late: truckLate,
     overrun: row.service_minutes != null && dockMin > row.service_minutes + th.overrun_tolerance_min,

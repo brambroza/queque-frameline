@@ -1,7 +1,11 @@
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
-/** Portal roles. `admin` runs the site (confirm queues, DO, settings); `staff` works the gate and docks. */
-export type AppRole = 'admin' | 'staff';
+/**
+ * Access levels of a portal role (`roles.access_level`): `admin` runs the site, `manager` runs the
+ * warehouse (reports + set-up), `staff` works the gate and docks, `viewer` only looks.
+ * Rules live in `src/lib/auth/levels.ts`.
+ */
+export type AppRole = 'admin' | 'manager' | 'staff' | 'viewer';
 /**
  * Statuses the dock queue drives. The DB enum still carries Queue's older values
  * (`waiting`, `seating`, `in_service`, `skipped`, `pending_approval`); new code must not set them.

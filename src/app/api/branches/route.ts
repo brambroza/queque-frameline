@@ -12,7 +12,7 @@ function toInt(v: string | null, fallback: number) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const { searchParams } = new URL(req.url);
     const q = searchParams.get('q');
     const active = searchParams.get('active');

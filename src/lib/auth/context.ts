@@ -3,9 +3,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import type { AppRole } from '@/types/db';
 import { AuthError } from './errors';
 import type { BranchScope } from './branch-scope';
+import { effectiveLevels, isAppRole } from './levels';
 import { ROLE_CAPABILITY_SELECT, resolveCapabilities, type RoleAccessDef } from './role-capabilities';
 
-export { AuthError };
+export { AuthError, isAppRole };
 export type { BranchScope };
 
 /** Tenant context of the caller. Single-site deployment: one company, one shop. */
@@ -15,11 +16,6 @@ type ProfileRow = { company_id: string | null; shop_id: string | null };
 
 function ensureRole(userRoles: AppRole[], required: AppRole[]) {
   return required.some((r) => userRoles.includes(r));
-}
-
-/** Narrow a `roles.access_level` value to the app's role tiers. */
-export function isAppRole(v: unknown): v is AppRole {
-  return v === 'admin' || v === 'staff';
 }
 
 /**
@@ -50,7 +46,8 @@ function pickRoleIdsForShop(
  * `users_profile` row is created on the fly (service role) so a freshly
  * invited account can use the portal without a manual fix.
  *
- * @param opts.roles Roles allowed to call the route; omit to allow any signed-in user.
+ * @param opts.roles Levels allowed to call the route; omit to allow any signed-in user. A read-only
+ *   (`viewer`) caller passes only when `'viewer'` is listed — never list it on a route that writes.
  * @returns Session-scoped Supabase client, auth user, tenant profile, role tiers (`roles`), raw role codes, branch scope and role capabilities.
  */
 export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
@@ -138,8 +135,9 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
     }
     roleCodes = defs.map((r) => r.code).filter((c): c is string => Boolean(c));
     // Route guards check the access level, so a custom role ("gate", "finance")
-    // acts as the tier it was created with.
-    roles = Array.from(new Set(defs.map((r) => r.access_level).filter(isAppRole)));
+    // acts as the tier it was created with. A manager also counts as staff; a
+    // viewer counts as nothing else, so only guards that name it let it in.
+    roles = effectiveLevels(defs.map((r) => r.access_level).filter(isAppRole));
     accessDefs = defs
       .filter((r): r is RoleRow & { access_level: AppRole } => isAppRole(r.access_level))
       .map((r) => ({ access_level: r.access_level, branch_ids: r.branch_ids, can_export: r.can_export, multi_branch: r.multi_branch }));

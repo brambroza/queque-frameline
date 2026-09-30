@@ -9,6 +9,7 @@
  * conditional update (`where status = <from>`), so a concurrent staff action wins.
  */
 import type { BookingStatus } from '@/types/db';
+import { isWalkInSource } from '@/lib/booking/status-flow';
 
 export type OverdueSettings = {
   grace_minutes: number;
@@ -42,12 +43,27 @@ export type WaitNoticeCandidate = {
   booking_date: string;
   start_time: string;
   wait_notified_at: string | null;
+  /** `walk_in` queues are measured from their check-in when that is later than the slot start. */
+  booking_source?: string | null;
+  checked_in_at?: string | null;
 };
 
 /** Appointment start as epoch ms (Bangkok). NaN when malformed. */
 function appointmentMs(c: Pick<WaitNoticeCandidate, 'booking_date' | 'start_time'>): number {
   const t = c.start_time.length === 5 ? `${c.start_time}:00` : c.start_time.slice(0, 8);
   return new Date(`${c.booking_date.slice(0, 10)}T${t}+07:00`).getTime();
+}
+
+/**
+ * When the wait is counted from. A walk-in may be put into a slot that has
+ * already started, so its clock starts at check-in, not at the slot start —
+ * otherwise the driver would be told "delayed" the minute the queue is made.
+ */
+function waitAnchorMs(c: WaitNoticeCandidate): number {
+  const start = appointmentMs(c);
+  if (!isWalkInSource(c.booking_source) || !c.checked_in_at) return start;
+  const checkin = new Date(c.checked_in_at).getTime();
+  return Number.isNaN(checkin) ? start : Math.max(start, checkin);
 }
 
 /**
@@ -66,7 +82,7 @@ export function computeWaitNotices(rows: WaitNoticeCandidate[], now: Date, setti
   return rows
     .filter((r) => r.status === 'checked_in' && !r.wait_notified_at)
     .filter((r) => {
-      const start = appointmentMs(r);
+      const start = waitAnchorMs(r);
       return !Number.isNaN(start) && now.getTime() >= start + delayMs;
     })
     .map((r) => r.id);

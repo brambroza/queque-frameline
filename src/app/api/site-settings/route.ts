@@ -43,7 +43,7 @@ const settingsSchema = z
 
 export async function GET() {
   try {
-    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     return NextResponse.json({ data: await getSiteSettings(supabase, profile.shop_id) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
@@ -52,7 +52,7 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const parsed = settingsSchema.safeParse(await req.json());
     if (!parsed.success) {
       const first = parsed.error.issues[0];

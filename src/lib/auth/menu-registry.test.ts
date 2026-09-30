@@ -13,6 +13,16 @@ describe('menuKeysForLevel', () => {
     expect(staff).not.toContain('translations');
     expect(staff).toContain('dock_queues');
   });
+
+  it('gives a manager the reports on top of staff menus, but no admin screens', () => {
+    const manager = menuKeysForLevel('manager');
+    expect(manager).toEqual(expect.arrayContaining([...menuKeysForLevel('staff'), 'reports']));
+    for (const k of ['staff', 'activity_logs', 'line_settings', 'api_keys', 'translations']) expect(manager).not.toContain(k);
+  });
+
+  it('gives a viewer only the pages that work without writing', () => {
+    expect(menuKeysForLevel('viewer')).toEqual(['dashboard', 'calendar', 'queue_board', 'reports']);
+  });
 });
 
 describe('menuKeysOfRole', () => {
@@ -29,6 +39,12 @@ describe('menuKeysOfRole', () => {
     expect(menuKeysOfRole({ access_level: 'staff', menu_keys: ['reports', 'dock_queues'] })).toEqual(['dock_queues']);
   });
 
+  it('clamps a viewer role to read-only pages and a manager role below admin screens', () => {
+    expect(menuKeysOfRole({ access_level: 'viewer', menu_keys: ['dashboard', 'dock_queues', 'reports'] })).toEqual(['dashboard', 'reports']);
+    expect(menuKeysOfRole({ access_level: 'viewer', menu_keys: null })).toEqual(['dashboard', 'calendar', 'queue_board', 'reports']);
+    expect(menuKeysOfRole({ access_level: 'manager', menu_keys: ['reports', 'staff', 'docks'] })).toEqual(['docks', 'reports']);
+  });
+
   it('an admin-level role always keeps the staff screen', () => {
     expect(menuKeysOfRole({ access_level: 'admin', menu_keys: ['dashboard'] })).toEqual(['dashboard', 'staff']);
   });
@@ -42,6 +58,10 @@ describe('resolveMenuAccess', () => {
     ]);
     expect(access).toEqual({ level: 'staff', menuKeys: ['sales_orders', 'queue_board'] });
     expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'admin', menu_keys: null }]).level).toBe('admin');
+    expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'manager', menu_keys: ['reports'] }])).toEqual({ level: 'manager', menuKeys: ['reports'] });
+    expect(resolveMenuAccess([{ access_level: 'viewer', menu_keys: null }]).level).toBe('viewer');
+    // A viewer role next to a working role does not make the user read-only.
+    expect(resolveMenuAccess([{ access_level: 'viewer', menu_keys: null }, { access_level: 'staff', menu_keys: ['dock_queues'] }]).level).toBe('staff');
   });
 
   it('no roles = staff level with no menus', () => {
@@ -73,6 +93,13 @@ describe('validateRoleMenuKeys', () => {
     expect(validateRoleMenuKeys('staff', ['x']).ok).toBe(false);
     expect(validateRoleMenuKeys('staff', ['reports']).ok).toBe(false);
     expect(validateRoleMenuKeys('staff', 'no')).toEqual({ ok: false, error: 'menu_keys ต้องเป็นรายการ' });
+  });
+
+  it('holds manager and viewer roles to their own menus', () => {
+    expect(validateRoleMenuKeys('manager', ['reports', 'docks']).ok).toBe(true);
+    expect(validateRoleMenuKeys('manager', ['staff']).ok).toBe(false);
+    expect(validateRoleMenuKeys('viewer', ['dashboard', 'reports']).ok).toBe(true);
+    expect(validateRoleMenuKeys('viewer', ['dock_queues']).ok).toBe(false);
   });
 
   it('accepts and orders a valid list', () => {

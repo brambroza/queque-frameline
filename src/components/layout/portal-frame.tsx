@@ -209,6 +209,7 @@ function PortalFrameInner({
   fullName,
   email,
   appVersion,
+  access,
 }: PortalFrameProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -352,7 +353,7 @@ function PortalFrameInner({
               <Box sx={{ display: { xs: 'none', sm: 'contents' } }}>
                 <LanguageSwitch />
               </Box>
-              <NotificationsMenu />
+              {access.level !== 'viewer' ? <NotificationsMenu /> : null}
               <TopbarUserMenu initialName={fullName} email={email} appVersion={appVersion} />
             </Stack>
           </Toolbar>

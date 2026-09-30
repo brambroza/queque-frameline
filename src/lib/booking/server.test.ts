@@ -19,6 +19,12 @@ describe('dockErrorResponse', () => {
     expect(dockErrorResponse('slot_unavailable')?.code).toBe('slot_unavailable');
   });
 
+  it('says walk-in is not switched on when its migration has not run', () => {
+    const mapped = dockErrorResponse('new row for relation "bookings" violates check constraint "bookings_booking_source_check"');
+    expect(mapped?.status).toBe(503);
+    expect(mapped?.code).toBe('walk_in_unavailable');
+  });
+
   it('returns null for unknown or empty messages', () => {
     expect(dockErrorResponse('something else')).toBeNull();
     expect(dockErrorResponse(null)).toBeNull();

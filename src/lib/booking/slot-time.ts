@@ -97,3 +97,53 @@ export function decorateSlots(date: string, rows: SlotRow[], now: Date, leadHour
     return { ...r, is_past: isPast, too_soon: tooSoon, bookable: !isPast && !tooSoon && r.remaining_capacity > 0 };
   });
 }
+
+export type WalkInSlotView = SlotView & { in_progress: boolean };
+
+/**
+ * Decorate RPC slots for a walk-in: a truck already on site may also take the
+ * slot that is running right now, as long as a dock is still free for it.
+ *
+ * Only the latest slot that has started counts as "running". When the vehicle
+ * type's duration is longer than the slot interval several slots overlap the
+ * clock, and an older one would leave the truck almost no time before the next
+ * queue on that dock. Walk-ins are for today only: any other `date` yields no
+ * bookable slot.
+ *
+ * @param date Day the slots belong to.
+ * @param rows Output of `get_dock_slots`.
+ * @param now Server clock.
+ */
+export function decorateWalkInSlots(date: string, rows: SlotRow[], now: Date): WalkInSlotView[] {
+  const stamp = toBangkokStamp(now);
+  const nowTime = normalizeSlotTime(stamp.time);
+  const isToday = date === stamp.date;
+  const started = (r: SlotRow) => isSlotPast({ date, time: r.slot_time }, stamp);
+  const runningStart = isToday
+    ? rows.filter(started).reduce<string | null>((latest, r) => {
+        const t = normalizeSlotTime(r.slot_time);
+        return latest === null || t > latest ? t : latest;
+      }, null)
+    : null;
+  return rows.map((r) => {
+    const hasStarted = started(r);
+    const inProgress = isToday && hasStarted && normalizeSlotTime(r.slot_time) === runningStart && normalizeSlotTime(r.slot_end) > nowTime;
+    const isPast = hasStarted && !inProgress;
+    return { ...r, is_past: isPast, too_soon: false, in_progress: inProgress, bookable: isToday && !isPast && r.remaining_capacity > 0 };
+  });
+}
+
+/**
+ * Why a walk-in may not take the slot starting at `time`, or null when it may.
+ * The grid and `POST /api/bookings` both go through `decorateWalkInSlots`, so
+ * they cannot disagree.
+ *
+ * @param slots Output of `decorateWalkInSlots`.
+ * @param time Requested start `HH:MM[:SS]`.
+ */
+export function walkInSlotProblem(slots: WalkInSlotView[], time: string): typeof SLOT_PAST_CODE | 'slot_unavailable' | null {
+  const slot = slots.find((s) => normalizeSlotTime(s.slot_time) === normalizeSlotTime(time));
+  if (!slot) return 'slot_unavailable';
+  if (slot.bookable) return null;
+  return slot.is_past ? SLOT_PAST_CODE : 'slot_unavailable';
+}

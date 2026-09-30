@@ -14,7 +14,8 @@ import { getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
 import { ApproveDialog, CompleteDialog, PaymentChip, isPaymentBlocked, paymentOf, type BookingSignatures } from './booking-action-dialogs';
 import type { StatusPaletteKey } from '@/lib/booking/status-meta';
-import { BOARD_CARD_TONE, DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, type BookingRow, type NextStatusOption } from './booking-types';
+import { BOARD_CARD_TONE, DIRECTION_META, NEXT_STATUSES, QUEUE_COLUMNS, customerName, hhmm, isWalkIn, type BookingRow, type NextStatusOption } from './booking-types';
+import { WalkInDialog } from './walk-in-dialog';
 
 const POLL_MS = 15_000;
 
@@ -58,7 +59,7 @@ function cardSx(theme: Theme, status: string) {
 }
 
 type SiteInfo = { auto_call_mode: string; auto_call_last_run_at: string | null; item_minutes_enabled?: boolean; minutes_per_item?: number };
-type PatchResponse = { error?: string; code?: string; data?: { auto_called?: string[]; do_number?: string | null } };
+type PatchResponse = { error?: string; code?: string; data?: { auto_called?: string[]; do_number?: string | null; checked_in?: boolean } };
 
 function minutesSince(iso: string | null): number | null {
   if (!iso) return null;
@@ -70,7 +71,7 @@ function minutesSince(iso: string | null): number | null {
  * Yard board: one column per stage, refreshed every 15 s so an auto-call made
  * by the system (or another tablet) shows up without a reload.
  */
-export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
+export function QueueBoardClient({ isAdmin, readOnly = false }: { isAdmin: boolean; /** Read-only role: the board is shown without any control that changes a queue. */ readOnly?: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
   const { branchQuery } = useBranchScope();
@@ -83,6 +84,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
   const [approveTarget, setApproveTarget] = useState<{ booking: BookingRow; opt: NextStatusOption } | null>(null);
   const [completeTarget, setCompleteTarget] = useState<{ booking: BookingRow; opt: NextStatusOption } | null>(null);
   const [site, setSite] = useState<SiteInfo | null>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const dateRef = useRef(date);
   dateRef.current = date;
 
@@ -150,7 +152,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
       }
       setApproveTarget(null);
       setCompleteTarget(null);
-      if (opt.kind === 'confirm' && json.data?.do_number) push(`อนุมัติคิวแล้ว · ${json.data.do_number}`);
+      if (opt.kind === 'confirm' && json.data?.do_number) push(`อนุมัติคิวแล้ว · ${json.data.do_number}${json.data.checked_in ? ' · เช็คอิน Walk-in แล้ว' : ''}`);
       else if (opt.kind === 'done') push(signatures && Object.keys(signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
       else if (opt.kind === 'call' || opt.kind === 'recall') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
       const auto = json.data?.auto_called ?? [];
@@ -190,6 +192,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
               </Tooltip>
             ) : null}
             <Button size="small" startIcon={<RefreshRoundedIcon />} onClick={() => void load()} disabled={loading}>รีเฟรช</Button>
+            {!readOnly ? <Button size="small" variant="contained" startIcon={<LocalShippingRoundedIcon />} onClick={() => setWalkInOpen(true)}>Walk-in</Button> : null}
           </Stack>
         </Stack>
       </Paper>
@@ -234,7 +237,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                 {loading ? <Skeleton variant="rounded" height={84} /> : null}
                 {!loading && items.length === 0 ? <Typography variant="caption" color="text.disabled">ไม่มีคิว</Typography> : null}
                 {!loading && items.map((r) => {
-                  const options = (NEXT_STATUSES[r.status] ?? []).filter((o) => !o.adminOnly || isAdmin);
+                  const options = readOnly ? [] : (NEXT_STATUSES[r.status] ?? []).filter((o) => !o.adminOnly || isAdmin);
                   const dir = DIRECTION_META[r.direction] ?? DIRECTION_META.outbound;
                   return (
                     <Paper key={r.id} variant="outlined" component="article" sx={(theme) => cardSx(theme, r.status)}>
@@ -269,6 +272,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
                       </Typography>
                       <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
                         {r.status === 'late' ? <Chip size="small" color="warning" label="เลยเวลานัด" /> : null}
+                        {isWalkIn(r) ? <Chip size="small" variant="outlined" color="secondary" label="Walk-in" /> : null}
                         {r.status === 'pending' ? <PaymentChip status={paymentOf(r)} /> : null}
                         {r.status === 'called' && r.auto_called ? <Chip size="small" variant="outlined" color="success" label="เรียกอัตโนมัติ" /> : null}
                         {r.status === 'called' && Number(r.call_count ?? 0) > 1 ? <Chip size="small" variant="outlined" color="warning" label={`เรียก ${r.call_count} ครั้ง`} /> : null}
@@ -299,6 +303,7 @@ export function QueueBoardClient({ isAdmin }: { isAdmin: boolean }) {
         })}
       </Box>
 
+      <WalkInDialog open={walkInOpen} onClose={() => setWalkInOpen(false)} onCreated={() => void load(true)} />
       <CompleteDialog
         booking={completeTarget?.booking ?? null}
         saving={busyId !== null}

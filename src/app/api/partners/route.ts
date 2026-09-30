@@ -50,7 +50,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const parsed = partnerSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: `ข้อมูลไม่ถูกต้อง: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}` }, { status: 400 });
     const p = parsed.data;
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const body = (await req.json()) as { id?: unknown };
     const id = z.string().uuid().safeParse(body.id);
     const parsed = partnerSchema.safeParse(body);
@@ -112,7 +112,7 @@ export async function PATCH(req: Request) {
 /** Forget the partner's LINE link (they can re-link by opening a booking link in LINE). */
 export async function PUT(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const body = (await req.json()) as { id?: unknown; action?: unknown };
     const id = z.string().uuid().safeParse(body.id);
     if (!id.success || body.action !== 'unlink_line') return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
@@ -128,7 +128,7 @@ export async function PUT(req: Request) {
 /** Soft delete. History (queues, documents) keeps pointing at the row. */
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const id = z.string().uuid().safeParse(new URL(req.url).searchParams.get('id'));
     if (!id.success) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const { error } = await supabase.from('customers').update({ is_deleted: true, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);

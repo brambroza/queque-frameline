@@ -48,7 +48,7 @@ function getErrorPayload(e: unknown) {
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const { searchParams } = new URL(req.url);
     const resourceType = searchParams.get('resource_type');
     const branchId = searchParams.get('branch_id');
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const body = await req.json();
     const normalizedBody = {
       ...body,
@@ -158,7 +158,7 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const body = await req.json();
     const id = String(body.id ?? '');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -243,7 +243,7 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin'] });
+    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

@@ -1,10 +1,20 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { AppRole } from '@/types/db';
-import { isAppRole } from './context';
+import { canManageSite, effectiveLevels, isAppRole, isReadOnly } from './levels';
 import { firstAllowedHref, resolveMenuAccess, type MenuAccess, type MenuKey } from './menu-registry';
 
-export type PageAccess = { roles: AppRole[]; roleCodes: string[]; isAdmin: boolean; access: MenuAccess };
+export type PageAccess = {
+  /** Levels the API guard would see (a manager also counts as staff). */
+  roles: AppRole[];
+  roleCodes: string[];
+  isAdmin: boolean;
+  /** Admin or manager: may edit the warehouse set-up (docks, vehicle types, partners, queue settings). */
+  canManage: boolean;
+  /** Every role held is read-only: hide every control that writes. */
+  readOnly: boolean;
+  access: MenuAccess;
+};
 
 /**
  * Role tiers, role codes and menu access of the signed-in user, for server components.
@@ -26,8 +36,9 @@ export async function getPageRoles(): Promise<PageAccess> {
   const defs = live.map((r) => ({ access_level: r.access_level as AppRole, menu_keys: r.menu_keys }));
   const roleCodes = live.map((r) => r.code).filter((c): c is string => Boolean(c));
   const access = resolveMenuAccess(defs);
-  const roles: AppRole[] = access.level === 'admin' ? ['admin', 'staff'] : defs.length ? ['staff'] : [];
-  return { roles, roleCodes, isAdmin: access.level === 'admin', access };
+  const levels = defs.map((r) => r.access_level);
+  const roles = effectiveLevels(levels);
+  return { roles, roleCodes, isAdmin: access.level === 'admin', canManage: canManageSite(levels), readOnly: isReadOnly(levels), access };
 }
 
 /**

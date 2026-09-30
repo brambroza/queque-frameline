@@ -20,7 +20,7 @@ import { effectivePlate, hasPlateMismatch, isPlausiblePlate } from '@/lib/bookin
 import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
 import { PaymentChip, isPaymentBlocked, paymentOf, type PaymentTarget } from './booking-action-dialogs';
 import { PAYMENT_BLOCK_MESSAGE } from '@/lib/booking/payment';
-import { CANCELLABLE, DIRECTION_META, MOVABLE, NEXT_STATUSES, customerName, customerPhone, hhmm, type BookingRow } from './booking-types';
+import { CANCELLABLE, DIRECTION_META, MOVABLE, NEXT_STATUSES, customerName, customerPhone, hhmm, isWalkIn, type BookingRow } from './booking-types';
 
 type LogRow = { id: string; action: string; description: string | null; actor_kind: string | null; actor_name: string | null; created_at: string };
 type DocItems = Array<{ sku?: string | null; name: string; qty: number; uom?: string | null }>;
@@ -208,6 +208,7 @@ export function BookingEditDrawer({
                 <Typography variant="h6" fontWeight={800}>{b.queue_number}</Typography>
                 <StatusChip status={b.status} />
                 <Chip size="small" variant="outlined" color={dir.palette === 'default' ? undefined : dir.palette} label={dir.short + 'สินค้า'} />
+                {isWalkIn(b) ? <Chip size="small" variant="outlined" color="secondary" label="Walk-in" /> : null}
               </Stack>
               <Typography variant="body2" color="text.secondary" noWrap>{customerName(b)}{customerPhone(b) ? ` · ${customerPhone(b)}` : ''}</Typography>
             </Box>

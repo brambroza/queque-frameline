@@ -21,7 +21,7 @@ const SCREENSHOT_CID = 'feedback-screenshot';
  */
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const parsed = feedbackReportSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
     const input = parsed.data;

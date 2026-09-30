@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Stack } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import LocalShippingRoundedIcon from '@mui/icons-material/LocalShippingRounded';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/components/ui/toast';
 import { useTranslation } from '@/lib/i18n/useTranslation';
@@ -13,6 +14,7 @@ import { BookingsTable } from '@/components/bookings/bookings-table';
 import { BookingScheduleDialog, type ScheduleChanges, type ScheduleDraft } from '@/components/bookings/booking-schedule-dialog';
 import { BookingCreateDrawer, type CreateDraft, type CreateResult } from '@/components/bookings/booking-create-drawer';
 import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
+import { WalkInDialog } from '@/components/bookings/walk-in-dialog';
 import { ApproveDialog, CancelDialog, CompleteDialog, PaymentDialog, type BookingSignatures, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import type { ItemMinutesRule } from '@/lib/booking/suggest-minutes';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
@@ -33,7 +35,7 @@ function initialFilter(): BookingsFilter {
   return { ...base, range: 'custom', date: d };
 }
 
-type PatchResult = { ok: boolean; error?: string; doNumber: string | null; autoCalled: string[] };
+type PatchResult = { ok: boolean; error?: string; doNumber: string | null; autoCalled: string[]; checkedIn: boolean };
 
 async function patchBooking(body: Record<string, unknown>): Promise<PatchResult> {
   const res = await fetch('/api/bookings', {
@@ -41,8 +43,8 @@ async function patchBooking(body: Record<string, unknown>): Promise<PatchResult>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { do_number?: string | null; auto_called?: string[] } };
-  return { ok: res.ok, error: j.error, doNumber: j.data?.do_number ?? null, autoCalled: j.data?.auto_called ?? [] };
+  const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { do_number?: string | null; auto_called?: string[]; checked_in?: boolean } };
+  return { ok: res.ok, error: j.error, doNumber: j.data?.do_number ?? null, autoCalled: j.data?.auto_called ?? [], checkedIn: j.data?.checked_in === true };
 }
 
 /**
@@ -76,6 +78,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createResult, setCreateResult] = useState<CreateResult | null>(null);
+  const [walkInOpen, setWalkInOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BookingRow | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<BookingRow | null>(null);
   const [approveTarget, setApproveTarget] = useState<BookingRow | null>(null);
@@ -242,7 +245,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     try {
       const r = await patchBooking({ id: b.id, status, ...extra });
       if (!r.ok) { push(r.error ?? t('status_failed', 'เปลี่ยนสถานะไม่สำเร็จ'), 'error'); reload(); return; }
-      if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}`);
+      if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}${r.checkedIn ? ' · เช็คอิน Walk-in แล้ว' : ''}`);
       else if (status === 'cancelled') push(t('cancel_ok', 'ยกเลิกคิวแล้ว'));
       else if (status === 'called') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
       else if (status === 'completed') push(extra.signatures && Object.keys(extra.signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
@@ -264,14 +267,24 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         title={t('title_dock', 'คิวรับ-ส่งสินค้า')}
         description={t('subtitle_dock', 'คิวรับสินค้าของลูกค้าและคิวส่งสินค้าของ Supplier — ยืนยัน ออก DO เช็คอิน และเลื่อนคิว')}
         action={
-          <Button
-            variant="contained"
-            startIcon={<AddRoundedIcon />}
-            onClick={() => { setCreateResult(null); setCreateOpen(true); }}
-            sx={{ width: { xs: '100%', sm: 'auto' }, minHeight: { xs: 44, sm: 'auto' } }} // phones: full-width thumb target
-          >
-            {t('create_queue', 'สร้างคิว')}
-          </Button>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Button
+              variant="outlined"
+              startIcon={<LocalShippingRoundedIcon />}
+              onClick={() => setWalkInOpen(true)}
+              sx={{ width: { xs: '100%', sm: 'auto' }, minHeight: { xs: 44, sm: 'auto' } }}
+            >
+              {t('walk_in', 'Walk-in')}
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<AddRoundedIcon />}
+              onClick={() => { setCreateResult(null); setCreateOpen(true); }}
+              sx={{ width: { xs: '100%', sm: 'auto' }, minHeight: { xs: 44, sm: 'auto' } }} // phones: full-width thumb target
+            >
+              {t('create_queue', 'สร้างคิว')}
+            </Button>
+          </Stack>
         }
       />
 
@@ -318,6 +331,8 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         onSubmit={(d) => void submitCreate(d)}
         onReset={() => setCreateResult(null)}
       />
+
+      <WalkInDialog open={walkInOpen} onClose={() => setWalkInOpen(false)} onCreated={reload} />
 
       <BookingEditDrawer
         booking={editTarget}

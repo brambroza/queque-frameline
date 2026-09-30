@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
+import { LEVEL_LABEL } from '@/lib/auth/levels';
+import type { AppRole } from '@/types/db';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { TablePaginationControls } from '@/components/ui/table-pagination-controls';
 import { MobileCardList } from '@/components/ui/responsive-table';
@@ -12,7 +14,7 @@ import { useTranslation } from '@/lib/i18n/useTranslation';
 
 type RefUser = { id: string; full_name: string | null; email: string | null; phone: string | null };
 type RefBranch = { id: string; branch_name: string };
-type RefRole = { id: string; code: string; name: string; access_level: 'admin' | 'staff' };
+type RefRole = { id: string; code: string; name: string; access_level: AppRole };
 type StaffRow = { id: string; user_id: string; display_name: string; active: boolean; branches: Array<{ id: string; branch_name: string }>; role: { code: string; name: string; access_level: string } | null };
 
 /** 'existing' picks an account already in the shop; 'invite' creates a new login. */
@@ -331,7 +333,7 @@ export function StaffCrud() {
                   >
                     <option value="">{editing ? t('role_keep', 'คงสิทธิ์เดิม') : t('pick_role', 'เลือกสิทธิ์')}</option>
                     {roles.map((r) => (
-                      <option key={r.id} value={r.code}>{r.name} · {r.access_level === 'admin' ? t('role_admin', 'ผู้ดูแลระบบ') : t('role_staff', 'พนักงาน')}</option>
+                      <option key={r.id} value={r.code}>{r.name} · {t(`role_${r.access_level}`, LEVEL_LABEL[r.access_level] ?? r.access_level)}</option>
                     ))}
                   </select>
                   <span className="mt-1 block text-xs text-slate-500">{t('role_hint', 'กำหนดเมนูของแต่ละสิทธิ์ได้ที่แท็บ “สิทธิ์และเมนู” — เปลี่ยนสิทธิ์ตัวเองไม่ได้')}</span>

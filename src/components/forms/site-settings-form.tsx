@@ -101,7 +101,7 @@ export function SiteSettingsForm({ isAdmin }: { isAdmin: boolean }) {
       <PageHeader title="ตั้งค่าระบบคิว" description="กติกาของคลัง: เผื่อเวลามาสาย เรียกคิวอัตโนมัติ เวลาตามรายการสินค้า ช่วงเวลาที่เปิดจอง ลิงก์ และเลข DO"
         action={isAdmin ? <Button variant="contained" onClick={() => void save()} disabled={!s || saving}>{saving ? 'กำลังบันทึก…' : 'บันทึกการตั้งค่า'}</Button> : undefined} />
       {error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void load()}>ลองใหม่</Button>}>{error}</Alert> : null}
-      {!isAdmin ? <Alert severity="info">เฉพาะผู้ดูแลระบบเท่านั้นที่แก้ไขได้</Alert> : null}
+      {!isAdmin ? <Alert severity="info">เฉพาะผู้ดูแลระบบหรือผู้จัดการคลังเท่านั้นที่แก้ไขได้</Alert> : null}
       {!s && !error ? <Skeleton variant="rounded" height={320} /> : null}
       {s ? (
         <>

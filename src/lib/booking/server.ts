@@ -123,6 +123,8 @@ export function dockErrorResponse(message: string | undefined | null): { status:
   if (m.includes('invalid_service')) return { status: 400, code: 'invalid_service', error: 'ประเภทรถไม่ถูกต้องสำหรับคิวประเภทนี้' };
   if (m.includes('not_movable')) return { status: 409, code: 'not_movable', error: 'คิวนี้เลื่อนไม่ได้แล้ว' };
   if (m.includes('invalid_shop') || m.includes('invalid_status')) return { status: 400, code: 'invalid_request', error: 'คำขอไม่ถูกต้อง' };
+  // `walk_in` is refused until 202609300001_walk_in_booking has been applied.
+  if (m.includes('bookings_booking_source_check')) return { status: 503, code: 'walk_in_unavailable', error: 'ระบบยังไม่เปิดใช้คิว Walk-in กรุณาแจ้งผู้ดูแลระบบ' };
   return null;
 }
 

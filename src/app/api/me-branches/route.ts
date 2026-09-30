@@ -9,7 +9,7 @@ import { applyBranchScope } from '@/lib/auth/branch-scope';
 export async function GET() {
   try {
     const { supabase, profile, branchScope, capabilities } = await requireAuthContext({
-      roles: ['admin', 'staff'],
+      roles: ['admin', 'staff', 'viewer'],
     });
 
     // A super_admin who has not picked a shop yet has no branches to offer.

@@ -4,7 +4,7 @@ import { applyBranchScope } from '@/lib/auth/branch-scope';
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const { searchParams } = new URL(req.url);
     const from = searchParams.get('from');
     const to = searchParams.get('to');

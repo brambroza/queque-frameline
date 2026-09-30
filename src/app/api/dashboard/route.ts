@@ -63,7 +63,7 @@ type LightBooking = {
 type WarehouseDbRow = Omit<WarehouseRow, 'awaiting_payment'> & { external_documents: { doc_type?: string | null; payment_status?: string | null } | null };
 
 const WAREHOUSE_SELECT =
-  'id,queue_number,booking_date,start_time,status,direction,branch_id,resource_id,service_id,customer_id,service_minutes,checked_in_at,called_at,serving_started_at,completed_at,call_count,plate_number,plate_number_actual,external_documents(doc_type,payment_status)';
+  'id,queue_number,booking_date,start_time,status,direction,branch_id,resource_id,service_id,customer_id,service_minutes,checked_in_at,called_at,serving_started_at,completed_at,call_count,plate_number,plate_number_actual,booking_source,external_documents(doc_type,payment_status)';
 
 type HeavyBooking = {
   id: string;
@@ -120,7 +120,7 @@ function summarize(rows: LightBooking[], from: string, to: string, model: Capaci
 
 export async function GET(req: Request) {
   try {
-    const { supabase, profile, user, capabilities } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, profile, user, capabilities } = await requireAuthContext({ roles: ['admin', 'staff', 'viewer'] });
     const url = new URL(req.url);
     const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams.entries()));
     if (!parsed.success) return NextResponse.json({ error: 'Invalid query' }, { status: 400 });

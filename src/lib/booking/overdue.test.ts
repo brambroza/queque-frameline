@@ -4,7 +4,7 @@ import { computeOverdueMoves, computeWaitNotices } from './overdue';
 describe('computeWaitNotices', () => {
   // 2026-09-21 10:00 Bangkok = 03:00Z
   const at = (hhmmZ: string) => new Date(`2026-09-21T${hhmmZ}:00Z`);
-  const wait = (o: Partial<{ id: string; status: string; booking_date: string; start_time: string; wait_notified_at: string | null }> = {}) => ({
+  const wait = (o: Partial<{ id: string; status: string; booking_date: string; start_time: string; wait_notified_at: string | null; booking_source: string | null; checked_in_at: string | null }> = {}) => ({
     id: 'w1', status: 'checked_in', booking_date: '2026-09-21', start_time: '10:00:00', wait_notified_at: null, ...o,
   });
   const cfg = { wait_notice_enabled: true, wait_notice_minutes: 5 };
@@ -20,6 +20,22 @@ describe('computeWaitNotices', () => {
     expect(computeWaitNotices(['confirmed', 'late', 'called', 'serving'].map((status) => wait({ status })), at('04:00'), cfg)).toEqual([]);
     expect(computeWaitNotices([wait()], at('04:00'), { ...cfg, wait_notice_enabled: false })).toEqual([]);
     expect(computeWaitNotices([wait({ booking_date: 'nope' })], at('04:00'), cfg)).toEqual([]);
+  });
+  it('counts a walk-in from its check-in when the slot had already started', () => {
+    // Slot 10:00, truck queued and checked in at 10:12 → notice at 10:17, not at once.
+    const walkIn = wait({ booking_source: 'walk_in', checked_in_at: '2026-09-21T03:12:00Z' });
+    expect(computeWaitNotices([walkIn], at('03:13'), cfg)).toEqual([]);
+    expect(computeWaitNotices([walkIn], at('03:16'), cfg)).toEqual([]);
+    expect(computeWaitNotices([walkIn], at('03:17'), cfg)).toEqual(['w1']);
+    // The same timestamps on a booked queue keep the appointment as the anchor.
+    expect(computeWaitNotices([wait({ booking_source: 'admin', checked_in_at: '2026-09-21T03:12:00Z' })], at('03:13'), cfg)).toEqual(['w1']);
+  });
+  it('keeps the slot start for a walk-in that took a later slot', () => {
+    // Checked in 09:40 for the 10:00 slot → still measured from 10:00.
+    const early = wait({ booking_source: 'walk_in', checked_in_at: '2026-09-21T02:40:00Z' });
+    expect(computeWaitNotices([early], at('03:04'), cfg)).toEqual([]);
+    expect(computeWaitNotices([early], at('03:05'), cfg)).toEqual(['w1']);
+    expect(computeWaitNotices([wait({ booking_source: 'walk_in', checked_in_at: 'nope' })], at('03:05'), cfg)).toEqual(['w1']);
   });
 });
 
