@@ -1,0 +1,117 @@
+/* User manual — A4 portrait, Go Along presentation style (dark green / light green, IBM Plex Sans Thai). */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --green-900: #14452f;
+  --green-700: #1d5a3f;
+  --green-400: #5cb85c;
+  --tint: #f0f5f2;
+  --line: #dde3df;
+  --ink: #1a1a1a;
+  --muted: #5b6660;
+  --warn-bg: #fff7e6;
+  --warn: #b26a00;
+}
+
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.55; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+.page { position: relative; width: 210mm; height: 297mm; padding: 16mm 16mm 22mm; overflow: hidden; page-break-after: always; background: #fff; }
+
+/* ── header of a content page ── */
+.eyebrow { font-family: 'IBM Plex Sans', 'IBM Plex Sans Thai', sans-serif; font-size: 8.5pt; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--green-700); margin: 0 0 2mm; }
+h1 { font-size: 21pt; line-height: 1.25; font-weight: 700; margin: 0 0 2mm; }
+.lead { font-size: 11pt; color: var(--muted); margin: 0 0 5mm; }
+
+/* ── figures ── */
+.fig { background: var(--tint); border: 1px solid var(--line); border-radius: 4mm; padding: 3.5mm; margin: 0 0 5mm; display: flex; justify-content: center; align-items: center; gap: 3.5mm; }
+.fig img { display: block; max-width: 100%; border-radius: 2mm; background: #fff; box-shadow: 0 0.4mm 1.6mm rgba(20, 69, 47, 0.14); }
+.fig.wide img { width: 100%; }
+.fig.dialog img { max-height: 112mm; width: auto; }
+.fig.pair > img { max-height: 100mm; width: auto; max-width: calc(50% - 2mm); object-fit: contain; }
+.fig.phones, .fig.pair { align-items: flex-start; }
+.fig.phones > img { width: calc((100% - 7mm) / 3); }
+.fig .clip { flex: 1; min-width: 0; overflow: hidden; border-radius: 2mm; background: #fff; box-shadow: 0 0.4mm 1.6mm rgba(20, 69, 47, 0.14); }
+.fig .clip img { width: 100%; border-radius: 0; box-shadow: none; }
+.cap { font-size: 8.5pt; color: var(--muted); text-align: center; margin: -3mm 0 4mm; }
+
+/* ── steps ── */
+ol.steps { list-style: none; margin: 0 0 4mm; padding: 0; counter-reset: s; }
+ol.steps li { counter-increment: s; position: relative; padding: 0 0 0 10mm; margin: 0 0 2.4mm; min-height: 7mm; }
+ol.steps li::before { content: counter(s); position: absolute; left: 0; top: -0.2mm; width: 6.6mm; height: 6.6mm; border-radius: 50%; background: var(--green-900); color: #fff; font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; }
+b, strong { font-weight: 600; }
+.k { display: inline-block; padding: 0 1.6mm; border: 1px solid var(--line); border-radius: 1.4mm; background: #fff; font-weight: 600; font-size: 9.5pt; white-space: nowrap; }
+
+/* ── callouts ── */
+.note { border-left: 1.2mm solid var(--green-900); background: var(--tint); padding: 2.6mm 4mm; border-radius: 0 2mm 2mm 0; margin: 0 0 3mm; font-size: 10pt; }
+.note b:first-child { color: var(--green-900); }
+.note.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.note.warn b:first-child { color: var(--warn); }
+
+/* ── tables ── */
+table { width: 100%; border-collapse: collapse; margin: 0 0 5mm; font-size: 10pt; }
+th { text-align: left; font-weight: 700; color: var(--green-900); border-bottom: 0.5mm solid var(--green-900); padding: 2mm 2.5mm; }
+td { border-bottom: 1px solid var(--line); padding: 2.2mm 2.5mm; vertical-align: top; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+table.wrap td:first-child { white-space: normal; }
+
+/* ── cards ── */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin: 0 0 5mm; }
+.card { background: var(--tint); border-radius: 3mm; padding: 4.5mm 5mm; }
+.card.plain { background: #fff; border: 1px solid var(--line); }
+.card h3 { margin: 0 0 2mm; padding-left: 3mm; border-left: 1.2mm solid var(--green-900); font-size: 11.5pt; color: var(--green-900); }
+.card ul { margin: 0; padding-left: 5mm; }
+.card li { margin-bottom: 1.2mm; }
+h2 { font-size: 12.5pt; color: var(--green-900); margin: 5mm 0 2.5mm; padding-left: 3mm; border-left: 1.2mm solid var(--green-900); }
+
+/* ── table of contents ── */
+.toc { list-style: none; margin: 6mm 0 0; padding: 0; }
+.toc li { display: flex; align-items: baseline; gap: 4mm; padding: 2.6mm 0; border-bottom: 1px solid var(--line); }
+.toc .n { font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; color: var(--green-400); font-size: 13pt; width: 9mm; }
+.toc .t { flex: 1; font-weight: 600; }
+.toc .p { font-family: 'IBM Plex Sans', sans-serif; color: var(--muted); }
+
+/* ── footer ── */
+.foot { position: absolute; left: 16mm; right: 16mm; bottom: 9mm; }
+.bar { height: 0.9mm; background: var(--line); margin-bottom: 3mm; }
+.bar i { display: block; height: 100%; background: var(--green-900); }
+.foot .row { display: flex; align-items: center; justify-content: space-between; font-family: 'IBM Plex Sans', sans-serif; font-size: 8.5pt; font-weight: 700; color: var(--green-900); }
+.foot .row span:last-child { color: #8a938e; }
+.foot svg { width: 6mm; height: 3.6mm; vertical-align: -0.6mm; margin-right: 2mm; }
+
+/* ── cover ── */
+.cover { padding: 0; display: flex; }
+.cover .l { flex: 1; padding: 26mm 14mm 20mm 18mm; display: flex; flex-direction: column; }
+.cover .r { width: 66mm; background: var(--green-900); border-left: 1.4mm solid var(--green-400); color: #fff; padding: 0 12mm 20mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .brand { display: flex; align-items: center; gap: 3mm; color: var(--green-400); font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; font-size: 14pt; }
+.cover .brand svg { width: 15mm; height: 9mm; }
+.cover .eyebrow { margin-top: 42mm; font-size: 8.5pt; letter-spacing: 0.22em; }
+.cover .title { font-size: 34pt; line-height: 1.2; font-weight: 700; margin: 3mm 0 0; }
+.cover .role { font-size: 22pt; line-height: 1.3; font-weight: 600; color: var(--green-900); margin: 3mm 0 0; }
+.cover .rule { width: 26mm; height: 1.4mm; background: var(--green-400); margin: 11mm 0 8mm; }
+.cover .sub { font-size: 12pt; color: var(--muted); max-width: 95mm; }
+.cover .meta { margin-top: auto; border-top: 1px solid var(--line); padding-top: 4mm; display: flex; justify-content: space-between; font-size: 9pt; color: var(--muted); }
+.cover .meta b { display: block; color: var(--green-900); font-size: 10.5pt; }
+.cover .r svg { width: 24mm; height: 15mm; margin-bottom: 8mm; }
+.cover .r .co { font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; letter-spacing: 0.18em; font-size: 11pt; }
+.cover .r .th { font-size: 10pt; margin-top: 1mm; }
+.cover .r .tag { font-family: 'IBM Plex Sans', sans-serif; font-size: 7pt; letter-spacing: 0.2em; color: #8fc3a5; margin-top: 6mm; }
+
+/* ── contact (last page) ── */
+.contact { padding: 0; display: flex; flex-direction: column; }
+.contact .top { background: var(--green-900); color: #fff; padding: 30mm 18mm 18mm; border-bottom: 1.4mm solid var(--green-400); }
+.contact .top .eyebrow { color: var(--green-400); letter-spacing: 0.22em; }
+.contact .top h1 { font-size: 30pt; }
+.contact .top .rule { width: 26mm; height: 1.2mm; background: var(--green-400); margin: 8mm 0 10mm; }
+.contact dl { display: grid; grid-template-columns: 28mm 1fr; row-gap: 6mm; margin: 0; font-size: 12pt; }
+.contact dt { color: #8fc3a5; font-size: 9pt; letter-spacing: 0.1em; padding-top: 1mm; }
+.contact dd { margin: 0; }
+.contact .bottom { flex: 1; padding: 18mm; }
+.contact .bottom .brand { display: flex; align-items: center; gap: 3mm; color: var(--green-400); font-family: 'IBM Plex Sans', sans-serif; font-weight: 700; font-size: 18pt; }
+.contact .bottom .brand svg { width: 18mm; height: 11mm; }
+.contact .bottom p { color: var(--muted); }
+
+.page > .eyebrow.en { letter-spacing: 0.22em; }
+.toc.dense li { padding: 1.7mm 0; }

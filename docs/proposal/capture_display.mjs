@@ -38,9 +38,10 @@ const R002 = {
   do_number: 'DO-202609-0013', called_at: null, call_count: 0, dock_id: null,
   service_name: 'รถ 6 ล้อ', doc_no: 'SO-00003', doc_type: 'so', customer_name: 'Go Along', driver_name: 'Win',
 };
-const dock = (current) => ({ id: 'fx-dock-1', code: 'D1', name: 'ท่า 1 (รับสินค้า)', direction: 'outbound', current });
+const BRANCH = { id: 'fx-branch-1', code: 'HQ', name: 'คลังสำนักงานใหญ่' };
+const dock = (current) => ({ id: 'fx-dock-1', code: 'D1', name: 'ท่า 1 (รับสินค้า)', direction: 'outbound', branch_name: BRANCH.name, current });
 const feed = (docks, waiting) => ({
-  data: { site: { name: 'Fameline Warehouse', logo_url: null }, today: '2026-09-23', server_time: new Date().toISOString(), docks, waiting },
+  data: { site: { name: 'Fameline Warehouse', logo_url: null }, today: '2026-09-23', server_time: new Date().toISOString(), mode: 'branch', branch: BRANCH, branches: [BRANCH], docks, waiting },
 });
 
 const SHOTS = [
