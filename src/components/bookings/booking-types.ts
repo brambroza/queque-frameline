@@ -59,7 +59,7 @@ export type VehicleType = { id: string; service_name: string; duration_minutes?:
 export type Dock = { id: string; resource_name: string; resource_code?: string | null; resource_type: string; branch_id?: string | null; direction?: BookingDirection | null; service_ids?: string[] | null; active?: boolean | null };
 export type DocumentOption = { id: string; doc_type: 'so' | 'po'; doc_no: string; branch_id: string | null; partner_id?: string | null; partner_name: string | null; status: string; payment_status?: string | null; branches?: { branch_name?: string | null } | null };
 /** `in_progress` only comes back for a walk-in grid: the slot running right now. */
-export type SlotOption = { slot_time: string; slot_end: string; capacity: number; remaining_capacity: number; is_past: boolean; bookable: boolean; in_progress?: boolean };
+export type SlotOption = { slot_time: string; slot_end: string; capacity: number; remaining_capacity: number; is_past: boolean; bookable: boolean; in_progress?: boolean; overflow?: boolean };
 
 /** Queue raised at the gate for a truck that arrived without a booking. */
 export function isWalkIn(b: Pick<BookingRow, 'booking_source'>): boolean {

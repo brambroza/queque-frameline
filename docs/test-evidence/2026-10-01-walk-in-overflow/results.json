@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-01",
+  "app": "http://localhost:3100",
+  "vehicle": "รถกระบะ / 4 ล้อ",
+  "passed": 19,
+  "total": 19,
+  "results": [
+    {
+      "name": "1a picker shows free count + no last queue",
+      "ok": true,
+      "detail": "ตอนนี้ 16:10 ว่าง 6 ช่อง · เร็วสุด 16:00 วันนี้ยังไม่มีคิวสำหรับรถประเภทนี้"
+    },
+    {
+      "name": "1b no \"ต่อท้าย\" offered while regular slots are free",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1c API walk_in=1 returns overflow rows + meta.now",
+      "ok": true,
+      "detail": "rows=22 overflow=2 now=16:10"
+    },
+    {
+      "name": "1d submit button says \"สร้างคิว + เช็คอิน\" for a regular slot",
+      "ok": true,
+      "detail": "16:00 ว่าง กำลังเดิน · ท่าว่าง 2/2"
+    },
+    {
+      "name": "1e queue created, checked in / called, no \"ต่อท้ายคิว\" chip",
+      "ok": true,
+      "detail": "Walk-in — รถมาถึงโดยไม่ได้จอง สร้างคิว ออก DO และเช็คอินแล้ว — ท่าว่าง ระบบเรียกเข้าท่า 1 (รับสินค้า)ทันที เลขคิว R-001 DO-202610-0015 กำลังเรียก เวลา 16:00 ท่า"
+    },
+    {
+      "name": "2a regular slots filled by seed",
+      "ok": true,
+      "detail": "11 bookings"
+    },
+    {
+      "name": "2b no regular slot left (DB)",
+      "ok": true,
+      "detail": "left=0"
+    },
+    {
+      "name": "2c picker says \"เวลาทำการเต็ม\" + last queue + \"ต่อท้ายคิวได้ตั้งแต่\"",
+      "ok": true,
+      "detail": "ตอนนี้ 16:10 เวลาทำการเต็ม คิวสุดท้ายวันนี้ R-011 · 18:30–19:00 · ท่า 1 (รับสินค้า) ช่องเวลาทำการเต็มแล้ว — ต่อท้ายคิวได้ตั้งแต่ 19:00"
+    },
+    {
+      "name": "2d full slots shown disabled, ≤3 \"ต่อท้าย\" slots offered",
+      "ok": true,
+      "detail": "เต็ม=6 ต่อท้าย=2"
+    },
+    {
+      "name": "2e regular create refuses the overflow slot (409 slot_unavailable)",
+      "ok": true,
+      "detail": "status=409 code=slot_unavailable slot=19:00"
+    },
+    {
+      "name": "2f submit button says \"ต่อท้ายคิว + เช็คอิน\"",
+      "ok": true,
+      "detail": "19:00 ต่อท้าย ท่าว่าง 2/2"
+    },
+    {
+      "name": "2g result shows \"ต่อท้ายคิว\" chip + queue number",
+      "ok": true,
+      "detail": "Walk-in — รถมาถึงโดยไม่ได้จอง สร้างคิว ออก DO และเช็คอินแล้ว — รถรอเรียกเข้าท่า ต่อท้ายคิวสุดท้าย — เวลา 19:00 เป็นเวลาโดยประมาณ รถรอในลาน ระบบจะเรียกเข้าท่าเมื่อท่าว่าง เลขคิว R-013 DO-202610-0027 มา"
+    },
+    {
+      "name": "2h DB: walk_in source, slot ≥ closing (19:00), dock + DO assigned",
+      "ok": true,
+      "detail": "{\"queue_number\":\"R-013\",\"start_time\":\"19:00:00\",\"status\":\"checked_in\",\"resource_id\":\"50000000-0000-4000-8000-000000000001\",\"booking_source\":\"walk_in\",\"do_number\":\"DO-202610-0027\"}"
+    },
+    {
+      "name": "3a after closing: no regular slot, only \"ต่อท้าย\"",
+      "ok": true,
+      "detail": "regular=0 ต่อท้าย=3 · ตอนนี้ 16:10 เวลาทำการเต็ม คิวสุดท้ายวันนี้ R-013 · 19:00–19:30 · ท่า 1 (รับสินค้า) ช่องเวลาทำการเต็มแล้ว — ต่อท้ายคิวได้ตั้งแต่ 19:00"
+    },
+    {
+      "name": "3b first \"ต่อท้าย\" slot = earliest free overflow slot of the API, not in the past",
+      "ok": true,
+      "detail": "ui=19:00 api=19:00 remaining=1 now=16:10"
+    },
+    {
+      "name": "3c queued after hours with DO",
+      "ok": true,
+      "detail": "Walk-in — รถมาถึงโดยไม่ได้จอง สร้างคิว ออก DO และเช็คอินแล้ว — ท่าว่าง ระบบเรียกเข้าท่า 3 (รับ/ส่ง)ทันที เลขคิว R-014 DO-202610-0028 กำลังเรียก เวลา 19:00 ต่อท้"
+    },
+    {
+      "name": "4a GET /api/available-slots (no walk_in) ends at closing, no overflow rows",
+      "ok": true,
+      "detail": "rows=12 maxEnd=15:00"
+    },
+    {
+      "name": "4b \"สร้างคิว\" drawer offers no \"ต่อท้าย\" and skips today (full)",
+      "ok": true,
+      "detail": "สร้างคิว 1 เอกสารและรถ 2 วันเวลา 3 เสร็จสิ้น รับสินค้า (ลูกค้า) ส่งสินค้า (Supplier) เอกสาร SO (ไม่บังคับ) เอกสาร SO (ไม่บังคับ) ชื่อลูกค้า * ชื่อลูกค้า * เบอร์"
+    },
+    {
+      "name": "5 three walk-ins exist today (1 regular + 2 overflow)",
+      "ok": true,
+      "detail": "R-001 16:00 called ท่า 1 (รับสินค้า) | R-013 19:00 checked_in ท่า 1 (รับสินค้า) | R-014 19:00 called ท่า 3 (รับ/ส่ง)"
+    }
+  ]
+}

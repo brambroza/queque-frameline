@@ -76,7 +76,15 @@ export function addDaysIso(iso: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
-export type SlotRow = { slot_time: string; slot_end: string; capacity: number; booked_count: number; remaining_capacity: number };
+export type SlotRow = {
+  slot_time: string;
+  slot_end: string;
+  capacity: number;
+  booked_count: number;
+  remaining_capacity: number;
+  /** `get_dock_slots(p_overflow => true)`: the service would end after closing time. */
+  overflow?: boolean | null;
+};
 export type SlotView = SlotRow & { is_past: boolean; too_soon: boolean; bookable: boolean };
 
 /**
@@ -98,7 +106,7 @@ export function decorateSlots(date: string, rows: SlotRow[], now: Date, leadHour
   });
 }
 
-export type WalkInSlotView = SlotView & { in_progress: boolean };
+export type WalkInSlotView = SlotView & { in_progress: boolean; overflow: boolean };
 
 /**
  * Decorate RPC slots for a walk-in: a truck already on site may also take the
@@ -129,8 +137,97 @@ export function decorateWalkInSlots(date: string, rows: SlotRow[], now: Date): W
     const hasStarted = started(r);
     const inProgress = isToday && hasStarted && normalizeSlotTime(r.slot_time) === runningStart && normalizeSlotTime(r.slot_end) > nowTime;
     const isPast = hasStarted && !inProgress;
-    return { ...r, is_past: isPast, too_soon: false, in_progress: inProgress, bookable: isToday && !isPast && r.remaining_capacity > 0 };
+    return { ...r, is_past: isPast, too_soon: false, in_progress: inProgress, overflow: Boolean(r.overflow), bookable: isToday && !isPast && r.remaining_capacity > 0 };
   });
+}
+
+export type WalkInSummary = {
+  /** Slots inside working hours that can still be taken. */
+  regular: WalkInSlotView[];
+  /** Slots after the last queue / closing time that can be taken. */
+  overflow: WalkInSlotView[];
+  /** Working hours are used up: the truck can only queue after the last booking. */
+  full: boolean;
+  /** Earliest slot the truck can take, regular hours first. */
+  next: WalkInSlotView | null;
+};
+
+/**
+ * What the walk-in grid tells the user: is anything left inside working hours,
+ * and if not, where the queue continues.
+ *
+ * @param slots Output of `decorateWalkInSlots`.
+ */
+export function summarizeWalkInSlots(slots: WalkInSlotView[]): WalkInSummary {
+  const bookable = slots.filter((s) => s.bookable);
+  const regular = bookable.filter((s) => !s.overflow);
+  const overflow = bookable.filter((s) => s.overflow);
+  return { regular, overflow, full: regular.length === 0, next: regular[0] ?? overflow[0] ?? null };
+}
+
+/**
+ * Slots the walk-in grid shows: every regular slot that has not finished
+ * (free or full, so the user sees the day at a glance) and, only when working
+ * hours are used up, the first few free overflow slots to queue after the
+ * last booking.
+ *
+ * @param slots Output of `decorateWalkInSlots`.
+ * @param overflowLimit How many "queue after" choices to offer.
+ */
+export function visibleWalkInSlots(slots: WalkInSlotView[], overflowLimit = 3): WalkInSlotView[] {
+  const summary = summarizeWalkInSlots(slots);
+  const regular = slots.filter((s) => !s.overflow && !s.is_past);
+  return summary.full ? [...regular, ...summary.overflow.slice(0, Math.max(overflowLimit, 0))] : regular;
+}
+
+/** A live booking of today, as read for the "last queue" line of the walk-in grid. */
+export type LiveQueueRow = {
+  queue_number: string | null;
+  start_time: string;
+  end_time: string | null;
+  buffer_minutes: number | null;
+  resource_id: string | null;
+  resource_name: string | null;
+  direction: string;
+};
+
+export type LastQueue = {
+  queue_number: string;
+  start_time: string;
+  end_time: string;
+  /** When its dock is free again: end + turnaround buffer. */
+  free_from: string;
+  resource_name: string | null;
+};
+
+/** `HH:MM:SS` plus minutes, clamped to the same day. */
+export function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m, s] = normalizeSlotTime(time).split(':').map(Number);
+  const total = Math.min(Math.max(h * 60 + m + minutes, 0), 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}:${String(s || 0).padStart(2, '0')}`;
+}
+
+/**
+ * The booking that blocks an eligible dock the longest today — the "last
+ * queue" a walk-in would wait behind. Dock-less live bookings of the same
+ * direction count too (they will take one of these docks).
+ *
+ * @param rows Live bookings of today (`LIVE_STATUSES`).
+ * @param dockIds Docks this vehicle type / direction may use.
+ * @param direction Direction of the walk-in.
+ */
+export function pickLastQueue(rows: LiveQueueRow[], dockIds: readonly string[], direction: string): LastQueue | null {
+  let best: LastQueue | null = null;
+  for (const r of rows) {
+    const onDock = r.resource_id ? dockIds.includes(r.resource_id) : r.direction === direction;
+    if (!onDock) continue;
+    const end = r.end_time ? normalizeSlotTime(r.end_time) : addMinutesToTime(r.start_time, 30);
+    const freeFrom = addMinutesToTime(end, Math.max(r.buffer_minutes ?? 0, 0));
+    if (!best || freeFrom > best.free_from) {
+      best = { queue_number: r.queue_number ?? '-', start_time: normalizeSlotTime(r.start_time), end_time: end, free_from: freeFrom, resource_name: r.resource_name };
+    }
+  }
+  return best;
 }
 
 /**

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "create:admin": "node scripts/create-admin.mjs",
-    "seed:test": "node scripts/dev/seed-test-data.mjs"
+    "seed:test": "node scripts/dev/seed-test-data.mjs",
+    "delete:bookings": "node scripts/dev/delete-bookings.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

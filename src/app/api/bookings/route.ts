@@ -161,8 +161,14 @@ export async function POST(req: Request) {
         p_date: today,
         p_resource_id: payload.resource_id ?? null,
         p_exclude_booking_id: null,
+        // Working hours full: the truck may queue after the last booking (slots past closing).
+        p_overflow: true,
       });
-      if (slotError) throw slotError;
+      if (slotError) {
+        const mapped = dockErrorResponse(slotError.message);
+        if (mapped) return NextResponse.json({ error: mapped.error, code: mapped.code }, { status: mapped.status });
+        throw slotError;
+      }
       const problem = walkInSlotProblem(decorateWalkInSlots(today, (slotRows ?? []) as SlotRow[], now), payload.start_time);
       if (problem) {
         return NextResponse.json({ error: problem === SLOT_PAST_CODE ? SLOT_PAST_MESSAGE : 'ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาใหม่', code: problem }, { status: 409 });
@@ -237,6 +243,8 @@ export async function POST(req: Request) {
       p_receiver_phone: payload.receiver_phone ?? null,
       p_note: payload.note ?? null,
       p_actor: user.id,
+      // Only a walk-in sends the overflow flag, so a regular create keeps working before the migration runs.
+      ...(walkIn ? { p_walk_in: true } : {}),
     });
     if (error) {
       const mapped = dockErrorResponse(error.message);

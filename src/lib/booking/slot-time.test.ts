@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decorateWalkInSlots, isSlotPast, normalizeSlotTime, walkInSlotProblem, type SlotRow } from './slot-time';
+import { addMinutesToTime, decorateWalkInSlots, isSlotPast, normalizeSlotTime, pickLastQueue, summarizeWalkInSlots, visibleWalkInSlots, walkInSlotProblem, type LiveQueueRow, type SlotRow } from './slot-time';
 
 const now = { date: '2026-09-15', time: '14:40:00' };
 
@@ -104,5 +104,62 @@ describe('walkInSlotProblem', () => {
     expect(walkInSlotProblem(slots, '09:30')).toBe('slot_past');
     expect(walkInSlotProblem(slots, '10:30')).toBe('slot_unavailable');
     expect(walkInSlotProblem(slots, '10:10')).toBe('slot_unavailable');
+  });
+});
+
+describe('walk-in overflow', () => {
+  // 2026-09-15 16:40 Bangkok = 09:40Z — the last regular slot (16:30) is running.
+  const at = new Date('2026-09-15T09:40:00Z');
+  const slot = (start: string, end: string, remaining: number, overflow = false): SlotRow => ({ slot_time: start, slot_end: end, capacity: 2, booked_count: 2 - remaining, remaining_capacity: remaining, overflow });
+  const day = (rows: SlotRow[]) => decorateWalkInSlots('2026-09-15', rows, at);
+
+  it('carries the overflow flag through and applies the same rules to it', () => {
+    const s = day([slot('16:30:00', '17:00:00', 0), slot('17:00:00', '17:30:00', 2, true), slot('17:30:00', '18:00:00', 0, true)]);
+    expect(s.map((x) => x.overflow)).toEqual([false, true, true]);
+    expect(s[1]).toMatchObject({ bookable: true, is_past: false, in_progress: false });
+    expect(s[2].bookable).toBe(false);
+  });
+
+  it('summarises a full day as "queue after the last booking"', () => {
+    const sum = summarizeWalkInSlots(day([slot('16:00:00', '16:30:00', 1), slot('16:30:00', '17:00:00', 0), slot('17:00:00', '17:30:00', 2, true)]));
+    expect(sum.full).toBe(true);
+    expect(sum.regular).toEqual([]);
+    expect(sum.next?.slot_time).toBe('17:00:00');
+  });
+
+  it('prefers a regular slot over any overflow slot', () => {
+    const sum = summarizeWalkInSlots(day([slot('16:30:00', '17:00:00', 1), slot('17:00:00', '17:30:00', 2, true)]));
+    expect(sum.full).toBe(false);
+    expect(sum.next?.slot_time).toBe('16:30:00');
+  });
+
+  it('shows overflow slots only when working hours are used up, and only a few', () => {
+    const rows = [slot('16:00:00', '16:30:00', 1), slot('16:30:00', '17:00:00', 0), slot('17:00:00', '17:30:00', 2, true), slot('17:30:00', '18:00:00', 2, true), slot('18:00:00', '18:30:00', 2, true), slot('18:30:00', '19:00:00', 2, true)];
+    expect(visibleWalkInSlots(day(rows)).map((s) => s.slot_time.slice(0, 5))).toEqual(['16:30', '17:00', '17:30', '18:00']);
+    expect(visibleWalkInSlots(day([slot('16:30:00', '17:00:00', 1), slot('17:00:00', '17:30:00', 2, true)])).map((s) => s.slot_time.slice(0, 5))).toEqual(['16:30']);
+  });
+
+  it('hides finished regular slots and skips full overflow slots', () => {
+    const rows = [slot('16:00:00', '16:30:00', 1), slot('16:30:00', '17:00:00', 0), slot('17:00:00', '17:30:00', 0, true), slot('17:30:00', '18:00:00', 1, true)];
+    expect(visibleWalkInSlots(day(rows)).map((s) => s.slot_time.slice(0, 5))).toEqual(['16:30', '17:30']);
+  });
+});
+
+describe('pickLastQueue', () => {
+  const row = (over: Partial<LiveQueueRow>): LiveQueueRow => ({ queue_number: 'R-001', start_time: '10:00:00', end_time: '10:30:00', buffer_minutes: 0, resource_id: 'd1', resource_name: 'ท่า 1', direction: 'outbound', ...over });
+
+  it('returns the booking whose dock is blocked the longest, including turnaround', () => {
+    const last = pickLastQueue([row({ queue_number: 'R-001', end_time: '16:30:00' }), row({ queue_number: 'R-002', start_time: '15:30:00', end_time: '16:15:00', buffer_minutes: 30 })], ['d1'], 'outbound');
+    expect(last).toMatchObject({ queue_number: 'R-002', end_time: '16:15:00', free_from: '16:45:00', resource_name: 'ท่า 1' });
+  });
+
+  it('ignores other docks but counts dock-less bookings of the same direction', () => {
+    expect(pickLastQueue([row({ resource_id: 'd9', end_time: '18:00:00' })], ['d1'], 'outbound')).toBeNull();
+    expect(pickLastQueue([row({ resource_id: null, resource_name: null, end_time: '12:00:00' }), row({ resource_id: null, direction: 'inbound', end_time: '18:00:00' })], ['d1'], 'outbound')?.end_time).toBe('12:00:00');
+  });
+
+  it('falls back to 30 minutes when a booking has no end time', () => {
+    expect(pickLastQueue([row({ end_time: null, start_time: '11:00:00' })], ['d1'], 'outbound')?.free_from).toBe('11:30:00');
+    expect(addMinutesToTime('23:50', 30)).toBe('23:59:00');
   });
 });

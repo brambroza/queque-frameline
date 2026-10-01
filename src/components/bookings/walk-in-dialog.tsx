@@ -26,6 +26,8 @@ type Draft = {
   resource_id: string;
   booking_date: string;
   start_time: string;
+  /** The chosen slot is after the last queue / closing time ("ต่อท้ายคิว"). */
+  overflow: boolean;
   plate_number: string;
   driver_name: string;
   driver_phone: string;
@@ -38,9 +40,9 @@ type CreateResponse = {
   data?: { id: string; queue_number: string; do_number: string | null; status: string; resource_id: string | null; checked_in?: boolean; auto_called?: string[]; notice?: string | null };
 };
 
-type Result = NonNullable<CreateResponse['data']> & { time: string; driverUrl: string | null };
+type Result = NonNullable<CreateResponse['data']> & { time: string; overflow: boolean; driverUrl: string | null };
 
-const EMPTY: Draft = { direction: 'outbound', branch_id: '', service_id: '', resource_id: '', booking_date: '', start_time: '', plate_number: '', driver_name: '', driver_phone: '', note: '' };
+const EMPTY: Draft = { direction: 'outbound', branch_id: '', service_id: '', resource_id: '', booking_date: '', start_time: '', overflow: false, plate_number: '', driver_name: '', driver_phone: '', note: '' };
 
 /** Codes `POST /api/bookings` answers when the chosen slot is gone: reload the grid. */
 const SLOT_GONE = new Set(['slot_past', 'slot_unavailable']);
@@ -168,18 +170,19 @@ export function WalkInDialog({
     if (!next || next === draft.direction) return;
     // Documents, vehicle types and docks are all direction-specific.
     setDoc(null);
-    setDraft((p) => ({ ...p, direction: next, service_id: '', resource_id: '', booking_date: '', start_time: '' }));
+    setDraft((p) => ({ ...p, direction: next, service_id: '', resource_id: '', booking_date: '', start_time: '', overflow: false }));
   }
 
   function chooseDocument(next: DocumentOption | null) {
     setDoc(next);
-    setDraft((p) => ({ ...p, branch_id: next?.branch_id ?? topbarBranchId ?? '', resource_id: '', booking_date: '', start_time: '' }));
+    setDraft((p) => ({ ...p, branch_id: next?.branch_id ?? topbarBranchId ?? '', resource_id: '', booking_date: '', start_time: '', overflow: false }));
   }
 
   async function submit() {
     if (!doc || !canSubmit) return;
     // Untouched optional inputs hold '' — drop blanks so uuid / phone validation does not trip on them.
-    const payload = Object.fromEntries(Object.entries({ ...draft, document_id: doc.id }).filter(([, v]) => String(v ?? '').trim() !== ''));
+    // `overflow` is a UI flag only: the server decides from the slot itself.
+    const payload = Object.fromEntries(Object.entries({ ...draft, document_id: doc.id }).filter(([k, v]) => k !== 'overflow' && String(v ?? '').trim() !== ''));
     setCreating(true);
     try {
       const res = await fetch('/api/bookings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, walk_in: true }) });
@@ -187,7 +190,7 @@ export function WalkInDialog({
       if (!res.ok || !j.data) {
         push(j.error ?? 'สร้างคิว Walk-in ไม่สำเร็จ', 'error');
         if (j.code && SLOT_GONE.has(j.code)) {
-          setDraft((p) => ({ ...p, booking_date: '', start_time: '' }));
+          setDraft((p) => ({ ...p, booking_date: '', start_time: '', overflow: false }));
           setSlotRefresh((k) => k + 1);
         }
         return;
@@ -204,7 +207,7 @@ export function WalkInDialog({
           // The queue is made; the link can still be opened from the queue list.
         }
       }
-      setResult({ ...created, time: draft.start_time, driverUrl });
+      setResult({ ...created, time: draft.start_time, overflow: draft.overflow, driverUrl });
       // A notice (waiting for payment, check-in failed) is shown on the result panel instead of a green toast.
       if (!created.notice) push(`สร้างคิว Walk-in ${created.queue_number} แล้ว`);
       if (created.auto_called && created.auto_called.length > 0) push(`ระบบเรียกคิวเข้าท่าอัตโนมัติ: ${created.auto_called.join(', ')}`);
@@ -245,6 +248,7 @@ export function WalkInDialog({
                   : result.checked_in ? 'สร้างคิว ออก DO และเช็คอินแล้ว — รถรอเรียกเข้าท่า' : 'สร้างคิวและออก DO แล้ว แต่ยังไม่ได้เช็คอิน'}
             </Alert>
             {result.notice ? <Typography variant="body2" color="text.secondary">{result.notice}</Typography> : null}
+            {result.overflow && !resultCalled ? <Alert severity="info" icon={false}>ต่อท้ายคิวสุดท้าย — เวลา {hhmm(result.time)} เป็นเวลาโดยประมาณ รถรอในลาน ระบบจะเรียกเข้าท่าเมื่อท่าว่าง</Alert> : null}
             <Box sx={{ borderRadius: 2, bgcolor: 'action.hover', p: 2.5, textAlign: 'center' }}>
               <Typography variant="caption" color="text.secondary">เลขคิว</Typography>
               <Typography variant="h3" fontWeight={800} sx={{ lineHeight: 1.1 }}>{result.queue_number}</Typography>
@@ -253,6 +257,7 @@ export function WalkInDialog({
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip size="small" label={STATUS_LABEL[result.status as keyof typeof STATUS_LABEL] ?? result.status} color={resultPending ? 'warning' : 'success'} />
               <Chip size="small" variant="outlined" label={`เวลา ${hhmm(result.time)}`} />
+              {result.overflow ? <Chip size="small" color="warning" variant="outlined" label="ต่อท้ายคิว" /> : null}
               {dockName ? <Chip size="small" variant="outlined" label={dockName} /> : null}
               {doc ? <Chip size="small" variant="outlined" label={doc.doc_no} /> : null}
             </Stack>
@@ -300,14 +305,14 @@ export function WalkInDialog({
 
             {needsBranch ? (
               <TextField select required size="small" label="สาขา / คลัง" value={draft.branch_id}
-                onChange={(e) => setDraft((p) => ({ ...p, branch_id: e.target.value, resource_id: '', booking_date: '', start_time: '' }))}>
+                onChange={(e) => setDraft((p) => ({ ...p, branch_id: e.target.value, resource_id: '', booking_date: '', start_time: '', overflow: false }))}>
                 {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}</MenuItem>)}
               </TextField>
             ) : null}
 
             {vehicleTypes === null && !refError ? <Skeleton variant="rounded" height={40} /> : (
               <TextField select required size="small" label="ประเภทรถ" value={draft.service_id}
-                onChange={(e) => setDraft((p) => ({ ...p, service_id: e.target.value, resource_id: '', booking_date: '', start_time: '' }))}
+                onChange={(e) => setDraft((p) => ({ ...p, service_id: e.target.value, resource_id: '', booking_date: '', start_time: '', overflow: false }))}
                 helperText={vehicleTypes !== null && vehicleOptions.length === 0 ? 'ยังไม่มีประเภทรถสำหรับคิวประเภทนี้ — เพิ่มที่เมนู ประเภทรถ' : undefined}
               >
                 {vehicleOptions.map((v) => <MenuItem key={v.id} value={v.id}>{v.service_name} — {v.duration_minutes ?? '-'} นาที</MenuItem>)}
@@ -321,7 +326,7 @@ export function WalkInDialog({
               <TextField fullWidth size="small" label="เบอร์คนขับ" value={draft.driver_phone} onChange={set('driver_phone')} slotProps={{ htmlInput: { inputMode: 'tel' } }} />
             </Stack>
 
-            <TextField select size="small" label="ท่า (Dock)" value={draft.resource_id} onChange={(e) => setDraft((p) => ({ ...p, resource_id: e.target.value, booking_date: '', start_time: '' }))}>
+            <TextField select size="small" label="ท่า (Dock)" value={draft.resource_id} onChange={(e) => setDraft((p) => ({ ...p, resource_id: e.target.value, booking_date: '', start_time: '', overflow: false }))}>
               <MenuItem value="">ให้ระบบเลือกท่าที่ว่าง</MenuItem>
               {dockOptions.map((d) => <MenuItem key={d.id} value={d.id}>{d.resource_code ? `${d.resource_code} · ` : ''}{d.resource_name}</MenuItem>)}
             </TextField>
@@ -336,7 +341,7 @@ export function WalkInDialog({
                 dockId={draft.resource_id || undefined}
                 date={draft.booking_date}
                 time={draft.start_time}
-                onChange={(n) => setDraft((p) => ({ ...p, booking_date: n.date, start_time: n.time }))}
+                onChange={(n) => setDraft((p) => ({ ...p, booking_date: n.date, start_time: n.time, overflow: Boolean(n.overflow) }))}
               />
             ) : (
               <Alert severity="info">{doc ? 'เลือกสาขาก่อน เพื่อดูเวลาที่ว่างวันนี้' : `เลือกเอกสาร ${dir.docLabel} ก่อน เพื่อดูเวลาที่ว่างวันนี้`}</Alert>
@@ -357,7 +362,7 @@ export function WalkInDialog({
           <>
             <Button color="inherit" onClick={handleClose} disabled={creating}>ปิด</Button>
             <Button variant="contained" disabled={!canSubmit} onClick={() => void submit()}>
-              {creating ? 'กำลังสร้าง…' : unpaid ? 'สร้างคิว (รอชำระเงิน)' : 'สร้างคิว + เช็คอิน'}
+              {creating ? 'กำลังสร้าง…' : unpaid ? 'สร้างคิว (รอชำระเงิน)' : draft.overflow ? 'ต่อท้ายคิว + เช็คอิน' : 'สร้างคิว + เช็คอิน'}
             </Button>
           </>
         )}
