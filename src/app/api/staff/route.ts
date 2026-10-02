@@ -5,6 +5,8 @@ import { applyBranchScope } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logCrud } from '@/lib/audit/activity-log';
 import { ROLE_SELECT, countOtherAdmins, findRoleByCode, revokeUserRoles, rolesOfUser, setUserRole, type RoleDef } from '@/lib/auth/role-grants';
+import { safeSendMail } from '@/lib/mail/send';
+import { MUST_CHANGE_PASSWORD_KEY, buildStaffWelcomeEmail, getStaffDefaultPassword } from '@/lib/staff/welcome-email';
 
 /** Role codes come from the admin-managed `roles` table (see /api/roles). */
 const roleCodeSchema = z.string().trim().regex(/^[a-z][a-z0-9_]{1,31}$/);
@@ -31,12 +33,20 @@ const staffSchema = z
   });
 
 /**
+ * How a new member got their login:
+ * - `password`: created with STAFF_DEFAULT_PASSWORD — the welcome e-mail is sent after the staff row exists
+ * - `invite`: Supabase invite e-mail (STAFF_DEFAULT_PASSWORD unset)
+ * - `existing`: the e-mail already had an account; nothing is sent and its password is untouched
+ */
+type ProvisionMode = 'password' | 'invite' | 'existing';
+
+/**
  * Create (or reuse) the auth user, profile and role grant for a new staff member.
  *
  * Registration only ever produced shop_owner accounts, so before this there was no
  * way to bring a branch_manager or staff login into existence.
  *
- * @returns The auth user id to attach the staff row to.
+ * @returns The auth user id to attach the staff row to, and how the login was made.
  */
 async function provisionStaffUser(input: {
   email: string;
@@ -45,22 +55,41 @@ async function provisionStaffUser(input: {
   companyId: string;
   shopId: string;
   actorId: string;
-}): Promise<string> {
+}): Promise<{ userId: string; mode: ProvisionMode }> {
   const admin = createAdminClient();
+  const defaultPassword = getStaffDefaultPassword();
+  let userId: string | null = null;
+  let mode: ProvisionMode;
+  let createError: string | undefined;
 
-  // The email link lands on /auth/callback, which turns the code into a session and opens /set-password.
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
-  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(input.email, {
-    data: { full_name: input.displayName },
-    redirectTo: appUrl ? `${appUrl}/auth/callback?next=/set-password` : undefined,
-  });
-  let userId = invited?.user?.id ?? null;
+  if (defaultPassword) {
+    const { data: created, error } = await admin.auth.admin.createUser({
+      email: input.email,
+      password: defaultPassword,
+      email_confirm: true,
+      user_metadata: { full_name: input.displayName, [MUST_CHANGE_PASSWORD_KEY]: true },
+    });
+    userId = created?.user?.id ?? null;
+    createError = error?.message;
+    mode = 'password';
+  } else {
+    // The email link lands on /auth/callback, which turns the code into a session and opens /set-password.
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+    const { data: invited, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
+      data: { full_name: input.displayName },
+      redirectTo: appUrl ? `${appUrl}/auth/callback?next=/set-password` : undefined,
+    });
+    userId = invited?.user?.id ?? null;
+    createError = error?.message;
+    mode = 'invite';
+  }
 
   if (!userId) {
     // Already registered (or invites are disabled) — fall back to looking the user up.
     const existing = await findAuthUserByEmail(admin, input.email);
-    if (!existing) throw new Error(inviteError?.message ?? 'Unable to invite user');
+    if (!existing) throw new Error(createError ?? 'Unable to invite user');
     userId = existing;
+    mode = 'existing';
   }
 
   const { error: profileError } = await admin.from('users_profile').upsert({
@@ -77,7 +106,17 @@ async function provisionStaffUser(input: {
 
   await setUserRole(admin, { userId, roleId: input.role.id, shopId: input.shopId, companyId: input.companyId, actorId: input.actorId });
 
-  return userId;
+  return { userId, mode };
+}
+
+/** Mail the sign-in details of a password-created member. Never throws. */
+async function sendStaffWelcome(input: { email: string; displayName: string }): Promise<'sent' | 'failed'> {
+  const password = getStaffDefaultPassword();
+  if (!password) return 'failed';
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+  const mail = buildStaffWelcomeEmail({ displayName: input.displayName, email: input.email, password, loginUrl: `${appUrl}/login` });
+  const result = await safeSendMail({ to: input.email, ...mail });
+  return result.ok ? 'sent' : 'failed';
 }
 
 /**
@@ -244,6 +283,7 @@ export async function POST(req: Request) {
     if (!role) return NextResponse.json({ error: 'ไม่พบสิทธิ์ที่เลือก' }, { status: 400 });
 
     let staffUserId: string;
+    let provisionMode: ProvisionMode | null = null;
     if (payload.user_id) {
       staffUserId = payload.user_id;
       // Attaching an existing account: the picked role replaces whatever it had.
@@ -252,7 +292,7 @@ export async function POST(req: Request) {
         if (denied) return denied;
       }
     } else {
-      staffUserId = await provisionStaffUser({
+      const provisioned = await provisionStaffUser({
         email: payload.email!,
         displayName: payload.display_name,
         role,
@@ -260,6 +300,8 @@ export async function POST(req: Request) {
         shopId: profile.shop_id,
         actorId: user.id,
       });
+      staffUserId = provisioned.userId;
+      provisionMode = provisioned.mode;
     }
 
     const { data: existed } = await supabase
@@ -302,8 +344,14 @@ export async function POST(req: Request) {
       role: role.code,
       branch_ids: payload.branch_ids,
       invited: !payload.user_id,
+      provision: provisionMode,
     });
-    return NextResponse.json({ data: true });
+
+    // Sent last so a failed save never mails out a login that leads nowhere.
+    const welcome = provisionMode === 'password'
+      ? await sendStaffWelcome({ email: payload.email!, displayName: payload.display_name })
+      : null;
+    return NextResponse.json({ data: true, provision: provisionMode, welcome });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: getErrorStatus(e) });
   }

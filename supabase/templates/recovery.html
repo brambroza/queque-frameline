@@ -10,9 +10,9 @@
   <!--
     Supabase Auth — Reset password (recovery) template (Go template).
     The portal flow (/forgot-password) is OTP-based: resetPasswordForEmail → user types the
-    6-digit {{ .Token }} → verifyOtp({ type: 'recovery' }) → updateUser({ password }).
+    6-digit .Token → verifyOtp({ type: 'recovery' }) → updateUser({ password }).
     So the code is the main content; no link is shown on purpose.
-    Variables: {{ .Token }}, {{ .Email }}, {{ .SiteURL }}
+    Variables: .Token, .Email, .SiteURL
     Local: supabase/config.toml [auth.email.template.recovery].
     Hosted: paste into Dashboard → Authentication → Email Templates → Reset Password.
   -->

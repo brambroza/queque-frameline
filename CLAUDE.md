@@ -86,6 +86,7 @@ driver — ไม่มี login: เข้าผ่านลิงก์ token 
 - `requireAuthContext({ roles: ['admin'] })` สำหรับงานระดับ site (พนักงาน สิทธิ์ สาขา LINE ERP) · `['admin', 'manager']` สำหรับตั้งค่าคลัง + รายงาน · `['admin', 'staff']` สำหรับงานหน้างาน (manager ผ่านด้วย) · เติม `'viewer'` เฉพาะ GET ที่หน้า read-only ใช้
 - ค่าเริ่มต้นทุก role เห็นทั้ง site (`branch_ids` null); จำกัดสาขาได้ต่อ role — ดูหัวข้อด้านบน
 - สร้าง admin คนแรก: `node scripts/create-admin.mjs <email> <password> "ชื่อ" admin` · คนอื่น ๆ เชิญทางอีเมลจาก `/portal/staff` (`inviteUserByEmail` → ลิงก์ไป `/auth/callback` → `/set-password`); ไม่มีหน้าสมัครเอง
+- **รหัสผ่านเริ่มต้น (2026-10-02)** — ตั้ง env `STAFF_DEFAULT_PASSWORD` (≥ 8 ตัว) แล้ว `POST /api/staff` โหมดเชิญจะ `admin.createUser` ด้วยรหัสนี้ (`email_confirm: true`, `user_metadata.must_change_password = true`) แทน `inviteUserByEmail` แล้วส่งอีเมลข้อมูลเข้าใช้ผ่าน `SMTP_*` ของแอป**หลัง**บันทึก staff สำเร็จ (`buildStaffWelcomeEmail` ใน `src/lib/staff/welcome-email.ts`, vitest); response `{ provision: 'password'|'invite'|'existing', welcome: 'sent'|'failed'|null }` → toast ต่อกรณี; อีเมลที่มีบัญชีอยู่แล้ว = ไม่แตะรหัส ไม่ส่งเมล; login (`login-form.tsx`) เห็น flag → `/set-password?first=1` มีปุ่ม "เปลี่ยนทีหลัง" (ชวนใหม่ทุก login จนเปลี่ยน), บันทึกรหัสใหม่ล้าง flag ใน `updateUser` เดียวกัน (`src/lib/staff/password-flag.ts`); ไม่ตั้ง env = กลับไปใช้ invite เดิม · ข้อจำกัด: รหัสร่วมกันทุกคน ใครรู้รหัสเข้าบัญชีที่ยังไม่เปลี่ยนได้, ไม่บังคับเปลี่ยน, ไม่กันตั้งรหัสใหม่ซ้ำกับรหัสเริ่มต้น
 - Supabase Auth → URL Configuration ต้องมี redirect URL `<APP_URL>/auth/callback` (ทั้ง localhost และ production) ไม่งั้นลิงก์เชิญเด้งไป Site URL แทน
 
 ---
@@ -404,6 +405,7 @@ cron `confirmed→late` → LINE คนขับ + Web Push คนขับ (`ki
 | `CRON_SECRET` | auto-call | Bearer สำหรับ `/api/cron/*` (ค่าเดียวกับ Vault `cron_secret`) |
 | `DISPLAY_KEY` | optional | บังคับ `/display?key=` (ใช้คู่กับ `branch=` ได้: `/display?branch=HQ&key=…`) |
 | `SMTP_*` | optional | อีเมลขาออก (feedback; DO / ลิงก์ในอนาคต) — Gmail: `smtp.gmail.com` 587 + App Password |
+| `STAFF_DEFAULT_PASSWORD` | optional | รหัสผ่านเริ่มต้นของพนักงานที่เพิ่มจาก `/portal/staff` (≥ 8 ตัว) + ส่งเมลผ่าน `SMTP_*`; ไม่ตั้ง = เชิญด้วยอีเมลของ Supabase |
 | `FEEDBACK_TO_EMAIL` | feedback | ผู้รับรายงาน bug/ข้อเสนอแนะจากปุ่มลอย (ไม่ตั้ง = เก็บ DB อย่างเดียว) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | optional | Web Push ให้คนขับที่ไม่ใช้ LINE (`npx web-push generate-vapid-keys`; ไม่ตั้ง = แจ้งเฉพาะตอนเปิดหน้า) |
 

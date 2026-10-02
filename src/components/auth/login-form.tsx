@@ -7,6 +7,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/toast';
+import { mustChangePassword } from '@/lib/staff/password-flag';
 
 export function LoginForm() {
   const { push } = useToast();
@@ -23,16 +24,16 @@ export function LoginForm() {
       const email = String(formData.get('email') ?? '');
       const password = String(formData.get('password') ?? '');
 
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
         push(error.message, 'error');
         return;
       }
 
-      // Ties every later event to this account; without it the funnel is anonymous.
       push('เข้าสู่ระบบสำเร็จ');
-      router.push('/portal/dashboard');
+      // Still on the shared starting password: offer to set their own first (they may postpone).
+      router.push(mustChangePassword(data.user?.user_metadata) ? '/set-password?first=1' : '/portal/dashboard');
       router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch';

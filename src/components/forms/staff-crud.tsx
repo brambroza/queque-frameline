@@ -130,7 +130,19 @@ export function StaffCrud() {
       return;
     }
 
-    push(editing ? t('updated', 'อัปเดตพนักงานแล้ว') : t('added', 'เพิ่มพนักงานแล้ว'));
+    if (editing) {
+      push(t('updated', 'อัปเดตพนักงานแล้ว'));
+    } else if (json.provision === 'password') {
+      push(json.welcome === 'sent'
+        ? t('added_welcome_sent', 'เพิ่มพนักงานแล้ว — ส่งอีเมลพร้อมรหัสผ่านเริ่มต้นแล้ว')
+        : t('added_welcome_failed', 'เพิ่มพนักงานแล้ว แต่ส่งอีเมลไม่สำเร็จ — แจ้งอีเมลและรหัสผ่านเริ่มต้นให้พนักงานเอง'), json.welcome === 'sent' ? 'success' : 'warning');
+    } else if (json.provision === 'invite') {
+      push(t('added_invited', 'เพิ่มพนักงานแล้ว — ส่งอีเมลเชิญแล้ว'));
+    } else if (json.provision === 'existing') {
+      push(t('added_existing', 'เพิ่มพนักงานแล้ว — อีเมลนี้มีบัญชีอยู่แล้ว ใช้รหัสผ่านเดิม (ไม่ได้ส่งอีเมล)'), 'info');
+    } else {
+      push(t('added', 'เพิ่มพนักงานแล้ว'));
+    }
     setDrawerOpen(false);
     setForm(initialForm);
     void load();
