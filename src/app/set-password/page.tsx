@@ -15,11 +15,15 @@ import { MUST_CHANGE_PASSWORD_KEY } from '@/lib/staff/password-flag';
  *
  * `?first=1`: signed in with the shared starting password (login form) — same form,
  * plus "change later". The offer comes back on every login until they change it.
+ * `?change=1`: "เปลี่ยนรหัสผ่าน" from the profile drawer — same form, plus cancel.
  */
+
+type Mode = 'invite' | 'first' | 'change';
 export default function SetPasswordPage() {
   const router = useRouter();
   const { push } = useToast();
-  const [firstLogin, setFirstLogin] = useState(false);
+  const [mode, setMode] = useState<Mode>('invite');
+  const firstLogin = mode === 'first';
   const [ready, setReady] = useState<'checking' | 'ok' | 'no_session'>('checking');
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -29,7 +33,8 @@ export default function SetPasswordPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setFirstLogin(new URLSearchParams(window.location.search).get('first') === '1');
+    const params = new URLSearchParams(window.location.search);
+    setMode(params.get('first') === '1' ? 'first' : params.get('change') === '1' ? 'change' : 'invite');
     const supabase = createClient();
     let done = false;
     const finish = (ok: boolean, mail?: string | null) => { if (done) return; done = true; setEmail(mail ?? null); setReady(ok ? 'ok' : 'no_session'); };
@@ -50,7 +55,7 @@ export default function SetPasswordPage() {
       // Clearing the flag in the same call: no more "change your password" offer after this.
       const { error: err } = await createClient().auth.updateUser({ password, data: { [MUST_CHANGE_PASSWORD_KEY]: false } });
       if (err) { setError(err.message); return; }
-      push(firstLogin ? 'เปลี่ยนรหัสผ่านแล้ว' : 'ตั้งรหัสผ่านแล้ว — เข้าสู่ระบบสำเร็จ');
+      push(mode === 'invite' ? 'ตั้งรหัสผ่านแล้ว — เข้าสู่ระบบสำเร็จ' : 'เปลี่ยนรหัสผ่านแล้ว');
       router.replace('/portal/dashboard');
       router.refresh();
     } finally {
@@ -61,7 +66,7 @@ export default function SetPasswordPage() {
   return (
     <main className="min-h-screen grid place-items-center p-4">
       <section className="card w-full max-w-md p-6">
-        <h1 className="text-2xl font-bold">{firstLogin ? 'ตั้งรหัสผ่านของคุณ' : 'ตั้งรหัสผ่าน'}</h1>
+        <h1 className="text-2xl font-bold">{mode === 'first' ? 'ตั้งรหัสผ่านของคุณ' : mode === 'change' ? 'เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่าน'}</h1>
         {ready === 'checking' ? <p className="mt-2 text-sm text-slate-600">กำลังตรวจสอบลิงก์…</p> : null}
         {ready === 'no_session' ? (
           <div className="mt-2 space-y-3 text-sm text-slate-600">
@@ -73,6 +78,8 @@ export default function SetPasswordPage() {
           <form className="mt-4 space-y-3" onSubmit={save}>
             {firstLogin ? (
               <p className="text-sm text-slate-600">บัญชี <b>{email}</b> ยังใช้รหัสผ่านเริ่มต้นที่ผู้ใช้ใหม่ทุกคนใช้ร่วมกัน — แนะนำให้ตั้งรหัสผ่านของคุณเองก่อนเริ่มใช้งาน</p>
+            ) : mode === 'change' ? (
+              <p className="text-sm text-slate-600">บัญชี <b>{email}</b> — ตั้งรหัสผ่านใหม่ ใช้แทนรหัสเดิมตั้งแต่การเข้าสู่ระบบครั้งถัดไป</p>
             ) : (
               <p className="text-sm text-slate-600">บัญชี <b>{email}</b> — ตั้งรหัสผ่านสำหรับเข้าใช้ระบบคิว</p>
             )}
@@ -84,7 +91,12 @@ export default function SetPasswordPage() {
             </div>
             <input id="confirm-password" className="input" type={show ? 'text' : 'password'} placeholder="ยืนยันรหัสผ่าน" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
-            <button disabled={loading} className="btn-primary w-full" type="submit">{loading ? 'กำลังบันทึก…' : 'บันทึกและเข้าสู่ระบบ'}</button>
+            <button disabled={loading} className="btn-primary w-full" type="submit">{loading ? 'กำลังบันทึก…' : mode === 'change' ? 'บันทึกรหัสผ่านใหม่' : 'บันทึกและเข้าสู่ระบบ'}</button>
+            {mode === 'change' ? (
+              <button type="button" disabled={loading} className="btn-outline w-full" onClick={() => router.back()}>
+                ยกเลิก
+              </button>
+            ) : null}
             {firstLogin ? (
               <button type="button" disabled={loading} className="btn-outline w-full" onClick={() => router.replace('/portal/dashboard')}>
                 เปลี่ยนทีหลัง

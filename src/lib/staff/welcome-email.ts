@@ -19,10 +19,11 @@ const MIN_PASSWORD_LENGTH = 8;
 
 /**
  * The starting password for new staff, or null when the feature is off
- * (unset, blank, or shorter than the Auth minimum).
+ * (unset, blank, or shorter than the Auth minimum). Trimmed: a space pasted into
+ * the hosting env UI would otherwise become part of a password nobody can see.
  */
 export function getStaffDefaultPassword(env: Record<string, string | undefined> = process.env): string | null {
-  const value = env.STAFF_DEFAULT_PASSWORD ?? '';
+  const value = (env.STAFF_DEFAULT_PASSWORD ?? '').trim();
   return value.length >= MIN_PASSWORD_LENGTH ? value : null;
 }
 

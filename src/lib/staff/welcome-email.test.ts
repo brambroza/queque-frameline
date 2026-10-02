@@ -8,8 +8,10 @@ describe('getStaffDefaultPassword', () => {
     expect(getStaffDefaultPassword({ STAFF_DEFAULT_PASSWORD: 'short7!' })).toBeNull();
   });
 
-  it('returns the value as-is (no trimming changes the password)', () => {
+  it('returns the value, trimmed (a stray space from the env UI must not join the password)', () => {
     expect(getStaffDefaultPassword({ STAFF_DEFAULT_PASSWORD: 'Start#2026' })).toBe('Start#2026');
+    expect(getStaffDefaultPassword({ STAFF_DEFAULT_PASSWORD: ' Start#2026 \n' })).toBe('Start#2026');
+    expect(getStaffDefaultPassword({ STAFF_DEFAULT_PASSWORD: '  short  ' })).toBeNull();
   });
 });
 

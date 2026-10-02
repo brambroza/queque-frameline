@@ -123,6 +123,13 @@ export function TopbarUserMenu({ initialName, email, appVersion }: Props) {
             <span className="mb-1 block text-muted">เบอร์โทร</span>
             <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" />
           </label>
+          <div className="flex items-center justify-between gap-2 rounded-xl border bg-surface p-3 text-sm">
+            <div>
+              <p className="text-muted">รหัสผ่าน</p>
+              <p className="font-medium">••••••••</p>
+            </div>
+            <button className="btn-outline" onClick={() => router.push('/set-password?change=1')}>เปลี่ยนรหัสผ่าน</button>
+          </div>
           <div className="rounded-xl border bg-surface p-3 text-sm">
             <p className="text-muted">App Version</p>
             <p className="font-medium">{appVersion}</p>
