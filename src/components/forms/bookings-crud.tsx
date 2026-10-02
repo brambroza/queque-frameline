@@ -17,6 +17,7 @@ import { BookingEditDrawer } from '@/components/bookings/booking-edit-drawer';
 import { WalkInDialog } from '@/components/bookings/walk-in-dialog';
 import { ApproveDialog, CancelDialog, CompleteDialog, PaymentDialog, type BookingSignatures, type PaymentTarget } from '@/components/bookings/booking-action-dialogs';
 import type { ItemMinutesRule } from '@/lib/booking/suggest-minutes';
+import { kindForStatusChange, statusSuccessMessage } from '@/lib/booking/status-toast';
 import { type BookingRow, type Dock, type VehicleType } from '@/components/bookings/booking-types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -245,11 +246,14 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
     try {
       const r = await patchBooking({ id: b.id, status, ...extra });
       if (!r.ok) { push(r.error ?? t('status_failed', 'เปลี่ยนสถานะไม่สำเร็จ'), 'error'); reload(); return; }
-      if (status === 'confirmed' && r.doNumber) push(`ยืนยันคิวแล้ว · ${r.doNumber}${r.checkedIn ? ' · เช็คอิน Walk-in แล้ว' : ''}`);
-      else if (status === 'cancelled') push(t('cancel_ok', 'ยกเลิกคิวแล้ว'));
-      else if (status === 'called') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
-      else if (status === 'completed') push(extra.signatures && Object.keys(extra.signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
-      else push(t('status_ok', 'อัปเดตสถานะแล้ว'));
+      push(statusSuccessMessage({
+        kind: kindForStatusChange(b.status, status),
+        queueNumber: b.queue_number,
+        resourceName: b.resource_name,
+        doNumber: r.doNumber,
+        checkedIn: r.checkedIn,
+        signed: Boolean(extra.signatures && Object.keys(extra.signatures).length),
+      }));
       if (r.autoCalled.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${r.autoCalled.join(', ')}`);
       setEditTarget(null);
       setApproveTarget(null);

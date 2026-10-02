@@ -193,10 +193,16 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Staff invite email (Thai, Fameline brand). Hosted project: paste the same file into
+# Dashboard → Authentication → Email Templates → Invite user.
+[auth.email.template.invite]
+subject = "คำเชิญเข้าใช้งาน Fameline Queue — ระบบจองคิวรับ-ส่งสินค้าหน้าคลัง"
+content_path = "./supabase/templates/invite.html"
+
+# Password reset (OTP flow of /forgot-password). Hosted: Email Templates → Reset Password.
+[auth.email.template.recovery]
+subject = "รหัสยืนยันการเปลี่ยนรหัสผ่าน Fameline Queue"
+content_path = "./supabase/templates/recovery.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

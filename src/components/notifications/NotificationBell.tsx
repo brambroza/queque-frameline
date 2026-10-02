@@ -5,11 +5,13 @@ import { Badge, IconButton, Popover, Tooltip } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import type { NotificationItem as TNotificationItem } from '@/types/notification';
 import { NotificationDropdown } from '@/components/notifications/NotificationDropdown';
+import { useToast } from '@/components/ui/toast';
 
 export function NotificationBell() {
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<TNotificationItem[]>([]);
+  const { push } = useToast();
 
   const open = Boolean(anchorEl);
 
@@ -49,43 +51,38 @@ export function NotificationBell() {
 
   const unread = useMemo(() => items.filter((x) => !x.is_read && !x.read_at).length, [items]);
 
-  async function markRead(id: string) {
+  /** PATCH one notification action; resolves to the server's error message, or null on success. */
+  async function patch(body: Record<string, unknown>): Promise<string | null> {
     try {
-      await fetch('/api/notifications', {
+      const res = await fetch('/api/notifications', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_read', id }),
+        body: JSON.stringify(body),
       });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) return json.error ?? 'ดำเนินการไม่สำเร็จ';
       await load();
-    } catch (e) {
-      console.error('[notification_mark_read_failed]', e);
+      return null;
+    } catch {
+      return 'เชื่อมต่อไม่ได้ กรุณาลองใหม่';
     }
+  }
+
+  async function markRead(id: string) {
+    const err = await patch({ action: 'mark_read', id });
+    if (err) push(err, 'error');
   }
 
   async function archive(id: string) {
-    try {
-      await fetch('/api/notifications', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'archive', id }),
-      });
-      await load();
-    } catch (e) {
-      console.error('[notification_archive_failed]', e);
-    }
+    const err = await patch({ action: 'archive', id });
+    if (err) push(err, 'error');
+    else push('เก็บแจ้งเตือนแล้ว');
   }
 
   async function markAllRead() {
-    try {
-      await fetch('/api/notifications', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_all_read' }),
-      });
-      await load();
-    } catch (e) {
-      console.error('[notification_mark_all_failed]', e);
-    }
+    const err = await patch({ action: 'mark_all_read' });
+    if (err) push(err, 'error');
+    else push('อ่านทั้งหมดแล้ว');
   }
 
   return (

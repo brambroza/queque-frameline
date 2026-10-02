@@ -119,7 +119,7 @@ export function SimpleCrud({
       return;
     }
 
-    push('บันทึกสำเร็จ');
+    push(editingId ? `แก้ไข${title}แล้ว` : `เพิ่ม${title}แล้ว`);
     form.reset();
     setEditingId(null);
     setFormSeed(defaults);
@@ -133,7 +133,7 @@ export function SimpleCrud({
       push('ลบไม่สำเร็จ', 'error');
       return;
     }
-    push('ลบสำเร็จ');
+    push(`ลบ${title}แล้ว`);
     void load();
   }
 

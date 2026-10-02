@@ -208,8 +208,9 @@ export function WalkInDialog({
         }
       }
       setResult({ ...created, time: draft.start_time, overflow: draft.overflow, driverUrl });
-      // A notice (waiting for payment, check-in failed) is shown on the result panel instead of a green toast.
-      if (!created.notice) push(`สร้างคิว Walk-in ${created.queue_number} แล้ว`);
+      push(`สร้างคิว Walk-in ${created.queue_number} แล้ว`);
+      // A notice (waiting for payment, check-in failed) also stays on the result panel.
+      if (created.notice) push(created.notice, 'warning');
       if (created.auto_called && created.auto_called.length > 0) push(`ระบบเรียกคิวเข้าท่าอัตโนมัติ: ${created.auto_called.join(', ')}`);
       onCreated?.();
     } finally {

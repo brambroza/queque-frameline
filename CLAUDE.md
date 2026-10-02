@@ -286,7 +286,7 @@ export async function POST(req: Request) {
 
 ### Portal UI
 - MUI เท่านั้น (`sx` prop), ห้าม `window.confirm` — ใช้ `useConfirm()` จาก `src/components/ui/confirm-dialog.tsx`
-- Toast: `useToast()` จาก `src/components/ui/toast`
+- Toast: `useToast().push(message, type)` จาก `src/components/ui/toast` — MUI `Alert` filled ซ้อนกันมุมขวาบน (เต็มกว้างบนมือถือ), type `success|error|info|warning`, ปิดเองได้/hover หยุดนับ, success 3 วิ · warning 5 วิ · error 6 วิ (`src/lib/ui/toast-timing.ts`); ข้อความสำเร็จใช้รูป “<กริยา><สิ่งของ/เลขคิว>แล้ว” ไม่ใช้ “บันทึกสำเร็จ” กลาง ๆ; ปุ่มสถานะคิวใช้ `statusSuccessMessage()` จาก `src/lib/booking/status-toast.ts` ร่วมกันทั้งหน้าคิวและบอร์ดคิว
 - ทุกหน้าต้องมี loading / empty / error state
 - ข้อความผ่าน `useI18n()` / `useTranslation(ns)` พร้อม fallback ไทย (`src/lib/i18n/fallback.ts` + ตาราง `translations`)
 
@@ -432,6 +432,7 @@ npm run test         # vitest (pure logic)
 npm run create:admin -- <email> <password> "ชื่อ" admin   # สร้าง admin user
 npm run seed:test -- [--code=C002] [--date=YYYY-MM-DD] [--reset] [--dry-run]   # ข้อมูลทดสอบ: ลูกค้า C002 + SO paid/confirmed ทุกประเภทรถ + SO unpaid (pending) + SO ยังไม่จอง, พิมพ์ลิงก์คนขับ/ลิงก์จอง (เอกสาร SO-TEST-<code>-nnn; --reset ลบชุดเดิมแบบ hard delete แล้วสร้างใหม่)
 npm run delete:bookings -- <filter> [--with-docs] [--yes]  # ลบคิว (+เอกสาร SO/PO ที่ไม่เหลือคิว) แบบ hard delete; dry-run จนกว่าจะใส่ --yes — ดู docs/runbooks/delete-bookings.md
+npm run delete:staff -- --email=<a,b> | --user-id= | --staff-id= [--keep-auth] [--purge-logs] [--yes]  # ลบพนักงาน + login (auth.users) แบบ hard delete; dry-run จนกว่าจะใส่ --yes, กันลบ admin คนสุดท้าย (--force), activity_logs เก็บไว้แต่ตัด user_id เป็น null
 supabase start / supabase db reset                        # local stack + replay chain
 ```
 

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
+  <title>รหัสยืนยันการเปลี่ยนรหัสผ่าน Fameline Queue</title>
+  <!--
+    Supabase Auth — Reset password (recovery) template (Go template).
+    The portal flow (/forgot-password) is OTP-based: resetPasswordForEmail → user types the
+    6-digit {{ .Token }} → verifyOtp({ type: 'recovery' }) → updateUser({ password }).
+    So the code is the main content; no link is shown on purpose.
+    Variables: {{ .Token }}, {{ .Email }}, {{ .SiteURL }}
+    Local: supabase/config.toml [auth.email.template.recovery].
+    Hosted: paste into Dashboard → Authentication → Email Templates → Reset Password.
+  -->
+  <style>
+    body { margin: 0; padding: 0; }
+    a { text-decoration: none; }
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; }
+      .px { padding-left: 24px !important; padding-right: 24px !important; }
+      .otp { font-size:30px !important; letter-spacing:8px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; background-color:#eef3f0; font-family:'Leelawadee UI','Sarabun','Tahoma','Segoe UI',Arial,sans-serif; -webkit-text-size-adjust:100%;">
+
+  <!-- Preheader (hidden preview text) -->
+  <div style="display:none; max-height:0; overflow:hidden; font-size:1px; line-height:1px; color:#eef3f0; opacity:0;">
+    รหัสยืนยันสำหรับตั้งรหัสผ่านใหม่ของบัญชี Fameline Queue — ห้ามเปิดเผยรหัสนี้กับผู้อื่น
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef3f0;">
+    <tr>
+      <td align="center" style="padding:32px 12px;">
+
+        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background-color:#002c1f; border-radius:16px 16px 0 0; padding:28px 40px;" class="px">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td valign="middle" width="48" style="width:48px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" valign="middle" width="44" height="44" style="width:44px; height:44px; background-color:#adc32b; border-radius:12px; font-size:22px; font-weight:700; color:#002c1f; font-family:Arial,sans-serif;">F</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="middle" style="padding-left:14px;">
+                    <div style="font-size:20px; line-height:24px; font-weight:700; letter-spacing:3px; color:#ffffff; font-family:Arial,sans-serif;">FAMELINE</div>
+                    <div style="font-size:13px; line-height:18px; color:#aedbc0;">Queue · ระบบจองคิวรับ-ส่งสินค้าหน้าคลัง</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Accent bar -->
+          <tr>
+            <td height="4" style="height:4px; line-height:4px; font-size:4px; background-color:#adc32b;">&nbsp;</td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="background-color:#ffffff; padding:40px 40px 8px 40px;" class="px">
+              <div style="display:inline-block; padding:4px 12px; background-color:#d4eddf; color:#0a5937; font-size:12px; font-weight:600; border-radius:999px;">เปลี่ยนรหัสผ่าน</div>
+
+              <h1 style="margin:16px 0 8px 0; font-size:24px; line-height:34px; font-weight:700; color:#002c1f;">
+                รหัสยืนยันสำหรับตั้งรหัสผ่านใหม่
+              </h1>
+
+              <p style="margin:0 0 24px 0; font-size:15px; line-height:26px; color:#334155;">
+                ระบบได้รับคำขอเปลี่ยนรหัสผ่านสำหรับบัญชี <strong style="color:#002c1f;">Fameline Queue</strong> ของท่าน
+                กรุณานำรหัส 6 หลักด้านล่างไปกรอกในหน้า “ลืมรหัสผ่าน” เพื่อยืนยันตัวตนและตั้งรหัสผ่านใหม่
+              </p>
+
+              <!-- OTP box -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td align="center" style="background-color:#f4f8f6; border:1px solid #dbe7e0; border-radius:12px; padding:24px 16px;">
+                    <div style="font-size:12px; line-height:18px; color:#64748b; letter-spacing:1px;">รหัสยืนยัน (OTP)</div>
+                    <div class="otp" style="margin-top:8px; font-size:36px; line-height:44px; font-weight:700; letter-spacing:12px; color:#002c1f; font-family:'Courier New',Consolas,monospace;">{{ .Token }}</div>
+                    <div style="margin-top:12px; display:inline-block; padding:4px 12px; background-color:#ffffff; border:1px solid #dbe7e0; border-radius:999px; font-size:12px; line-height:18px; color:#0a5937;">ใช้ได้ครั้งเดียว · มีอายุจำกัด</div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Account box -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td style="font-size:13px; line-height:22px; color:#64748b;">
+                    บัญชีผู้ใช้: <strong style="color:#002c1f; word-break:break-all;">{{ .Email }}</strong>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Steps -->
+              <p style="margin:0 0 10px 0; font-size:14px; line-height:22px; font-weight:700; color:#002c1f;">ขั้นตอนการเปลี่ยนรหัสผ่าน</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td valign="top" width="30" style="padding:0 0 10px 0;">
+                    <div style="width:22px; height:22px; line-height:22px; text-align:center; background-color:#002c1f; color:#adc32b; border-radius:999px; font-size:12px; font-weight:700; font-family:Arial,sans-serif;">1</div>
+                  </td>
+                  <td valign="top" style="padding:1px 0 10px 0; font-size:14px; line-height:22px; color:#334155;">กลับไปที่หน้า “ลืมรหัสผ่าน” ที่เปิดไว้ แล้วกรอกรหัส 6 หลักข้างต้น</td>
+                </tr>
+                <tr>
+                  <td valign="top" width="30" style="padding:0 0 10px 0;">
+                    <div style="width:22px; height:22px; line-height:22px; text-align:center; background-color:#002c1f; color:#adc32b; border-radius:999px; font-size:12px; font-weight:700; font-family:Arial,sans-serif;">2</div>
+                  </td>
+                  <td valign="top" style="padding:1px 0 10px 0; font-size:14px; line-height:22px; color:#334155;">กด “ยืนยัน OTP” แล้วตั้งรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร</td>
+                </tr>
+                <tr>
+                  <td valign="top" width="30">
+                    <div style="width:22px; height:22px; line-height:22px; text-align:center; background-color:#002c1f; color:#adc32b; border-radius:999px; font-size:12px; font-weight:700; font-family:Arial,sans-serif;">3</div>
+                  </td>
+                  <td valign="top" style="padding:1px 0 0 0; font-size:14px; line-height:22px; color:#334155;">กด “เปลี่ยนรหัสผ่าน” และเข้าสู่ระบบด้วยรหัสผ่านใหม่</td>
+                </tr>
+              </table>
+
+              <!-- Security notice -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 32px 0;">
+                <tr>
+                  <td style="border-left:4px solid #d97706; background-color:#fffbeb; padding:14px 16px; font-size:13px; line-height:22px; color:#78350f; border-radius:0 8px 8px 0;">
+                    <strong>เพื่อความปลอดภัย</strong> ห้ามเปิดเผยรหัสนี้กับผู้อื่น เจ้าหน้าที่จะไม่สอบถามรหัสนี้จากท่านไม่ว่ากรณีใด<br />
+                    หากท่านไม่ได้ขอเปลี่ยนรหัสผ่าน สามารถเพิกเฉยอีเมลนี้ได้ — รหัสผ่านเดิมยังใช้งานได้ตามปกติ
+                    และกรุณาแจ้งผู้ดูแลระบบหากได้รับอีเมลนี้ซ้ำโดยไม่ได้ร้องขอ
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Signature -->
+          <tr>
+            <td style="background-color:#ffffff; padding:0 40px 36px 40px;" class="px">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #e2e8f0;">
+                <tr>
+                  <td style="padding-top:20px; font-size:14px; line-height:22px; color:#334155;">
+                    ขอแสดงความนับถือ<br />
+                    <strong style="color:#002c1f;">ฝ่ายบริหารระบบ Fameline Queue</strong><br />
+                    บริษัท เฟมไลน์ โปรดักส์ จำกัด
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#00170f; border-radius:0 0 16px 16px; padding:22px 40px;" class="px">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-size:12px; line-height:20px; color:#aedbc0;">
+                    Fameline Queue — ระบบจองคิวรับ-ส่งสินค้าหน้าคลัง<br />
+                    <span style="color:#7fa892;">© บริษัท เฟมไลน์ โปรดักส์ จำกัด · จัดทำโดย บริษัท โกอะลอง จำกัด</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:10px; font-size:11px; line-height:18px; color:#5f8573;">
+                    อีเมลนี้ส่งโดยอัตโนมัติจากระบบ กรุณาอย่าตอบกลับ
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

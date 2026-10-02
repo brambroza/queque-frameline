@@ -105,6 +105,7 @@ export function ApiKeysCrud() {
       setCreateOpen(false);
       setNewName('');
       setIssued({ name: data.name, raw_key: data.raw_key });
+      push(`สร้าง key "${data.name}" แล้ว — คัดลอกเก็บไว้ ระบบจะไม่แสดงอีก`);
       await loadKeys();
     } catch (e) {
       push(e instanceof Error ? e.message : 'สร้าง key ไม่สำเร็จ', 'error');

@@ -35,6 +35,16 @@ async function dismiss(page) {
   for (let i = 0; i < 3; i++) { await page.keyboard.press('Escape'); await page.waitForTimeout(250); }
 }
 
+/** Click the first walk-in time slot whose aria-label matches (e.g. /ว่าง/ or /ต่อท้าย/). */
+async function pickSlot(page, d, want) {
+  const btn = d.locator('button[aria-label]');
+  const n = await btn.count();
+  for (let i = 0; i < n; i++) {
+    const label = (await btn.nth(i).getAttribute('aria-label')) ?? '';
+    if (/^\d{2}:\d{2} /.test(label) && want.test(label) && !(await btn.nth(i).isDisabled())) { await btn.nth(i).click(); await page.waitForTimeout(500); return; }
+  }
+}
+
 const dialog = (page) => page.locator('.MuiDialog-paper, .MuiDrawer-paper.MuiDrawer-paperAnchorRight').last();
 
 // ───────────────────────── SO / PO (sales, purchasing) ─────────────────────────
@@ -102,19 +112,23 @@ async function documentsRole(browser, role, email, docPath, code) {
   });
 
   await step('06-walkin', async () => {
+    await page.setViewportSize({ width: 1600, height: 1500 });
     await open(page, docPath);
-    await page.getByPlaceholder(/ค้นหา/).fill(code === 'SO' ? 'SO-2609107' : 'PO-2609042');
-    await settle(page, 1000);
-    await page.getByRole('button', { name: 'Walk-in' }).first().click();
+    await page.getByPlaceholder(/ค้นหา/).fill(code === 'SO' ? LINKS.book.so_open_no : LINKS.book.po_open_no);
+    const docNo = code === 'SO' ? LINKS.book.so_open_no : LINKS.book.po_open_no;
+    await page.locator('tbody tr').filter({ hasText: docNo }).first().getByRole('button', { name: 'Walk-in' }).click();
     const d = dialog(page); await d.waitFor(); await settle(page, 800);
     await d.getByLabel(/ประเภทรถ/).click().catch(() => {});
     await page.getByRole('option', { name: /6 ล้อ/ }).click().catch(() => {});
     await d.getByLabel('ทะเบียนรถ').fill('70-4521').catch(() => {});
     await d.getByLabel('ชื่อคนขับ').fill('สมหมาย ขับดี').catch(() => {});
     await d.getByLabel('เบอร์คนขับ').fill('0891234567').catch(() => {});
+    await d.locator('button[aria-label*=":"]').first().waitFor({ timeout: 30000 });
     await settle(page, 1200);
+    await pickSlot(page, d, /^\d{2}:\d{2} (ว่าง|ต่อท้าย)/);
     await shot(page, dir, '06-walkin', d);
     await dismiss(page);
+    await page.setViewportSize({ width: 1600, height: 1000 });
   });
 
   await step('08-notifications', async () => { await open(page, '/portal/notifications', 800); await shot(page, dir, '08-notifications', null, { fullPage: true }); });
@@ -258,21 +272,44 @@ async function warehouseManager(browser) {
     await dismiss(page);
   });
 
-  await step('15-walkin', async () => {
-    await open(page, '/portal/queue-board', 1000);
-    await page.getByRole('button', { name: 'Walk-in' }).first().click();
-    const d = dialog(page); await d.waitFor(); await settle(page, 1000);
-    await shot(page, dir, '15-walkin', d);
-    await dismiss(page);
-  });
+  for (const [name, want, create] of [['15-walkin', /^\d{2}:\d{2} ว่าง/, false], ['15b-walkin-overflow', /^\d{2}:\d{2} ต่อท้าย/, true]]) {
+    if (process.env.MANUAL_WALKIN_CASE && !name.includes(process.env.MANUAL_WALKIN_CASE)) continue;
+    await step(name, async () => {
+      // Tall viewport so the whole dialog (summary card + slots + buttons) fits one picture.
+      await page.setViewportSize({ width: 1600, height: 1500 });
+      await open(page, '/portal/queue-board', 1000);
+      await page.getByRole('button', { name: 'Walk-in' }).first().click();
+      const d = dialog(page); await d.waitFor(); await settle(page, 1000);
+      const docField = d.getByLabel(/เอกสาร SO/);
+      await docField.click(); await docField.pressSequentially(LINKS.book.so_open_no, { delay: 40 });
+      await page.getByRole('option', { name: new RegExp(LINKS.book.so_open_no) }).first().click();
+      await d.getByLabel(/ประเภทรถ/).click(); await page.getByRole('option', { name: /6 ล้อ/ }).click();
+      await d.getByLabel('ทะเบียนรถ').fill('70-4521');
+      await d.getByLabel('ชื่อคนขับ').fill('สมหมาย ขับดี');
+      await d.getByLabel('เบอร์คนขับ').fill('0891234567');
+      await settle(page, 1500);
+      await pickSlot(page, d, want);
+      await shot(page, dir, name, d);
+      if (create) {
+        await d.getByRole('button', { name: /ต่อท้ายคิว \+ เช็คอิน|สร้างคิว \+ เช็คอิน/ }).click();
+        await dialog(page).getByRole('button', { name: 'เสร็จสิ้น' }).waitFor({ timeout: 60000 });
+        await settle(page, 1500);
+        await shot(page, dir, '15c-walkin-result', dialog(page));
+      }
+      await dismiss(page);
+      await page.setViewportSize({ width: 1600, height: 1000 });
+    });
+  }
 
   await step('16-calendar', async () => { await open(page, '/portal/calendar', 1500); await shot(page, dir, '16-calendar'); });
-  await step('17-queue-display', async () => { await open(page, '/portal/queue-display', 800); await shot(page, dir, '17-queue-display'); });
+  await step('17-queue-display', async () => { await open(page, '/portal/queue-display', 800); await page.getByText('URL สำหรับทีวี').waitFor(); await settle(page, 1200); await shot(page, dir, '17-queue-display', page.locator('main')); });
   await step('18-tv', async () => {
     const tv = await desktop(browser, { viewport: { width: 1600, height: 900 } });
     const p = await tv.newPage();
-    await p.goto(`${APP_URL}/display`, { waitUntil: 'networkidle' }); await settle(p, 2500);
-    await shot(p, dir, '18-tv'); await tv.close();
+    await p.goto(`${APP_URL}/display?branch=BN`, { waitUntil: 'networkidle' }); await settle(p, 2500);
+    await shot(p, dir, '18-tv');
+    await p.goto(`${APP_URL}/display`, { waitUntil: 'networkidle' }); await settle(p, 1500);
+    await shot(p, dir, '18b-tv-choose'); await tv.close();
   });
 
   for (const [p, name] of [['/portal/services', '20-vehicle-types'], ['/portal/resources', '21-docks'], ['/portal/working-hours', '22-working-hours'], ['/portal/holidays', '23-holidays'], ['/portal/partners', '24-partners'], ['/portal/reports', '26-reports']]) {

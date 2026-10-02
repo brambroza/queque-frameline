@@ -98,6 +98,9 @@ export function LineSettingsForm() {
       const j = (await res.json().catch(() => ({}))) as { data?: { checks: Check[] }; error?: string };
       if (!res.ok || !j.data) { push(j.error ?? 'ทดสอบไม่สำเร็จ', 'error'); return; }
       setChecks(j.data.checks);
+      const failed = j.data.checks.filter((c) => !c.ok).length;
+      if (failed === 0) push('เชื่อมต่อ LINE ผ่านทุกรายการ');
+      else push(`ทดสอบเสร็จ — มี ${failed} รายการยังไม่ผ่าน ดูรายละเอียดด้านล่าง`, 'warning');
       await load();
     } finally {
       setTesting(false);

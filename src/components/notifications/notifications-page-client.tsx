@@ -68,7 +68,8 @@ export function NotificationsPageClient() {
       body: JSON.stringify({ action: 'archive', id }),
     });
     const json = await res.json();
-    if (!res.ok) return push(json.error ?? 'archive ไม่สำเร็จ', 'error');
+    if (!res.ok) return push(json.error ?? 'เก็บแจ้งเตือนไม่สำเร็จ', 'error');
+    push('เก็บแจ้งเตือนแล้ว');
     await load(true);
   }
 

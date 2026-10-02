@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { createClient } from '@/lib/supabase/client';
+import { useToast } from '@/components/ui/toast';
 
 /**
  * Invited staff land here from the email link (via /auth/callback) and choose
@@ -13,6 +14,7 @@ import { createClient } from '@/lib/supabase/client';
  */
 export default function SetPasswordPage() {
   const router = useRouter();
+  const { push } = useToast();
   const [ready, setReady] = useState<'checking' | 'ok' | 'no_session'>('checking');
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -41,6 +43,7 @@ export default function SetPasswordPage() {
     try {
       const { error: err } = await createClient().auth.updateUser({ password });
       if (err) { setError(err.message); return; }
+      push('ตั้งรหัสผ่านแล้ว — เข้าสู่ระบบสำเร็จ');
       router.replace('/portal/dashboard');
       router.refresh();
     } finally {

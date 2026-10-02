@@ -29,6 +29,30 @@ export async function findRoleByCode(client: SupabaseClient, code: string): Prom
   return (data as RoleDef | null) ?? null;
 }
 
+export type GrantRow = { id: string; role_id: string; is_deleted: boolean };
+
+export type GrantPlan = {
+  /** Active grants of other roles to soft-delete. */
+  staleIds: string[];
+  /** Soft-deleted grant of the wanted role to bring back. */
+  reviveId: string | null;
+  /** No row for the wanted role at all: insert one. */
+  insert: boolean;
+};
+
+/**
+ * Decide how to make `roleId` the only active grant, given every grant row of the
+ * user in the shop (deleted ones included). `idx_user_roles_unique` covers
+ * (user_id, role_id, shop_id) regardless of `is_deleted`, so a role the user held
+ * before — e.g. a staff member removed and added back — must be revived, not inserted.
+ */
+export function planRoleGrant(rows: GrantRow[], roleId: string): GrantPlan {
+  const staleIds = rows.filter((r) => !r.is_deleted && r.role_id !== roleId).map((r) => r.id);
+  const sameRole = rows.filter((r) => r.role_id === roleId);
+  if (sameRole.some((r) => !r.is_deleted)) return { staleIds, reviveId: null, insert: false };
+  return { staleIds, reviveId: sameRole[0]?.id ?? null, insert: sameRole.length === 0 };
+}
+
 /**
  * Make `roleId` the user's only active grant in the shop. Other grants are
  * soft-deleted so a member holds exactly one role at a time.
@@ -39,19 +63,21 @@ export async function setUserRole(
 ): Promise<void> {
   const { data: current, error: readError } = await admin
     .from('user_roles')
-    .select('id,role_id')
+    .select('id,role_id,is_deleted')
     .eq('user_id', input.userId)
-    .eq('shop_id', input.shopId)
-    .eq('is_deleted', false);
+    .eq('shop_id', input.shopId);
   if (readError) throw readError;
 
-  const rows = (current ?? []) as Array<{ id: string; role_id: string }>;
-  const stale = rows.filter((r) => r.role_id !== input.roleId).map((r) => r.id);
-  if (stale.length) {
-    const { error } = await admin.from('user_roles').update({ is_deleted: true, updated_by: input.actorId }).in('id', stale);
+  const plan = planRoleGrant((current ?? []) as GrantRow[], input.roleId);
+  if (plan.staleIds.length) {
+    const { error } = await admin.from('user_roles').update({ is_deleted: true, updated_by: input.actorId }).in('id', plan.staleIds);
     if (error) throw error;
   }
-  if (!rows.some((r) => r.role_id === input.roleId)) {
+  if (plan.reviveId) {
+    const { error } = await admin.from('user_roles').update({ is_deleted: false, updated_by: input.actorId }).eq('id', plan.reviveId);
+    if (error) throw error;
+  }
+  if (plan.insert) {
     const { error } = await admin.from('user_roles').insert({
       user_id: input.userId,
       role_id: input.roleId,

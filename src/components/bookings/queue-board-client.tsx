@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/toast';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { getTodayISOInBangkok } from '@/lib/utils/date-format';
+import { statusSuccessMessage } from '@/lib/booking/status-toast';
 import { effectivePlate, hasPlateMismatch } from '@/lib/booking/plate';
 import { ApproveDialog, CompleteDialog, PaymentChip, isPaymentBlocked, paymentOf, type BookingSignatures } from './booking-action-dialogs';
 import type { StatusPaletteKey } from '@/lib/booking/status-meta';
@@ -152,9 +153,14 @@ export function QueueBoardClient({ isAdmin, readOnly = false }: { isAdmin: boole
       }
       setApproveTarget(null);
       setCompleteTarget(null);
-      if (opt.kind === 'confirm' && json.data?.do_number) push(`อนุมัติคิวแล้ว · ${json.data.do_number}${json.data.checked_in ? ' · เช็คอิน Walk-in แล้ว' : ''}`);
-      else if (opt.kind === 'done') push(signatures && Object.keys(signatures).length ? `ปิดงาน ${b.queue_number} พร้อมลายเซ็นแล้ว` : `ปิดงาน ${b.queue_number} แล้ว`);
-      else if (opt.kind === 'call' || opt.kind === 'recall') push(`เรียก ${b.queue_number} เข้า${b.resource_name ?? 'ท่า'}แล้ว`);
+      push(statusSuccessMessage({
+        kind: opt.kind,
+        queueNumber: b.queue_number,
+        resourceName: b.resource_name,
+        doNumber: json.data?.do_number ?? null,
+        checkedIn: json.data?.checked_in === true,
+        signed: Boolean(signatures && Object.keys(signatures).length),
+      }));
       const auto = json.data?.auto_called ?? [];
       if (auto.length > 0) push(`ระบบเรียกคิวถัดไปอัตโนมัติ: ${auto.join(', ')}`);
       await load(true);
