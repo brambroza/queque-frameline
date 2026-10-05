@@ -82,7 +82,7 @@ export function formatDateTimeDMY(input?: string | null): string {
   if (!input) return '-';
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return input;
-  const { day, month, year, hour, minute } = getPartsInBangkok(d);
+  const { day, month, year, hour, minute } = getPartsInBangkok(d, true);
   const hh = String(hour).padStart(2, '0');
   const mm = String(minute).padStart(2, '0');
   return `${day}/${month}/${year} ${hh}:${mm}`;

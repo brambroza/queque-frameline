@@ -15,7 +15,7 @@ import { MANUALS } from './content.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(here, 'out');
 const only = (process.argv.find((a) => a.startsWith('--only=')) ?? '').slice(7);
-const VERSION = 'เวอร์ชัน 1.0 · กันยายน 2026';
+const VERSION = 'เวอร์ชัน 1.1 · ตุลาคม 2026';
 
 /** Go Along chevron mark. */
 const logo = (fill) => `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg"><path fill="${fill}" d="M30 2l12 12-16 16 16 16-12 12L2 30z"/><path fill="${fill}" d="M70 2l28 28-28 28-12-12 16-16-16-16z"/></svg>`;
