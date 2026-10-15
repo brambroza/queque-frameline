@@ -469,7 +469,7 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
               {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}{b.active === false ? ' (ปิด)' : ''}</MenuItem>)}
             </TextField>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField autoFocus={!editingId} required fullWidth size="small" label={`เลขที่ ${code}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value }))} disabled={Boolean(editingId)} helperText={editingId ? 'เปลี่ยนเลขที่ไม่ได้' : 'เลขที่ซ้ำ = อัปเดตเอกสารเดิม'} />
+              <TextField autoFocus={!editingId} required fullWidth size="small" label={`เลขที่ ${code}`} value={form.doc_no} onChange={(e) => setForm((p) => ({ ...p, doc_no: e.target.value.toUpperCase() }))} disabled={Boolean(editingId)} helperText={editingId ? 'เปลี่ยนเลขที่ไม่ได้' : 'เลขที่ซ้ำ = อัปเดตเอกสารเดิม'} />
               <TextField fullWidth size="small" type="date" label="วันที่เอกสาร" value={form.doc_date} onChange={(e) => setForm((p) => ({ ...p, doc_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
               <TextField fullWidth size="small" type="date" label="กำหนดส่ง" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} />
             </Stack>
