@@ -257,7 +257,14 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
   // ── manual create / edit ───────────────────────────────────────────────────
   const needBranch = branches.length > 1;
   const formValid = form.doc_no.trim() && form.partner_name.trim() && (!needBranch || form.branch_id);
-  const defaultBranch = scopedBranch || (branches.length === 1 ? branches[0].id : '');
+  // Always preselect a branch: the topbar branch when one is chosen, otherwise the first (active) branch.
+  const defaultBranch = scopedBranch || (branches.find((b) => b.active !== false) ?? branches[0])?.id || '';
+
+  // Branches load asynchronously; if the create dialog is already open with no branch, fill it in once they arrive.
+  useEffect(() => {
+    if (!formOpen || editingId || !defaultBranch) return;
+    setForm((p) => (p.branch_id ? p : { ...p, branch_id: defaultBranch }));
+  }, [formOpen, editingId, defaultBranch]);
 
   function openCreate() {
     setEditingId(null);
