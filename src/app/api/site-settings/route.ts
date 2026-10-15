@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteMenu } from '@/lib/auth/write-access';
 import { logCrud } from '@/lib/audit/activity-log';
 import { getSiteSettings } from '@/lib/booking/server';
 
@@ -52,7 +53,9 @@ export async function GET() {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
+    assertWriteMenu(ctx, 'site_settings');
     const parsed = settingsSchema.safeParse(await req.json());
     if (!parsed.success) {
       const first = parsed.error.issues[0];

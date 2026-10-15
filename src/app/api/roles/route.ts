@@ -4,7 +4,7 @@ import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { writeAuditLog } from '@/lib/audit/activity-log';
 import { ROLE_SELECT, type RoleDef } from '@/lib/auth/role-grants';
-import { validateRoleMenuKeys } from '@/lib/auth/menu-registry';
+import { validateRoleMenuKeys, validateRoleWriteKeys } from '@/lib/auth/menu-registry';
 import { APP_ROLES } from '@/lib/auth/levels';
 import type { AppRole } from '@/types/db';
 import { validateRoleBranchIds } from '@/lib/auth/role-capabilities';
@@ -20,6 +20,8 @@ const createSchema = z.object({
   access_level: levelSchema,
   /** null = every menu the level allows */
   menu_keys: z.array(z.string()).nullable(),
+  /** menus whose write actions members may use; null = the level's defaults */
+  write_keys: z.array(z.string()).nullable().optional(),
   /** null = every branch */
   branch_ids: z.array(z.string().uuid()).max(100).nullable().optional(),
   can_export: z.boolean().optional(),
@@ -32,6 +34,7 @@ const updateSchema = z.object({
   description: z.string().trim().max(200).optional().nullable(),
   access_level: levelSchema.optional(),
   menu_keys: z.array(z.string()).nullable().optional(),
+  write_keys: z.array(z.string()).nullable().optional(),
   branch_ids: z.array(z.string().uuid()).max(100).nullable().optional(),
   can_export: z.boolean().optional(),
   multi_branch: z.boolean().optional(),
@@ -39,6 +42,13 @@ const updateSchema = z.object({
 
 function fail(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+/** "แก้ไขได้" list check shared by create and update. Returns the cleaned list or a 400. */
+function checkWrites(level: AppRole, keys: string[] | null | undefined): { keys: string[] | null; error?: undefined } | { error: string; keys?: undefined } {
+  if (keys == null) return { keys: null };
+  const v = validateRoleWriteKeys(level, keys);
+  return v.ok ? { keys: v.keys as string[] } : { error: v.error };
 }
 
 /** Menu list check shared by create and update. Returns the cleaned list or a 400. */
@@ -97,6 +107,8 @@ export async function POST(req: Request) {
     const body = parsed.data;
     const menus = checkMenus(body.access_level, body.menu_keys);
     if (menus.error !== undefined) return fail(menus.error);
+    const writes = checkWrites(body.access_level, body.write_keys);
+    if (writes.error !== undefined) return fail(writes.error);
 
     const admin = createAdminClient();
     const access = await checkAccess(admin, profile.shop_id, body.access_level, body);
@@ -111,6 +123,7 @@ export async function POST(req: Request) {
       description: body.description ?? null,
       access_level: body.access_level,
       menu_keys: menus.keys,
+      write_keys: writes.keys,
       branch_ids: access.branch_ids,
       can_export: access.can_export,
       multi_branch: access.multi_branch,
@@ -149,6 +162,8 @@ export async function PATCH(req: Request) {
     const level = body.access_level ?? role.access_level;
     const menus = checkMenus(level, body.menu_keys === undefined ? role.menu_keys : body.menu_keys);
     if (menus.error !== undefined) return fail(menus.error);
+    const writes = checkWrites(level, body.write_keys === undefined ? role.write_keys : body.write_keys);
+    if (writes.error !== undefined) return fail(writes.error);
 
     const access = await checkAccess(admin, profile.shop_id, level, {
       branch_ids: body.branch_ids === undefined ? role.branch_ids : body.branch_ids,
@@ -162,6 +177,7 @@ export async function PATCH(req: Request) {
       ...(body.description !== undefined ? { description: body.description } : {}),
       access_level: level,
       menu_keys: menus.keys,
+      write_keys: writes.keys,
       branch_ids: access.branch_ids,
       can_export: access.can_export,
       multi_branch: access.multi_branch,

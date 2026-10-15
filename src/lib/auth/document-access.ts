@@ -1,14 +1,15 @@
 /**
  * Who may key SO / PO into the portal, and where each document type lives.
  *
- * Sales orders are keyed by the sales admin, purchase orders by purchasing; the
- * warehouse (admin level) may do both. The two roles are seeded as staff-level
- * system roles (`sales_admin`, `purchasing`) and matched by role code, so an
- * ordinary staff role with the SO menu can still record payments without being
- * able to create or cancel documents.
+ * Writing a document type = the role's "แก้ไขได้" switch on that type's menu
+ * (`roles.write_keys`, see menu-registry). Roles without an explicit list fall
+ * back to the old defaults: admin level, or the department code that owns the
+ * type (`sales_admin` for SO, `purchasing` for PO). An ordinary staff role with
+ * the SO menu but no write switch can still record payments (a queue-side
+ * action) without creating or cancelling documents.
  */
-import type { AppRole } from '@/types/db';
-import type { MenuKey } from './menu-registry';
+import type { PartnerType } from '@/types/db';
+import { canWriteMenu, type MenuKey } from './menu-registry';
 
 export type DocType = 'so' | 'po';
 
@@ -35,7 +36,15 @@ export function documentPortalPath(docType: string | null | undefined): string {
  * Whether the caller may create, edit, close, cancel, delete or issue booking
  * links for documents of this type: admin level, or the role that owns the type.
  */
-export function canWriteDocument(docType: DocType, caller: { roles: readonly AppRole[]; roleCodes: readonly string[] }): boolean {
-  if (caller.roles.includes('admin')) return true;
-  return caller.roleCodes.includes(DOCUMENT_ROLE[docType]);
+export function canWriteDocument(docType: DocType, caller: { writeKeys: readonly string[] }): boolean {
+  return canWriteMenu(DOCUMENT_MENU[docType], caller);
+}
+
+/**
+ * Whether the caller may add, edit, unlink or delete partners: the "แก้ไขได้"
+ * switch on the partners menu. Both tabs follow the same switch; the type
+ * parameter is kept so pages can pass it per tab.
+ */
+export function canWritePartner(_partnerType: PartnerType, caller: { writeKeys: readonly string[] }): boolean {
+  return canWriteMenu('partners', caller);
 }

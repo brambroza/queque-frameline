@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { AuthError } from '@/lib/auth/errors';
+import { canWritePartner } from '@/lib/auth/document-access';
+import type { PartnerType } from '@/types/db';
 import { phoneSchema } from '@/lib/booking/schemas';
 import { logCrud } from '@/lib/audit/activity-log';
 
@@ -20,6 +23,21 @@ const SELECT = 'id,partner_type,code,full_name,phone,email,address,note,created_
 function toInt(v: string | null, fallback: number) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+type Caller = Awaited<ReturnType<typeof requireAuthContext>>;
+
+/** Type of an existing partner row of this shop, or null when it does not exist. */
+async function partnerTypeOf(ctx: Caller, id: string): Promise<PartnerType | null> {
+  const { data, error } = await ctx.supabase.from('customers').select('partner_type').eq('id', id).eq('shop_id', ctx.profile.shop_id).eq('is_deleted', false).maybeSingle();
+  if (error) throw error;
+  const t = (data as { partner_type?: string | null } | null)?.partner_type;
+  return t === 'customer' || t === 'supplier' ? t : null;
+}
+
+/** 403 unless the caller's department (or level) owns this partner type. */
+function assertPartnerWritable(ctx: Caller, partnerType: PartnerType): void {
+  if (!canWritePartner(partnerType, ctx)) throw new AuthError('Forbidden (partner type)', 403);
 }
 
 function duplicateMessage(message: string) {
@@ -50,10 +68,12 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
     const parsed = partnerSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: `ข้อมูลไม่ถูกต้อง: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}` }, { status: 400 });
     const p = parsed.data;
+    assertPartnerWritable(ctx, p.partner_type);
     const { data, error } = await supabase
       .from('customers')
       .insert({
@@ -84,12 +104,19 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
     const body = (await req.json()) as { id?: unknown };
     const id = z.string().uuid().safeParse(body.id);
     const parsed = partnerSchema.safeParse(body);
     if (!id.success || !parsed.success) return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
     const p = parsed.data;
+    // Both the current type and the requested type must belong to the caller, so
+    // sales cannot turn a supplier into a customer (or the reverse) to take it over.
+    const current = await partnerTypeOf(ctx, id.data);
+    if (!current) return NextResponse.json({ error: 'ไม่พบคู่ค้า' }, { status: 404 });
+    assertPartnerWritable(ctx, current);
+    assertPartnerWritable(ctx, p.partner_type);
     const { data, error } = await supabase
       .from('customers')
       .update({ partner_type: p.partner_type, code: p.code ?? null, full_name: p.full_name, phone: p.phone ?? null, email: p.email ?? null, address: p.address ?? null, note: p.note ?? null, updated_by: user.id })
@@ -112,10 +139,14 @@ export async function PATCH(req: Request) {
 /** Forget the partner's LINE link (they can re-link by opening a booking link in LINE). */
 export async function PUT(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
     const body = (await req.json()) as { id?: unknown; action?: unknown };
     const id = z.string().uuid().safeParse(body.id);
     if (!id.success || body.action !== 'unlink_line') return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
+    const current = await partnerTypeOf(ctx, id.data);
+    if (!current) return NextResponse.json({ error: 'ไม่พบคู่ค้า' }, { status: 404 });
+    assertPartnerWritable(ctx, current);
     const { error } = await supabase.from('customers').update({ line_user_id: null, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);
     if (error) throw error;
     await logCrud({ user, profile }, 'update', 'customers', id.data, { unlink_line: true });
@@ -128,9 +159,13 @@ export async function PUT(req: Request) {
 /** Soft delete. History (queues, documents) keeps pointing at the row. */
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
     const id = z.string().uuid().safeParse(new URL(req.url).searchParams.get('id'));
     if (!id.success) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+    const current = await partnerTypeOf(ctx, id.data);
+    if (!current) return NextResponse.json({ error: 'ไม่พบคู่ค้า' }, { status: 404 });
+    assertPartnerWritable(ctx, current);
     const { error } = await supabase.from('customers').update({ is_deleted: true, updated_by: user.id }).eq('id', id.data).eq('shop_id', profile.shop_id);
     if (error) throw error;
     await logCrud({ user, profile }, 'delete', 'customers', id.data, { soft_delete: true });

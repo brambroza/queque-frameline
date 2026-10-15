@@ -16,6 +16,6 @@ export function AccessProvider({ value, children }: { value: MenuAccess; childre
 /** Read the portal's menu access; outside the portal frame everything is allowed (standalone screens). */
 export function useMenuAccess(): MenuAccess & { can: (key: MenuKey) => boolean } {
   const ctx = useContext(AccessContext);
-  const value: MenuAccess = ctx ?? { level: 'admin', menuKeys: [] };
+  const value: MenuAccess = ctx ?? { level: 'admin', menuKeys: [], writeKeys: [] };
   return { ...value, can: (key) => (ctx ? value.menuKeys.includes(key) : true) };
 }

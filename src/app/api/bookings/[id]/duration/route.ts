@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteAny, QUEUE_WRITE_MENUS } from '@/lib/auth/write-access';
 import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { bookingDurationSchema } from '@/lib/booking/schemas';
@@ -13,7 +14,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = auth;
+    assertWriteAny(auth, QUEUE_WRITE_MENUS);
     const { id } = await ctx.params;
     const parsed = bookingDurationSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'เวลาที่ท่าต้องอยู่ระหว่าง 5–1440 นาที' }, { status: 400 });

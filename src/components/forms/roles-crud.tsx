@@ -8,7 +8,7 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { useI18n } from '@/components/i18n/i18n-provider';
-import { ADMIN_LOCKED_MENUS, MENU_GROUPS, MENU_ITEMS, menuKeysForLevel, menuKeysOfRole, type MenuKey } from '@/lib/auth/menu-registry';
+import { ADMIN_LOCKED_MENUS, MENU_GROUPS, MENU_ITEMS, legacyWriteKeys, menuKeysForLevel, menuKeysOfRole, writeKeysForLevel, writeKeysOfRole, type MenuKey } from '@/lib/auth/menu-registry';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import type { AppRole } from '@/types/db';
 import { APP_ROLES, LEVEL_LABEL } from '@/lib/auth/levels';
@@ -20,6 +20,7 @@ type RoleRow = {
   description: string | null;
   access_level: AppRole;
   menu_keys: string[] | null;
+  write_keys: string[] | null;
   branch_ids: string[] | null;
   can_export: boolean;
   multi_branch: boolean;
@@ -36,6 +37,9 @@ type FormState = {
   /** true = every menu the level allows (stored as null) */
   all_menus: boolean;
   menu_keys: MenuKey[];
+  /** true = the level's default buttons (stored as null) */
+  default_writes: boolean;
+  write_keys: MenuKey[];
   /** true = every branch (stored as null) */
   all_branches: boolean;
   branch_ids: string[];
@@ -51,7 +55,7 @@ const LEVEL_HINT: Record<AppRole, string> = {
 };
 const LEVEL_CHIP: Record<AppRole, 'primary' | 'secondary' | 'default' | 'info'> = { admin: 'primary', manager: 'secondary', staff: 'default', viewer: 'info' };
 
-const emptyForm: FormState = { id: null, code: '', name: '', description: '', access_level: 'staff', all_menus: false, menu_keys: [], all_branches: true, branch_ids: [], can_export: true, multi_branch: true };
+const emptyForm: FormState = { id: null, code: '', name: '', description: '', access_level: 'staff', all_menus: false, menu_keys: [], default_writes: true, write_keys: [], all_branches: true, branch_ids: [], can_export: true, multi_branch: true };
 
 function toForm(r: RoleRow): FormState {
   return {
@@ -62,6 +66,8 @@ function toForm(r: RoleRow): FormState {
     access_level: r.access_level,
     all_menus: r.menu_keys == null,
     menu_keys: menuKeysOfRole(r),
+    default_writes: r.write_keys == null,
+    write_keys: writeKeysOfRole(r),
     all_branches: r.branch_ids == null,
     branch_ids: r.branch_ids ?? [],
     can_export: r.can_export !== false,
@@ -106,6 +112,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
         description: form.description.trim() || null,
         access_level: form.access_level,
         menu_keys: form.all_menus ? null : form.menu_keys,
+        write_keys: form.default_writes ? null : form.write_keys,
         branch_ids: form.access_level === 'admin' || form.all_branches ? null : form.branch_ids,
         can_export: form.access_level === 'admin' ? true : form.can_export,
         multi_branch: form.access_level === 'admin' ? true : form.multi_branch,
@@ -144,7 +151,29 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
     setForm((p) => {
       if (!p) return p;
       const has = p.menu_keys.includes(key);
-      return { ...p, menu_keys: has ? p.menu_keys.filter((k) => k !== key) : [...p.menu_keys, key] };
+      return {
+        ...p,
+        menu_keys: has ? p.menu_keys.filter((k) => k !== key) : [...p.menu_keys, key],
+        write_keys: has ? p.write_keys.filter((k) => k !== key) : p.write_keys,
+      };
+    });
+  }
+
+  const writableForLevel = form ? writeKeysForLevel(form.access_level) : [];
+  /** Menus the role currently sees (explicit list, or everything its level allows). */
+  const visibleMenus: MenuKey[] = form ? (form.all_menus ? allowedForLevel : [...form.menu_keys, ...locked]) : [];
+  /** "แก้ไขได้" as it will apply: explicit list, or the level defaults, always inside the visible menus. */
+  const effectiveWrites: MenuKey[] = form
+    ? (form.default_writes ? legacyWriteKeys({ access_level: form.access_level, code: form.code }) : form.write_keys).filter((k) => visibleMenus.includes(k) && writableForLevel.includes(k))
+    : [];
+
+  function toggleWrite(key: MenuKey) {
+    setForm((p) => {
+      if (!p) return p;
+      // First touch of a default list turns it into an explicit one, starting from what applied so far.
+      const base = p.default_writes ? effectiveWrites : p.write_keys;
+      const has = base.includes(key);
+      return { ...p, default_writes: false, write_keys: has ? base.filter((k) => k !== key) : [...base, key] };
     });
   }
 
@@ -164,7 +193,7 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
   }
 
   function setLevel(level: AppRole) {
-    setForm((p) => (p ? { ...p, access_level: level, menu_keys: p.menu_keys.filter((k) => menuKeysForLevel(level).includes(k)) } : p));
+    setForm((p) => (p ? { ...p, access_level: level, menu_keys: p.menu_keys.filter((k) => menuKeysForLevel(level).includes(k)), write_keys: p.write_keys.filter((k) => writeKeysForLevel(level).includes(k)) } : p));
   }
 
   return (
@@ -202,6 +231,10 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                     {menus.map((k) => { const m = MENU_ITEMS.find((x) => x.key === k)!; return t(m.labelKey, m.fallback); }).join(' · ') || 'ไม่มี'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                    แก้ไขได้: {r.write_keys == null ? 'ค่าเริ่มต้นของระดับ — ' : ''}
+                    {writeKeysOfRole(r).map((k) => { const m = MENU_ITEMS.find((x) => x.key === k)!; return t(m.labelKey, m.fallback); }).join(' · ') || 'ไม่มี (ดูอย่างเดียว)'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
                     สาขาและข้อมูล: {accessSummary(r)}
                   </Typography>
                 </Box>
@@ -235,24 +268,53 @@ export function RolesCrud({ isAdmin }: { isAdmin: boolean }) {
                 </TextField>
 
                 <Divider />
-                <FormControlLabel control={<Switch checked={form.all_menus} onChange={(e) => setForm((p) => (p ? { ...p, all_menus: e.target.checked } : p))} />}
-                  label="เห็นทุกเมนูที่ระดับนี้อนุญาต" />
-                {!form.all_menus ? MENU_GROUPS.map((g) => (
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={700}>เมนูและปุ่ม</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {form.access_level === 'viewer'
+                      ? 'ระดับดูอย่างเดียว: เปิดหน้าได้แต่ไม่มีปุ่มแก้ไขทุกเมนู'
+                      : form.access_level === 'admin'
+                        ? 'ระดับผู้ดูแลระบบ: แก้ไขได้ทุกเมนูที่เห็น'
+                        : '"เห็น" = เปิดหน้าได้ · "แก้ไขได้" = มีปุ่มเพิ่ม/แก้/ลบ/เปลี่ยนสถานะของหน้านั้น (ปิด = ดูอย่างเดียว)'}
+                  </Typography>
+                </Box>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0, sm: 2 }}>
+                  <FormControlLabel control={<Switch checked={form.all_menus} onChange={(e) => setForm((p) => (p ? { ...p, all_menus: e.target.checked } : p))} />}
+                    label="เห็นทุกเมนูที่ระดับนี้อนุญาต" />
+                  {form.access_level !== 'viewer' && form.access_level !== 'admin' ? (
+                    <FormControlLabel control={<Switch checked={form.default_writes} onChange={(e) => setForm((p) => (p ? { ...p, default_writes: e.target.checked, write_keys: e.target.checked ? [] : effectiveWrites } : p))} />}
+                      label={<Box><Typography variant="body2">ปุ่มแก้ไขตามค่าเริ่มต้นของระดับ</Typography><Typography variant="caption" color="text.secondary">ปิด = เลือกเองว่าเมนูไหนแก้ไขได้</Typography></Box>} />
+                  ) : null}
+                </Stack>
+                {MENU_GROUPS.map((g) => (
                   <Box key={g.key}>
-                    <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(g.titleKey, g.fallback)}</Typography>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
-                      {MENU_ITEMS.filter((m) => m.group === g.key).map((m) => {
-                        const allowed = allowedForLevel.includes(m.key);
-                        const isLocked = locked.includes(m.key);
-                        return (
-                          <FormControlLabel key={m.key} disabled={!allowed || isLocked}
-                            control={<Checkbox size="small" checked={isLocked || form.menu_keys.includes(m.key)} onChange={() => toggleMenu(m.key)} />}
-                            label={<Typography variant="body2">{t(m.labelKey, m.fallback)}{!allowed ? ' (เฉพาะผู้ดูแลระบบ)' : isLocked ? ' (บังคับ)' : ''}</Typography>} />
-                        );
-                      })}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 72px 88px', alignItems: 'center', columnGap: 1 }}>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(g.titleKey, g.fallback)}</Typography>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" textAlign="center">เห็น</Typography>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" textAlign="center">แก้ไขได้</Typography>
                     </Box>
+                    {MENU_ITEMS.filter((m) => m.group === g.key).map((m) => {
+                      const allowed = allowedForLevel.includes(m.key);
+                      const isLocked = locked.includes(m.key);
+                      const seen = isLocked || form.all_menus ? allowed : form.menu_keys.includes(m.key);
+                      const writable = Boolean(m.write) && writableForLevel.includes(m.key);
+                      const writeOn = form.access_level === 'admin' ? seen && Boolean(m.write) : effectiveWrites.includes(m.key);
+                      return (
+                        <Box key={m.key} sx={{ display: 'grid', gridTemplateColumns: '1fr 72px 88px', alignItems: 'center', columnGap: 1, opacity: allowed ? 1 : 0.5 }}>
+                          <Typography variant="body2" noWrap>{t(m.labelKey, m.fallback)}{!allowed ? ' (เฉพาะผู้ดูแลระบบ)' : isLocked ? ' (บังคับ)' : ''}</Typography>
+                          <Box textAlign="center">
+                            <Checkbox size="small" disabled={!allowed || isLocked || form.all_menus} checked={seen} onChange={() => toggleMenu(m.key)} inputProps={{ 'aria-label': `เห็น ${t(m.labelKey, m.fallback)}` }} />
+                          </Box>
+                          <Box textAlign="center">
+                            {m.write ? (
+                              <Checkbox size="small" disabled={!seen || !writable || form.access_level === 'admin'} checked={writeOn} onChange={() => toggleWrite(m.key)} inputProps={{ 'aria-label': `แก้ไขได้ ${t(m.labelKey, m.fallback)}` }} />
+                            ) : <Typography variant="caption" color="text.disabled">—</Typography>}
+                          </Box>
+                        </Box>
+                      );
+                    })}
                   </Box>
-                )) : null}
+                ))}
 
                 <Divider />
                 <Box>

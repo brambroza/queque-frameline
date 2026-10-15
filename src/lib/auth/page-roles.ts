@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type { AppRole } from '@/types/db';
 import { canManageSite, effectiveLevels, isAppRole, isReadOnly } from './levels';
-import { firstAllowedHref, resolveMenuAccess, type MenuAccess, type MenuKey } from './menu-registry';
+import { canWriteMenu, firstAllowedHref, resolveMenuAccess, type MenuAccess, type MenuKey } from './menu-registry';
 
 export type PageAccess = {
   /** Levels the API guard would see (a manager also counts as staff). */
@@ -13,6 +13,10 @@ export type PageAccess = {
   canManage: boolean;
   /** Every role held is read-only: hide every control that writes. */
   readOnly: boolean;
+  /** Menus whose write actions the user may use ("แก้ไขได้" per menu, union over roles). */
+  writeKeys: MenuKey[];
+  /** Whether the page that owns `key` should show its write actions. */
+  canWrite: (key: MenuKey) => boolean;
   access: MenuAccess;
 };
 
@@ -25,20 +29,35 @@ export async function getPageRoles(): Promise<PageAccess> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
-  const { data } = await supabase
-    .from('user_roles')
-    .select('roles(code,access_level,menu_keys,is_deleted)')
-    .eq('user_id', user.id)
-    .eq('is_deleted', false);
-  const live = (data ?? [])
-    .map((r) => r.roles as { code?: string | null; access_level?: string | null; menu_keys?: string[] | null; is_deleted?: boolean | null } | null)
-    .filter((r): r is { code: string | null; access_level: string; menu_keys: string[] | null; is_deleted: boolean | null } => Boolean(r) && isAppRole(r?.access_level) && !r?.is_deleted);
-  const defs = live.map((r) => ({ access_level: r.access_level as AppRole, menu_keys: r.menu_keys }));
+  type RoleCols = { code?: string | null; access_level?: string | null; menu_keys?: string[] | null; write_keys?: string[] | null; is_deleted?: boolean | null };
+  // `write_keys` comes from 202610150003; before it is applied, read without it (level defaults apply).
+  let rows: Array<{ roles: RoleCols | null }> | null = null;
+  for (const sel of ['roles(code,access_level,menu_keys,write_keys,is_deleted)', 'roles(code,access_level,menu_keys,is_deleted)']) {
+    const res = await supabase.from('user_roles').select(sel).eq('user_id', user.id).eq('is_deleted', false);
+    if (!res.error) {
+      rows = (res.data ?? []) as unknown as Array<{ roles: RoleCols | null }>;
+      break;
+    }
+  }
+  const live = (rows ?? [])
+    .map((r) => r.roles)
+    .filter((r): r is RoleCols & { access_level: AppRole } => Boolean(r) && isAppRole(r?.access_level) && !r?.is_deleted);
+  const defs = live.map((r) => ({ access_level: r.access_level, menu_keys: r.menu_keys, write_keys: r.write_keys, code: r.code }));
   const roleCodes = live.map((r) => r.code).filter((c): c is string => Boolean(c));
   const access = resolveMenuAccess(defs);
   const levels = defs.map((r) => r.access_level);
   const roles = effectiveLevels(levels);
-  return { roles, roleCodes, isAdmin: access.level === 'admin', canManage: canManageSite(levels), readOnly: isReadOnly(levels), access };
+  const writeKeys = access.writeKeys;
+  return {
+    roles,
+    roleCodes,
+    isAdmin: access.level === 'admin',
+    canManage: canManageSite(levels),
+    readOnly: isReadOnly(levels),
+    writeKeys,
+    canWrite: (key) => canWriteMenu(key, { writeKeys }),
+    access,
+  };
 }
 
 /**

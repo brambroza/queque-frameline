@@ -13,6 +13,8 @@ export type RoleDef = {
   description: string | null;
   access_level: AppRole;
   menu_keys: string[] | null;
+  /** Menus whose write actions members may use; null = the level's defaults. */
+  write_keys: string[] | null;
   /** Branches members may see; null = every branch. */
   branch_ids: string[] | null;
   can_export: boolean;
@@ -21,7 +23,7 @@ export type RoleDef = {
   sort_order: number;
 };
 
-export const ROLE_SELECT = 'id,code,name,description,access_level,menu_keys,branch_ids,can_export,multi_branch,is_system,sort_order';
+export const ROLE_SELECT = 'id,code,name,description,access_level,menu_keys,write_keys,branch_ids,can_export,multi_branch,is_system,sort_order';
 
 /** Role row by code, or null. */
 export async function findRoleByCode(client: SupabaseClient, code: string): Promise<RoleDef | null> {

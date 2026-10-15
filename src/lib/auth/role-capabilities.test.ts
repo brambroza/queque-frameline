@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isBranchCountAllowed, narrowBranchScope, parseBranchIdsParam, resolveCapabilities, validateRoleBranchIds, type RoleAccessDef } from './role-capabilities';
+import { applyStaffBranches, isBranchCountAllowed, narrowBranchScope, parseBranchIdsParam, resolveCapabilities, validateRoleBranchIds, type RoleAccessDef } from './role-capabilities';
 
 const A = '11111111-1111-1111-1111-111111111111';
 const B = '22222222-2222-2222-2222-222222222222';
@@ -115,5 +115,25 @@ describe('validateRoleBranchIds', () => {
 
   it('deduplicates a valid list', () => {
     expect(validateRoleBranchIds('staff', [A, A, B], [A, B])).toEqual({ ok: true, branchIds: [A, B] });
+  });
+});
+
+describe('applyStaffBranches', () => {
+  it('keeps the role scope when the staff member has no assignment', () => {
+    expect(applyStaffBranches(null, [], false)).toBeNull();
+    expect(applyStaffBranches([A], [], false)).toEqual([A]);
+  });
+
+  it('never limits an admin-level caller', () => {
+    expect(applyStaffBranches(null, [A], true)).toBeNull();
+  });
+
+  it('pins an unlimited role to the assigned branches', () => {
+    expect(applyStaffBranches(null, [A, A, B], false)).toEqual([A, B]);
+  });
+
+  it('intersects a limited role with the assignment (fail-closed when disjoint)', () => {
+    expect(applyStaffBranches([A, B], [B, C], false)).toEqual([B]);
+    expect(applyStaffBranches([A], [C], false)).toEqual([]);
   });
 });

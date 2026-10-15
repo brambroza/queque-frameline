@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteMenu } from '@/lib/auth/write-access';
 import { applyNullableBranchScope, assertBranchWritable } from '@/lib/auth/branch-scope';
 import { bookingResourceSchema } from '@/lib/booking/schemas';
 import { logCrud } from '@/lib/audit/activity-log';
@@ -84,7 +85,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, branchScope } = ctx;
+    assertWriteMenu(ctx, 'docks');
     const body = await req.json();
     const normalizedBody = {
       ...body,
@@ -158,7 +161,9 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, branchScope } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, branchScope } = ctx;
+    assertWriteMenu(ctx, 'docks');
     const body = await req.json();
     const id = String(body.id ?? '');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -243,7 +248,9 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const { supabase, user, profile } = await requireAuthContext({ roles: ['admin', 'manager'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile } = ctx;
+    assertWriteMenu(ctx, 'docks');
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });

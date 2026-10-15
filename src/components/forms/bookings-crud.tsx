@@ -52,7 +52,8 @@ async function patchBooking(body: Record<string, unknown>): Promise<PatchResult>
  * Bookings list page: filter strip, table with inline actions, create drawer,
  * detail drawer and the move dialog (date / time / resource in one step).
  */
-export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
+/** @param canWrite The role's "แก้ไขได้" switch on the queue menu; false = list + details only (server checks again). */
+export function BookingsCrud({ isAdmin, canWrite = true }: { isAdmin: boolean; canWrite?: boolean }) {
   const { t } = useTranslation('bookings');
   const { push } = useToast();
   // Topbar branch selection narrows the list; the API enforces the caller's own scope.
@@ -270,7 +271,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
       <PageHeader
         title={t('title_dock', 'คิวรับ-ส่งสินค้า')}
         description={t('subtitle_dock', 'คิวรับสินค้าของลูกค้าและคิวส่งสินค้าของ Supplier — ยืนยัน ออก DO เช็คอิน และเลื่อนคิว')}
-        action={
+        action={canWrite ? (
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button
               variant="outlined"
@@ -289,7 +290,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
               {t('create_queue', 'สร้างคิว')}
             </Button>
           </Stack>
-        }
+        ) : undefined}
       />
 
       <BookingsFilterBar
@@ -316,6 +317,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
         loading={loading}
         busy={saving}
         isAdmin={isAdmin}
+        readOnly={!canWrite}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         onStatus={requestStatus}
@@ -340,6 +342,7 @@ export function BookingsCrud({ isAdmin }: { isAdmin: boolean }) {
 
       <BookingEditDrawer
         booking={editTarget}
+        readOnly={!canWrite}
         saving={saving}
         siteName={siteName}
         onClose={() => setEditTarget(null)}

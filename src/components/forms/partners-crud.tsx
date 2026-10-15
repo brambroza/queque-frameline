@@ -23,10 +23,12 @@ const EMPTY: Form = { code: '', full_name: '', phone: '', email: '', address: ''
 const TYPE_LABEL: Record<PartnerType, string> = { customer: 'ลูกค้า', supplier: 'Supplier' };
 
 /** Partners: customers (pick up, SO) and suppliers (deliver, PO). Imports create them automatically by ERP code. */
-export function PartnersCrud({ isAdmin }: { isAdmin: boolean }) {
+export function PartnersCrud({ canWrite }: { canWrite: Record<PartnerType, boolean> }) {
   const { push } = useToast();
   const confirm = useConfirm();
   const [type, setType] = useState<PartnerType>('customer');
+  // Buttons follow the tab: a sales role may add customers but only read suppliers.
+  const isAdmin = canWrite[type];
   const [rows, setRows] = useState<Row[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);

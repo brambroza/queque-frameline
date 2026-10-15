@@ -51,6 +51,25 @@ export function resolveCapabilities(roles: RoleAccessDef[]): Capabilities {
 }
 
 /**
+ * Narrow a role-derived scope by the branches assigned to the staff member
+ * themselves (`staff_branches`, the "สาขาที่รับผิดชอบ" checkboxes on /portal/staff).
+ *
+ * - No staff assignment (empty list) = the role scope stands.
+ * - Admin-level callers are never limited (same rule as `resolveCapabilities`).
+ * - Otherwise the result is the intersection: a staff member may never see more
+ *   than their role allows, and never more than they were assigned.
+ *
+ * Mirrored by `is_branch_bound()` / `user_branch_ids()` in
+ * `202610150001_staff_branch_scope.sql`.
+ */
+export function applyStaffBranches(scope: string[] | null, staffBranchIds: string[], isAdmin: boolean): string[] | null {
+  const assigned = Array.from(new Set(staffBranchIds.filter(Boolean)));
+  if (isAdmin || assigned.length === 0) return scope;
+  if (scope === null) return assigned;
+  return assigned.filter((id) => scope.includes(id));
+}
+
+/**
  * Narrow the caller's scope to the branches a request asked for.
  *
  * @returns The scope to query with: the requested ids when given, else the caller's own scope.

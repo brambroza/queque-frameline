@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteAny, QUEUE_WRITE_MENUS } from '@/lib/auth/write-access';
 import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { plateChangeSchema } from '@/lib/booking/schemas';
@@ -15,7 +16,9 @@ import { safeNotifyStaffGroup } from '@/lib/line/notify';
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = auth;
+    assertWriteAny(auth, QUEUE_WRITE_MENUS);
     const { id } = await ctx.params;
     const parsed = plateChangeSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'ทะเบียนรถไม่ถูกต้อง' }, { status: 400 });

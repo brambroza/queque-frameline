@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteAny, QUEUE_WRITE_MENUS } from '@/lib/auth/write-access';
 import { logCrud } from '@/lib/audit/activity-log';
 import { assertRowBranch } from '@/lib/auth/branch-scope';
 import { actorFromRoles, getSiteSettings, logBooking } from '@/lib/booking/server';
@@ -12,7 +13,10 @@ import { deriveLinkToken } from '@/lib/tokens';
  * POST = regenerate: the previous link stops working.
  */
 async function handle(ctx: { params: Promise<{ id: string }> }, regenerate: boolean) {
-  const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+  const auth = await requireAuthContext({ roles: ['admin', 'staff'] });
+  const { supabase, user, profile, roles, branchScope } = auth;
+  // Viewing the link is a read; only regenerating needs the queue write switch.
+  if (regenerate) assertWriteAny(auth, QUEUE_WRITE_MENUS);
   const { id } = await ctx.params;
 
   const { data: booking } = await supabase

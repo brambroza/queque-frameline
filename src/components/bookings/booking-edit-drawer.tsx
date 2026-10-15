@@ -42,9 +42,11 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
  * driver link are handled here because they only concern this drawer.
  */
 export function BookingEditDrawer({
-  booking, saving, siteName, onClose, onStatus, onChanged, onSchedule, onPayment,
+  booking, saving, siteName, onClose, onStatus, onChanged, onSchedule, onPayment, readOnly = false,
 }: {
   booking: BookingRow | null;
+  /** No write switch on the queue menu: details, timeline, DO and the driver link stay readable; every control that changes the queue is hidden. */
+  readOnly?: boolean;
   saving: boolean;
   siteName: string;
   onClose: () => void;
@@ -189,7 +191,7 @@ export function BookingEditDrawer({
     }
   }
 
-  const next = b ? NEXT_STATUSES[b.status] ?? [] : [];
+  const next = b && !readOnly ? NEXT_STATUSES[b.status] ?? [] : [];
   const payment = b ? paymentOf(b) : null;
   const paymentBlocked = b ? isPaymentBlocked(b) : false;
   const paymentTarget: PaymentTarget | null = b?.document_id && b.external_documents
@@ -242,13 +244,13 @@ export function BookingEditDrawer({
                       v={
                         <Stack direction="row" spacing={0.75} alignItems="center">
                           <PaymentChip status={payment} />
-                          {paymentTarget && !terminal ? <Button size="small" onClick={() => onPayment(paymentTarget)}>แก้ไข</Button> : null}
+                          {paymentTarget && !terminal && !readOnly ? <Button size="small" onClick={() => onPayment(paymentTarget)}>แก้ไข</Button> : null}
                         </Stack>
                       }
                     />
                   ) : null}
                   <Row k="เลข DO" v={b.do_number ? <b>{b.do_number}</b> : 'ยังไม่ออก'} />
-                  {!terminal ? (
+                  {!terminal && !readOnly ? (
                     <Button size="small" variant="outlined" color="secondary" startIcon={<SwapHorizRoundedIcon />} sx={{ mt: 1 }} disabled={saving} onClick={() => onSchedule(b)}>
                       {MOVABLE.has(b.status) ? 'จัดตารางคิว — วัน / เวลา' : 'ปรับเวลาที่ท่า'}
                     </Button>
@@ -258,7 +260,7 @@ export function BookingEditDrawer({
                 <Box>
                   <Stack direction="row" alignItems="center" justifyContent="space-between">
                     <Typography variant="subtitle2" fontWeight={700}>รถและคนขับ</Typography>
-                    {!terminal ? (
+                    {!terminal && !readOnly ? (
                       <Button size="small" startIcon={<EditRoundedIcon />} onClick={() => { setPlateDraft(effectivePlate(b)); setPlateReason(''); setPlateOpen(true); }}>
                         แก้ทะเบียน
                       </Button>
@@ -374,8 +376,8 @@ export function BookingEditDrawer({
                     <Typography variant="caption" color="text.secondary">ใช้ได้ถึง {formatDateTimeDMY(link.expires_at)}</Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       <Button variant="contained" startIcon={<ContentCopyRoundedIcon />} onClick={() => void copyLink()}>คัดลอกลิงก์</Button>
-                      {link.liff_url ? <Button variant="outlined" color="success" disabled={sendingLine} onClick={() => void sendLine()}>{sendingLine ? 'กำลังส่ง…' : 'ส่งทาง LINE'}</Button> : null}
-                      <Button color="inherit" disabled={linkLoading} onClick={() => void loadLink(true)}>สร้างลิงก์ใหม่</Button>
+                      {link.liff_url && !readOnly ? <Button variant="outlined" color="success" disabled={sendingLine} onClick={() => void sendLine()}>{sendingLine ? 'กำลังส่ง…' : 'ส่งทาง LINE'}</Button> : null}
+                      {!readOnly ? <Button color="inherit" disabled={linkLoading} onClick={() => void loadLink(true)}>สร้างลิงก์ใหม่</Button> : null}
                     </Stack>
                   </>
                 ) : (
@@ -385,7 +387,7 @@ export function BookingEditDrawer({
             ) : null}
           </Box>
 
-          {CANCELLABLE.has(b.status) ? (
+          {CANCELLABLE.has(b.status) && !readOnly ? (
             <>
               <Divider />
               <Stack direction="row" justifyContent="flex-end" sx={{ px: 3, py: 1.5 }}>

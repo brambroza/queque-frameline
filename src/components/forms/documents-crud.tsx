@@ -84,7 +84,7 @@ const SOURCE_LABEL: Record<string, string> = { api: 'ERP', csv: 'CSV', manual: '
 export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
-  const { branches, branchId: scopedBranch, branchQuery } = useBranchScope();
+  const { branches, branchId: scopedBranch, branchQuery, scope: branchScope } = useBranchScope();
   const [status, setStatus] = useState('');
   const [payment, setPayment] = useState('');
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
@@ -256,6 +256,8 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
 
   // ── manual create / edit ───────────────────────────────────────────────────
   const needBranch = branches.length > 1;
+  // `branches` already holds only the branches this role may act on (/api/me-branches); with a single one there is nothing to choose.
+  const lockBranch = branches.length <= 1;
   const formValid = form.doc_no.trim() && form.partner_name.trim() && (!needBranch || form.branch_id);
   // Always preselect a branch: the topbar branch when one is chosen, otherwise the first (active) branch.
   const defaultBranch = scopedBranch || (branches.find((b) => b.active !== false) ?? branches[0])?.id || '';
@@ -472,7 +474,22 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             {editingId && detail?.source === 'api' ? <Alert severity="warning">เอกสารนี้มาจาก ERP — ค่าที่แก้ที่นี่จะถูกทับเมื่อ ERP ส่งเอกสารเลขนี้มาอีกครั้ง</Alert> : null}
-            <TextField select required={needBranch} size="small" label="สาขา / คลังที่รับ-ส่งสินค้า" value={form.branch_id} onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))} helperText={editingId ? 'เปลี่ยนสาขาไม่ได้ขณะมีคิวที่ยังไม่ปิด' : 'ลูกค้าจะเห็นเฉพาะท่าและเวลาทำการของสาขานี้'}>
+            <TextField
+              select
+              required={needBranch}
+              disabled={lockBranch}
+              size="small"
+              label="สาขา / คลังที่รับ-ส่งสินค้า"
+              value={form.branch_id}
+              onChange={(e) => setForm((p) => ({ ...p, branch_id: e.target.value }))}
+              helperText={
+                lockBranch && branchScope === 'branch'
+                  ? 'คุณมีสิทธิ์เฉพาะสาขานี้'
+                  : editingId
+                    ? 'เปลี่ยนสาขาไม่ได้ขณะมีคิวที่ยังไม่ปิด'
+                    : 'ลูกค้าจะเห็นเฉพาะท่าและเวลาทำการของสาขานี้'
+              }
+            >
               {branches.map((b) => <MenuItem key={b.id} value={b.id}>{b.branch_name}{b.active === false ? ' (ปิด)' : ''}</MenuItem>)}
             </TextField>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

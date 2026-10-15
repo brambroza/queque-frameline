@@ -8,6 +8,11 @@
  * the page needs, so a role below it can never be given the menu; a read-only
  * role may only be given menus marked `viewer`. Admin-level roles always keep
  * the staff screen so nobody can lock the site out of role management.
+ *
+ * Each menu also has a second switch, "แก้ไขได้" (`roles.write_keys`): which of
+ * the role's menus show their action buttons (add / edit / delete / status).
+ * Null = the level's defaults (`legacyWriteKeys`), the behaviour before the
+ * switch existed. API routes check the same list through `assertWriteMenu`.
  */
 import type { AppRole } from '@/types/db';
 import { highestLevel } from './levels';
@@ -29,6 +34,8 @@ export type MenuItemDef = {
   minLevel?: 'manager' | 'admin';
   /** A read-only (viewer) role may be given this menu: the page works on GET calls alone. */
   viewer?: boolean;
+  /** The page has buttons that write; `'admin'` = only admin-level roles may ever write here. */
+  write?: true | 'admin';
 };
 
 export const MENU_GROUPS: Array<{ key: MenuGroupKey; titleKey: string; fallback: string }> = [
@@ -39,27 +46,27 @@ export const MENU_GROUPS: Array<{ key: MenuGroupKey; titleKey: string; fallback:
 
 export const MENU_ITEMS: MenuItemDef[] = [
   { key: 'dashboard', href: '/portal/dashboard', labelKey: 'menu.dashboard', fallback: 'แดชบอร์ด', group: 'overview', viewer: true },
-  { key: 'dock_queues', href: '/portal/bookings', labelKey: 'menu.dock_queues', fallback: 'คิวรับ-ส่งสินค้า', group: 'overview' },
-  { key: 'sales_orders', href: '/portal/sales-orders', labelKey: 'menu.sales_orders', fallback: 'ใบสั่งขาย (SO)', group: 'overview' },
-  { key: 'purchase_orders', href: '/portal/purchase-orders', labelKey: 'menu.purchase_orders', fallback: 'ใบสั่งซื้อ (PO)', group: 'overview' },
+  { key: 'dock_queues', href: '/portal/bookings', labelKey: 'menu.dock_queues', fallback: 'คิวรับ-ส่งสินค้า', group: 'overview', write: true },
+  { key: 'sales_orders', href: '/portal/sales-orders', labelKey: 'menu.sales_orders', fallback: 'ใบสั่งขาย (SO)', group: 'overview', write: true },
+  { key: 'purchase_orders', href: '/portal/purchase-orders', labelKey: 'menu.purchase_orders', fallback: 'ใบสั่งซื้อ (PO)', group: 'overview', write: true },
   { key: 'calendar', href: '/portal/calendar', labelKey: 'menu.calendar', fallback: 'ปฏิทิน', group: 'overview', viewer: true },
-  { key: 'queue_board', href: '/portal/queue-board', labelKey: 'menu.queue_board', fallback: 'บอร์ดคิว', group: 'overview', viewer: true },
+  { key: 'queue_board', href: '/portal/queue-board', labelKey: 'menu.queue_board', fallback: 'บอร์ดคิว', group: 'overview', viewer: true, write: true },
   { key: 'queue_display', href: '/portal/queue-display', labelKey: 'menu.queue_display', fallback: 'จอแสดงคิว', group: 'overview' },
   { key: 'notifications', href: '/portal/notifications', labelKey: 'menu.notifications', fallback: 'การแจ้งเตือน', group: 'overview' },
-  { key: 'branches', href: '/portal/branches', labelKey: 'menu.branches', fallback: 'สาขา/ประตู', group: 'group_site' },
-  { key: 'vehicle_types', href: '/portal/services', labelKey: 'menu.vehicle_types', fallback: 'ประเภทรถ', group: 'group_site' },
-  { key: 'docks', href: '/portal/resources', labelKey: 'menu.docks', fallback: 'ท่ารับ-ส่งสินค้า', group: 'group_site' },
-  { key: 'working_hours', href: '/portal/working-hours', labelKey: 'menu.working_hours', fallback: 'เวลาทำการ', group: 'group_site' },
-  { key: 'holidays', href: '/portal/holidays', labelKey: 'menu.holidays', fallback: 'วันหยุด', group: 'group_site' },
-  { key: 'staff', href: '/portal/staff', labelKey: 'menu.staff', fallback: 'พนักงาน', group: 'group_site', minLevel: 'admin' },
-  { key: 'partners', href: '/portal/partners', labelKey: 'menu.partners', fallback: 'คู่ค้า', group: 'group_site' },
+  { key: 'branches', href: '/portal/branches', labelKey: 'menu.branches', fallback: 'สาขา/ประตู', group: 'group_site', write: 'admin' },
+  { key: 'vehicle_types', href: '/portal/services', labelKey: 'menu.vehicle_types', fallback: 'ประเภทรถ', group: 'group_site', write: true },
+  { key: 'docks', href: '/portal/resources', labelKey: 'menu.docks', fallback: 'ท่ารับ-ส่งสินค้า', group: 'group_site', write: true },
+  { key: 'working_hours', href: '/portal/working-hours', labelKey: 'menu.working_hours', fallback: 'เวลาทำการ', group: 'group_site', write: true },
+  { key: 'holidays', href: '/portal/holidays', labelKey: 'menu.holidays', fallback: 'วันหยุด', group: 'group_site', write: true },
+  { key: 'staff', href: '/portal/staff', labelKey: 'menu.staff', fallback: 'พนักงาน', group: 'group_site', minLevel: 'admin', write: 'admin' },
+  { key: 'partners', href: '/portal/partners', labelKey: 'menu.partners', fallback: 'คู่ค้า', group: 'group_site', write: true },
   { key: 'reports', href: '/portal/reports', labelKey: 'menu.reports', fallback: 'รายงาน', group: 'group_insights', minLevel: 'manager', viewer: true },
   { key: 'activity_logs', href: '/portal/activity-logs', labelKey: 'menu.activity_logs', fallback: 'ประวัติการใช้งาน', group: 'group_insights', minLevel: 'admin' },
-  { key: 'site_settings', href: '/portal/site-settings', labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', group: 'group_insights' },
-  { key: 'line_settings', href: '/portal/line-settings', labelKey: 'menu.line_settings', fallback: 'เชื่อมต่อ LINE', group: 'group_insights', minLevel: 'admin' },
-  { key: 'api_keys', href: '/portal/api-keys', labelKey: 'menu.api_keys', fallback: 'เชื่อมต่อ ERP', group: 'group_insights', minLevel: 'admin' },
-  { key: 'settings', href: '/portal/settings', labelKey: 'menu.settings', fallback: 'ข้อมูลคลัง', group: 'group_insights' },
-  { key: 'translations', href: '/portal/translations', labelKey: 'menu.translations', fallback: 'การแปลภาษา', group: 'group_insights', minLevel: 'admin' },
+  { key: 'site_settings', href: '/portal/site-settings', labelKey: 'menu.site_settings', fallback: 'ตั้งค่าระบบคิว', group: 'group_insights', write: true },
+  { key: 'line_settings', href: '/portal/line-settings', labelKey: 'menu.line_settings', fallback: 'เชื่อมต่อ LINE', group: 'group_insights', minLevel: 'admin', write: 'admin' },
+  { key: 'api_keys', href: '/portal/api-keys', labelKey: 'menu.api_keys', fallback: 'เชื่อมต่อ ERP', group: 'group_insights', minLevel: 'admin', write: 'admin' },
+  { key: 'settings', href: '/portal/settings', labelKey: 'menu.settings', fallback: 'ข้อมูลคลัง', group: 'group_insights', write: 'admin' },
+  { key: 'translations', href: '/portal/translations', labelKey: 'menu.translations', fallback: 'การแปลภาษา', group: 'group_insights', minLevel: 'admin', write: 'admin' },
 ];
 
 export const MENU_KEYS: MenuKey[] = MENU_ITEMS.map((m) => m.key);
@@ -99,14 +106,14 @@ export function menuKeysOfRole(role: { access_level: AppRole; menu_keys: string[
   return MENU_KEYS.filter((k) => base.includes(k) || locked.includes(k));
 }
 
-export type MenuAccess = { level: AppRole; menuKeys: MenuKey[] };
+export type MenuAccess = { level: AppRole; menuKeys: MenuKey[]; writeKeys: MenuKey[] };
 
-/** Effective access of a user holding these roles: highest level + union of menus. */
-export function resolveMenuAccess(roles: Array<{ access_level: AppRole; menu_keys: string[] | null | undefined }>): MenuAccess {
+/** Effective access of a user holding these roles: highest level + union of menus and of writable menus. */
+export function resolveMenuAccess(roles: RoleWriteDef[]): MenuAccess {
   const level = highestLevel(roles.map((r) => r.access_level));
   const union = new Set<MenuKey>();
   roles.forEach((r) => menuKeysOfRole(r).forEach((k) => union.add(k)));
-  return { level, menuKeys: MENU_KEYS.filter((k) => union.has(k)) };
+  return { level, menuKeys: MENU_KEYS.filter((k) => union.has(k)), writeKeys: resolveWriteKeys(roles) };
 }
 
 /** Menu entry that owns a portal path (`/portal/bookings/abc` → the `dock_queues` item), or null. */
@@ -133,5 +140,73 @@ export function validateRoleMenuKeys(level: AppRole, keys: unknown): { ok: true;
   const allowed = menuKeysForLevel(level);
   const denied = (keys as MenuKey[]).filter((k) => !allowed.includes(k));
   if (denied.length) return { ok: false, error: `ระดับสิทธิ์นี้เปิดเมนูนี้ไม่ได้: ${denied.join(', ')}` };
+  return { ok: true, keys: MENU_KEYS.filter((k) => (keys as MenuKey[]).includes(k)) };
+}
+
+/** Menus whose page has write actions at all. */
+export const WRITABLE_MENUS: MenuKey[] = MENU_ITEMS.filter((m) => m.write).map((m) => m.key);
+
+/** Menus a role of this level may be given "แก้ไขได้" on (admin-only writes need admin level). */
+export function writeKeysForLevel(level: AppRole): MenuKey[] {
+  if (level === 'viewer') return [];
+  return MENU_ITEMS.filter((m) => m.write === true || (m.write === 'admin' && level === 'admin')).map((m) => m.key);
+}
+
+/**
+ * Defaults before the switch existed: staff work the queues, managers also the
+ * warehouse set-up, the sales / purchasing roles their own documents and partners.
+ */
+const LEGACY_LEVEL_WRITES: Record<AppRole, MenuKey[]> = {
+  admin: WRITABLE_MENUS,
+  manager: ['dock_queues', 'queue_board', 'partners', 'vehicle_types', 'docks', 'working_hours', 'holidays', 'site_settings'],
+  staff: ['dock_queues', 'queue_board'],
+  viewer: [],
+};
+const LEGACY_CODE_WRITES: Record<string, MenuKey[]> = {
+  sales_admin: ['sales_orders', 'partners'],
+  purchasing: ['purchase_orders', 'partners'],
+};
+
+export type RoleWriteDef = { access_level: AppRole; menu_keys: string[] | null | undefined; write_keys?: string[] | null; code?: string | null };
+
+/** Write list a role with no explicit `write_keys` gets. */
+export function legacyWriteKeys(role: Pick<RoleWriteDef, 'access_level' | 'code'>): MenuKey[] {
+  const byCode = role.code ? LEGACY_CODE_WRITES[role.code] ?? [] : [];
+  return MENU_KEYS.filter((k) => LEGACY_LEVEL_WRITES[role.access_level].includes(k) || byCode.includes(k));
+}
+
+/**
+ * Menus one role may write on: its explicit list (or the level defaults),
+ * clamped to the menus it sees and to what its level may ever write. Admin
+ * writes everywhere it sees; a viewer nowhere.
+ */
+export function writeKeysOfRole(role: RoleWriteDef): MenuKey[] {
+  if (role.access_level === 'viewer') return [];
+  const visible = menuKeysOfRole(role);
+  const allowed = writeKeysForLevel(role.access_level);
+  const wanted = role.access_level === 'admin' || role.write_keys == null ? legacyWriteKeys(role) : role.write_keys.filter(isMenuKey);
+  return MENU_KEYS.filter((k) => visible.includes(k) && allowed.includes(k) && wanted.includes(k));
+}
+
+/** Union of writable menus over every role the user holds. */
+export function resolveWriteKeys(roles: RoleWriteDef[]): MenuKey[] {
+  const union = new Set<MenuKey>();
+  roles.forEach((r) => writeKeysOfRole(r).forEach((k) => union.add(k)));
+  return MENU_KEYS.filter((k) => union.has(k));
+}
+
+/** Whether the caller may use the write actions of this menu. */
+export function canWriteMenu(key: MenuKey, caller: { writeKeys: readonly string[] }): boolean {
+  return caller.writeKeys.includes(key);
+}
+
+/** Validate a "แก้ไขได้" list an admin submitted for a role (null = level defaults). */
+export function validateRoleWriteKeys(level: AppRole, keys: unknown): { ok: true; keys: MenuKey[] } | { ok: false; error: string } {
+  if (!Array.isArray(keys)) return { ok: false, error: 'write_keys ต้องเป็นรายการ' };
+  const bad = keys.filter((k) => !isMenuKey(k));
+  if (bad.length) return { ok: false, error: `ไม่รู้จักเมนู: ${bad.join(', ')}` };
+  const allowed = writeKeysForLevel(level);
+  const denied = (keys as MenuKey[]).filter((k) => !allowed.includes(k));
+  if (denied.length) return { ok: false, error: `ระดับสิทธิ์นี้แก้ไขเมนูนี้ไม่ได้: ${denied.join(', ')}` };
   return { ok: true, keys: MENU_KEYS.filter((k) => (keys as MenuKey[]).includes(k)) };
 }

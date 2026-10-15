@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAuthContext, getErrorStatus } from '@/lib/auth/context';
+import { assertWriteAny, QUEUE_WRITE_MENUS } from '@/lib/auth/write-access';
 import { logCrud } from '@/lib/audit/activity-log';
 import { applyBranchScope, assertBranchAllowed, assertRowBranch } from '@/lib/auth/branch-scope';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -100,7 +101,9 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = ctx;
+    assertWriteAny(ctx, QUEUE_WRITE_MENUS);
     const parsed = dockBookingSchema.safeParse(await req.json());
     if (!parsed.success) return invalidPayload(parsed.error.issues);
     const payload = parsed.data;
@@ -342,7 +345,9 @@ export async function POST(req: Request) {
 /** Status transition. Plate edits and reschedules have their own routes under /api/bookings/[id]. */
 export async function PATCH(req: Request) {
   try {
-    const { supabase, user, profile, roles, branchScope } = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const ctx = await requireAuthContext({ roles: ['admin', 'staff'] });
+    const { supabase, user, profile, roles, branchScope } = ctx;
+    assertWriteAny(ctx, QUEUE_WRITE_MENUS);
     const parsed = bookingStatusPatchSchema.safeParse(await req.json());
     if (!parsed.success) {
       const reasonIssue = parsed.error.issues.find((i) => i.path[0] === 'cancel_reason');

@@ -33,7 +33,7 @@ function Plate({ b }: { b: BookingRow }) {
  * one tap away; everything else lives in the detail drawer (`onEdit`).
  */
 export function BookingsTable({
-  rows, total, page, pageSize, loading, busy, isAdmin, onPageChange, onPageSizeChange, onStatus, onEdit, onCreate,
+  rows, total, page, pageSize, loading, busy, isAdmin, readOnly = false, onPageChange, onPageSizeChange, onStatus, onEdit, onCreate,
 }: {
   rows: BookingRow[];
   total: number;
@@ -42,13 +42,15 @@ export function BookingsTable({
   loading: boolean;
   busy: boolean;
   isAdmin: boolean;
+  /** No write switch on the queue menu: rows open the drawer but carry no status button. */
+  readOnly?: boolean;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   onStatus: (b: BookingRow, status: string) => void;
   onEdit: (b: BookingRow) => void;
   onCreate: () => void;
 }) {
-  const primaryOf = (b: BookingRow) => (NEXT_STATUSES[b.status] ?? []).find((o) => o.primary && (!o.adminOnly || isAdmin));
+  const primaryOf = (b: BookingRow) => (readOnly ? undefined : (NEXT_STATUSES[b.status] ?? []).find((o) => o.primary && (!o.adminOnly || isAdmin)));
   /** Approval is locked while the queue's SO is unpaid; the row opens the drawer where payment is recorded. */
   const lockedOf = (b: BookingRow) => b.status === 'pending' && isPaymentBlocked(b);
 
@@ -58,7 +60,7 @@ export function BookingsTable({
   if (!loading && rows.length === 0) {
     return (
       <Card>
-        <EmptyState icon="🚚" title="ไม่พบคิวตามเงื่อนไขนี้" description="ลองเปลี่ยนช่วงวันที่หรือสถานะ หรือสร้างคิวใหม่ให้ลูกค้า / Supplier" actionLabel="สร้างคิว" onAction={onCreate} />
+        <EmptyState icon="🚚" title="ไม่พบคิวตามเงื่อนไขนี้" description="ลองเปลี่ยนช่วงวันที่หรือสถานะ หรือสร้างคิวใหม่ให้ลูกค้า / Supplier" actionLabel={readOnly ? undefined : 'สร้างคิว'} onAction={readOnly ? undefined : onCreate} />
       </Card>
     );
   }

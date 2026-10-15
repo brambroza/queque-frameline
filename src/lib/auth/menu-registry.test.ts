@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MENU_KEYS, NO_ACCESS_PATH, firstAllowedHref, menuItemForPath, menuKeyForPath, menuKeysForLevel, menuKeysOfRole, resolveMenuAccess, validateRoleMenuKeys,
+  MENU_KEYS, NO_ACCESS_PATH, WRITABLE_MENUS, canWriteMenu, firstAllowedHref, legacyWriteKeys, menuItemForPath, menuKeyForPath, menuKeysForLevel, menuKeysOfRole,
+  resolveMenuAccess, resolveWriteKeys, validateRoleMenuKeys, validateRoleWriteKeys, writeKeysForLevel, writeKeysOfRole,
 } from './menu-registry';
 
 describe('menuKeysForLevel', () => {
@@ -56,16 +57,16 @@ describe('resolveMenuAccess', () => {
       { access_level: 'staff', menu_keys: ['queue_board'] },
       { access_level: 'staff', menu_keys: ['sales_orders'] },
     ]);
-    expect(access).toEqual({ level: 'staff', menuKeys: ['sales_orders', 'queue_board'] });
+    expect(access).toEqual({ level: 'staff', menuKeys: ['sales_orders', 'queue_board'], writeKeys: ['queue_board'] });
     expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'admin', menu_keys: null }]).level).toBe('admin');
-    expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'manager', menu_keys: ['reports'] }])).toEqual({ level: 'manager', menuKeys: ['reports'] });
+    expect(resolveMenuAccess([{ access_level: 'staff', menu_keys: [] }, { access_level: 'manager', menu_keys: ['reports'] }])).toEqual({ level: 'manager', menuKeys: ['reports'], writeKeys: [] });
     expect(resolveMenuAccess([{ access_level: 'viewer', menu_keys: null }]).level).toBe('viewer');
     // A viewer role next to a working role does not make the user read-only.
     expect(resolveMenuAccess([{ access_level: 'viewer', menu_keys: null }, { access_level: 'staff', menu_keys: ['dock_queues'] }]).level).toBe('staff');
   });
 
   it('no roles = staff level with no menus', () => {
-    expect(resolveMenuAccess([])).toEqual({ level: 'staff', menuKeys: [] });
+    expect(resolveMenuAccess([])).toEqual({ level: 'staff', menuKeys: [], writeKeys: [] });
   });
 });
 
@@ -104,5 +105,65 @@ describe('validateRoleMenuKeys', () => {
 
   it('accepts and orders a valid list', () => {
     expect(validateRoleMenuKeys('admin', ['reports', 'dashboard'])).toEqual({ ok: true, keys: ['dashboard', 'reports'] });
+  });
+});
+
+describe('writeKeysForLevel / legacyWriteKeys', () => {
+  it('viewer writes nowhere, staff / manager everywhere but admin-only screens, admin everywhere', () => {
+    expect(writeKeysForLevel('viewer')).toEqual([]);
+    expect(writeKeysForLevel('staff')).not.toContain('staff');
+    expect(writeKeysForLevel('staff')).toContain('docks');
+    expect(writeKeysForLevel('admin')).toEqual(WRITABLE_MENUS);
+  });
+
+  it('level defaults match the behaviour before the switch existed', () => {
+    expect(legacyWriteKeys({ access_level: 'staff', code: 'wh_admin' })).toEqual(['dock_queues', 'queue_board']);
+    expect(legacyWriteKeys({ access_level: 'staff', code: 'sales_admin' })).toEqual(['dock_queues', 'sales_orders', 'queue_board', 'partners']);
+    expect(legacyWriteKeys({ access_level: 'manager', code: 'wh_manager' })).toContain('docks');
+    expect(legacyWriteKeys({ access_level: 'manager', code: 'wh_manager' })).not.toContain('sales_orders');
+    expect(legacyWriteKeys({ access_level: 'viewer', code: 'director' })).toEqual([]);
+  });
+});
+
+describe('writeKeysOfRole / resolveWriteKeys', () => {
+  it('null write_keys = level defaults inside the visible menus', () => {
+    expect(writeKeysOfRole({ access_level: 'staff', code: 'wh_admin', menu_keys: ['dock_queues', 'calendar'], write_keys: null })).toEqual(['dock_queues']);
+    expect(writeKeysOfRole({ access_level: 'staff', code: 'sales_admin', menu_keys: ['sales_orders', 'partners'], write_keys: null })).toEqual(['sales_orders', 'partners']);
+  });
+
+  it('an explicit list is clamped to visible menus and to what the level may write', () => {
+    expect(writeKeysOfRole({ access_level: 'staff', code: 'x', menu_keys: ['sales_orders', 'docks'], write_keys: ['sales_orders', 'docks', 'staff', 'purchase_orders'] })).toEqual(['sales_orders', 'docks']);
+    expect(writeKeysOfRole({ access_level: 'staff', code: 'x', menu_keys: ['sales_orders'], write_keys: [] })).toEqual([]);
+  });
+
+  it('admin writes on every menu it sees; viewer never', () => {
+    expect(writeKeysOfRole({ access_level: 'admin', code: 'admin', menu_keys: null, write_keys: [] })).toEqual(WRITABLE_MENUS);
+    expect(writeKeysOfRole({ access_level: 'viewer', code: 'director', menu_keys: null, write_keys: ['dashboard', 'queue_board'] })).toEqual([]);
+  });
+
+  it('unions across roles and feeds canWriteMenu', () => {
+    const keys = resolveWriteKeys([
+      { access_level: 'staff', code: 'a', menu_keys: ['sales_orders'], write_keys: ['sales_orders'] },
+      { access_level: 'staff', code: 'b', menu_keys: ['partners'], write_keys: ['partners'] },
+    ]);
+    expect(keys).toEqual(['sales_orders', 'partners']);
+    expect(canWriteMenu('partners', { writeKeys: keys })).toBe(true);
+    expect(canWriteMenu('docks', { writeKeys: keys })).toBe(false);
+    expect(resolveMenuAccess([{ access_level: 'staff', code: 'a', menu_keys: ['sales_orders'], write_keys: ['sales_orders'] }]).writeKeys).toEqual(['sales_orders']);
+  });
+});
+
+describe('validateRoleWriteKeys', () => {
+  it('rejects unknown keys, non-writable menus and admin-only writes on a staff role', () => {
+    expect(validateRoleWriteKeys('staff', 'x').ok).toBe(false);
+    expect(validateRoleWriteKeys('staff', ['nope']).ok).toBe(false);
+    expect(validateRoleWriteKeys('staff', ['dashboard']).ok).toBe(false);
+    expect(validateRoleWriteKeys('staff', ['staff']).ok).toBe(false);
+    expect(validateRoleWriteKeys('viewer', ['dock_queues']).ok).toBe(false);
+  });
+
+  it('accepts and orders a valid list', () => {
+    expect(validateRoleWriteKeys('staff', ['partners', 'dock_queues'])).toEqual({ ok: true, keys: ['dock_queues', 'partners'] });
+    expect(validateRoleWriteKeys('admin', ['staff'])).toEqual({ ok: true, keys: ['staff'] });
   });
 });

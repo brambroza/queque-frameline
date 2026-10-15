@@ -4,7 +4,8 @@ import type { AppRole } from '@/types/db';
 import { AuthError } from './errors';
 import type { BranchScope } from './branch-scope';
 import { effectiveLevels, isAppRole } from './levels';
-import { ROLE_CAPABILITY_SELECT, resolveCapabilities, type RoleAccessDef } from './role-capabilities';
+import { ROLE_CAPABILITY_SELECT, applyStaffBranches, resolveCapabilities, type RoleAccessDef } from './role-capabilities';
+import { resolveWriteKeys, type MenuKey, type RoleWriteDef } from './menu-registry';
 
 export { AuthError, isAppRole };
 export type { BranchScope };
@@ -36,6 +37,27 @@ function pickRoleIdsForShop(
     .filter((r) => !shopId || !r.shop_id || r.shop_id === shopId)
     .map((r) => r.role_id)
     .filter((id): id is string => Boolean(id));
+}
+
+/**
+ * Branches assigned to the caller as a staff member (`staff_branches`, live rows only).
+ * Empty when the user has no staff row or no assignment.
+ */
+async function readStaffBranchIds(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, shopId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('staff')
+    .select('staff_branches(branch_id, is_deleted)')
+    .eq('user_id', userId)
+    .eq('shop_id', shopId)
+    .eq('is_deleted', false);
+  if (error || !data) return [];
+  const ids: string[] = [];
+  (data as Array<{ staff_branches: Array<{ branch_id: string | null; is_deleted: boolean | null }> | null }>).forEach((row) => {
+    (row.staff_branches ?? []).forEach((sb) => {
+      if (!sb.is_deleted && sb.branch_id) ids.push(sb.branch_id);
+    });
+  });
+  return ids;
 }
 
 /**
@@ -118,29 +140,33 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   let roles: AppRole[] = [];
   let roleCodes: string[] = [];
   let accessDefs: RoleAccessDef[] = [];
+  let writeDefs: RoleWriteDef[] = [];
   if (roleIds.length > 0) {
-    type RoleRow = { code: string | null; access_level: string | null; branch_ids?: string[] | null; can_export?: boolean | null; multi_branch?: boolean | null };
-    const withCaps = await supabase
-      .from('roles')
-      .select(`code, access_level, ${ROLE_CAPABILITY_SELECT}`)
-      .in('id', roleIds)
-      .eq('is_deleted', false);
-    let defs = (withCaps.data ?? []) as unknown as RoleRow[];
-    if (withCaps.error) {
-      // Capability columns come from 202609290001; until it is applied, read the
-      // role tiers alone so the portal keeps working (everyone unlimited, as before).
-      const plain = await supabase.from('roles').select('code, access_level').in('id', roleIds).eq('is_deleted', false);
-      if (plain.error) throw new AuthError('Unable to read role definitions', 403);
-      defs = (plain.data ?? []) as RoleRow[];
+    type RoleRow = { code: string | null; access_level: string | null; menu_keys?: string[] | null; write_keys?: string[] | null; branch_ids?: string[] | null; can_export?: boolean | null; multi_branch?: boolean | null };
+    // Column sets by migration: write_keys (202610150003) > capabilities (202609290001) > tiers only.
+    // Until a migration is applied, the narrower select keeps the portal working with the older behaviour.
+    const selects = [
+      `code, access_level, menu_keys, write_keys, ${ROLE_CAPABILITY_SELECT}`,
+      `code, access_level, menu_keys, ${ROLE_CAPABILITY_SELECT}`,
+      'code, access_level, menu_keys',
+    ];
+    let defs: RoleRow[] | null = null;
+    for (const sel of selects) {
+      const res = await supabase.from('roles').select(sel).in('id', roleIds).eq('is_deleted', false);
+      if (!res.error) {
+        defs = (res.data ?? []) as unknown as RoleRow[];
+        break;
+      }
     }
+    if (!defs) throw new AuthError('Unable to read role definitions', 403);
     roleCodes = defs.map((r) => r.code).filter((c): c is string => Boolean(c));
     // Route guards check the access level, so a custom role ("gate", "finance")
     // acts as the tier it was created with. A manager also counts as staff; a
     // viewer counts as nothing else, so only guards that name it let it in.
     roles = effectiveLevels(defs.map((r) => r.access_level).filter(isAppRole));
-    accessDefs = defs
-      .filter((r): r is RoleRow & { access_level: AppRole } => isAppRole(r.access_level))
-      .map((r) => ({ access_level: r.access_level, branch_ids: r.branch_ids, can_export: r.can_export, multi_branch: r.multi_branch }));
+    const live = defs.filter((r): r is RoleRow & { access_level: AppRole } => isAppRole(r.access_level));
+    accessDefs = live.map((r) => ({ access_level: r.access_level, branch_ids: r.branch_ids, can_export: r.can_export, multi_branch: r.multi_branch }));
+    writeDefs = live.map((r) => ({ access_level: r.access_level, menu_keys: r.menu_keys, write_keys: r.write_keys, code: r.code }));
   }
 
   if (opts?.roles?.length && !ensureRole(roles, opts.roles)) {
@@ -148,10 +174,17 @@ export async function requireAuthContext(opts?: { roles?: AppRole[] }) {
   }
 
   // Branches this caller may read/write (`null` = every branch) and the role switches.
-  const capabilities = resolveCapabilities(accessDefs);
-  const branchScope: BranchScope = capabilities.branchScope;
+  const roleCapabilities = resolveCapabilities(accessDefs);
+  // A staff member may additionally be pinned to branches on /portal/staff
+  // ("สาขาที่รับผิดชอบ"); that list narrows the role scope further. Read errors
+  // fall back to the role scope so a missing table never widens access by throwing.
+  const staffBranchIds = await readStaffBranchIds(supabase, user.id, tenantProfile.shop_id);
+  const branchScope: BranchScope = applyStaffBranches(roleCapabilities.branchScope, staffBranchIds, roles.includes('admin'));
+  const capabilities = { ...roleCapabilities, branchScope };
+  // Menus whose write actions the caller may use ("แก้ไขได้" per menu, union over roles).
+  const writeKeys: MenuKey[] = resolveWriteKeys(writeDefs);
 
-  return { supabase, user, profile: tenantProfile, roles, roleCodes, branchScope, capabilities };
+  return { supabase, user, profile: tenantProfile, roles, roleCodes, branchScope, capabilities, writeKeys };
 }
 
 /**

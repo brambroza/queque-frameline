@@ -62,7 +62,8 @@ const EMPTY_DRAFT: Draft = {
   active: true,
 };
 
-export function WorkingHoursCrud() {
+/** @param canWrite The role's "แก้ไขได้" switch on this menu; false = list only (server checks again). */
+export function WorkingHoursCrud({ canWrite = true }: { canWrite?: boolean }) {
   const { push } = useToast();
   const confirm = useConfirm();
   const [rows, setRows] = useState<WorkingHour[]>([]);
@@ -205,7 +206,7 @@ export function WorkingHoursCrud() {
           <h3 className="text-sm font-semibold text-slate-700">จัดการวันทำงาน</h3>
           <p className="text-xs text-slate-500 sm:hidden">{rows.length} รายการ</p>
         </div>
-        <button className="btn-primary min-h-[44px] sm:min-h-0" onClick={openCreate}>เพิ่มวันทำงาน</button>
+        {canWrite ? <button className="btn-primary min-h-[44px] sm:min-h-0" onClick={openCreate}>เพิ่มวันทำงาน</button> : null}
       </div>
 
       <div className="card p-4">
@@ -213,8 +214,8 @@ export function WorkingHoursCrud() {
           <EmptyState
             title="ยังไม่ได้ตั้งเวลาทำการ"
             description="ถ้าไม่มีเวลาทำการ ระบบจะถือว่าร้านปิดทุกวัน และลูกค้าจะจองคิวไม่ได้เลย"
-            actionLabel="ตั้งเวลาทำการ"
-            onAction={openCreate}
+            actionLabel={canWrite ? 'ตั้งเวลาทำการ' : undefined}
+            onAction={canWrite ? openCreate : undefined}
             icon="🕘"
           />
         ) : (
@@ -235,8 +236,8 @@ export function WorkingHoursCrud() {
                   { icon: <LocalCafeRoundedIcon />, value: r.break_start ? `${String(r.break_start).slice(0, 5)}–${String(r.break_end ?? '').slice(0, 5)}` : '-', label: 'พัก' },
                   { icon: <TimerRoundedIcon />, value: `${r.slot_interval_minutes} นาที`, label: 'ต่อ slot' },
                 ]}
-                onEdit={() => openEdit(r)}
-                onDelete={() => void onDelete(r)}
+                onEdit={canWrite ? () => openEdit(r) : undefined}
+                onDelete={canWrite ? () => void onDelete(r) : undefined}
               />
             )}
             sx={{ display: { xs: 'flex', sm: 'none' }, mx: -2, mt: -2, p: 1.5, bgcolor: 'action.hover' }}
@@ -266,12 +267,12 @@ export function WorkingHoursCrud() {
                   <td className="px-2 py-2">{r.direction === 'outbound' ? 'รับสินค้า' : r.direction === 'inbound' ? 'ส่งสินค้า' : 'รับ + ส่ง'}</td>
                   <td className="px-2 py-2">{r.active ? 'เปิดใช้งาน' : 'ปิด'}</td>
                   <td className="px-2 py-2 text-right">
-                    <ActionIconGroup
+                    {canWrite ? <ActionIconGroup
                       actions={[
                         { key: 'edit', icon: <EditOutlinedIcon fontSize="small" />, labelKey: 'common.edit', fallbackLabel: 'Edit', onClick: () => openEdit(r) },
                         { key: 'delete', icon: <DeleteOutlineIcon fontSize="small" />, labelKey: 'common.delete', fallbackLabel: 'Delete', color: 'error', onClick: () => void onDelete(r) },
                       ]}
-                    />
+                    /> : null}
                   </td>
                 </tr>
               ))}
