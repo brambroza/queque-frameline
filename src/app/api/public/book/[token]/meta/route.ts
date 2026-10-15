@@ -20,7 +20,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     const { doc } = resolved;
     const direction = doc.doc_type === 'so' ? 'outbound' : 'inbound';
 
-    const [{ data: shop }, { data: branch }, settings, { data: vehicles }, { data: bookings }, line, { data: partner }] = await Promise.all([
+    const [{ data: shop }, { data: branch }, settings, { data: vehicles }, { data: bookings, error: bookingsError }, line, { data: partner }] = await Promise.all([
       admin.from('shops').select('name,phone,address,logo_url').eq('id', doc.shop_id).maybeSingle(),
       doc.branch_id ? admin.from('branches').select('branch_name,address,phone').eq('id', doc.branch_id).eq('shop_id', doc.shop_id).maybeSingle() : Promise.resolve({ data: null as { branch_name: string; address: string | null; phone: string | null } | null }),
       getSiteSettings(admin, doc.shop_id),
@@ -36,6 +36,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
       getLineConfig(admin, doc.shop_id),
       doc.partner_id ? admin.from('customers').select('line_users(display_name)').eq('id', doc.partner_id).eq('shop_id', doc.shop_id).maybeSingle() : Promise.resolve({ data: null as unknown }),
     ]);
+    // A failed queue query must not look like "no queue yet" — the page would offer the booking form again.
+    if (bookingsError) throw bookingsError;
     const linkedName = ((partner as { line_users?: { display_name?: string | null } | null } | null)?.line_users?.display_name) ?? null;
     const paymentPending = !isPaymentCleared(doc.doc_type, doc.payment_status);
 

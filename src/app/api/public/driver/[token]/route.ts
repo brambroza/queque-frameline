@@ -17,12 +17,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ token: string 
     if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     const { booking: ref } = resolved;
 
-    const [{ data: booking }, { data: shop }, settings, line] = await Promise.all([
+    const [{ data: booking, error: bookingError }, { data: shop }, settings, line] = await Promise.all([
       admin.from('bookings').select(`${PUBLIC_BOOKING_SELECT},driver_line_user_id,line_users!bookings_driver_line_user_id_fkey(display_name)`).eq('id', ref.id).eq('shop_id', ref.shop_id).maybeSingle(),
       admin.from('shops').select('name,phone,address').eq('id', ref.shop_id).maybeSingle(),
       getSiteSettings(admin, ref.shop_id),
       getLineConfig(admin, ref.shop_id),
     ]);
+    // Query failure (e.g. schema drift) is a server error, not a missing queue.
+    if (bookingError) throw bookingError;
     if (!booking) return NextResponse.json({ error: 'ไม่พบคิว' }, { status: 404 });
 
     const { data: branchRef } = await admin.from('bookings').select('branch_id').eq('id', ref.id).eq('shop_id', ref.shop_id).maybeSingle();
