@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
 import { PLATE_FORMAT_INFO, formatPlateInput, matchesPlateFormat, toPlateFormat, type PlateFormat } from '@/lib/booking/plate';
 import { BookingCard } from './booking-card';
 import { LineBanner, type LineMeta } from './line-banner';
@@ -25,7 +26,9 @@ type Meta = {
 };
 type Day = { day: string; open_slots: number };
 type Slot = { slot_time: string; slot_end: string; capacity: number; remaining_capacity: number; is_past: boolean; too_soon: boolean; bookable: boolean };
-type Step = 'status' | 'vehicle' | 'date' | 'slot' | 'details' | 'confirm';
+type Step = 'status' | 'vehicle' | 'date' | 'slot' | 'details' | 'confirm' | 'done';
+/** What the customer just booked — shown once on the "done" screen, then the status page takes over. */
+type JustBooked = { queue_number: string; status: string; do_number: string | null; payment_pending: boolean; date: string; time: string; vehicle: string; details: Details };
 /** The customer link asks only for the vehicle and its driver (the partner on the SO/PO is the contact). */
 type Details = { plate_number: string; driver_name: string; driver_phone: string };
 
@@ -58,6 +61,7 @@ export function BookingClient({ token }: { token: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   /** Queue whose plate / driver form is open on the status page. */
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [justBooked, setJustBooked] = useState<JustBooked | null>(null);
   const lineBind = useLiffBind(meta?.line?.liff_id, `${api}/line-link`);
 
   const loadMeta = useCallback(async (silent = false) => {
@@ -76,6 +80,13 @@ export function BookingClient({ token }: { token: string }) {
   useEffect(() => {
     void loadMeta().then((m) => { if (m && m.open && !m.bookings.some((b) => LIVE.has(b.status))) setStep('vehicle'); });
   }, [loadMeta]);
+
+  // The tab title follows the mode: the LINE button says "ดู DO" and must not land on a page called "จองคิว".
+  useEffect(() => {
+    if (!meta) return;
+    const hasQueue = meta.bookings.length > 0;
+    document.title = step === 'done' ? 'จองคิวเรียบร้อย' : step === 'status' && hasQueue ? 'คิวของฉัน' : 'จองคิว';
+  }, [meta, step]);
 
   // Status page refreshes itself so "รอยืนยัน" turns into the DO without a manual reload.
   useEffect(() => {
@@ -133,7 +144,7 @@ export function BookingClient({ token }: { token: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vehicle_type_id: vehicleId, booking_date: date, start_time: time, ...details }),
       });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      const j = (await res.json().catch(() => ({}))) as { data?: { queue_number: string; status: string; do_number: string | null; payment_pending: boolean }; error?: string; code?: string };
       if (!res.ok) {
         setError(j.error ?? 'จองไม่สำเร็จ กรุณาลองใหม่');
         // Someone took the slot while this form was open: go back to a fresh slot list.
@@ -142,7 +153,9 @@ export function BookingClient({ token }: { token: string }) {
         return;
       }
       await loadMeta(true);
-      setStep('status');
+      // One closing screen, no "book another": a document is one queue unless the warehouse adds a trip.
+      if (j.data) setJustBooked({ ...j.data, date, time, vehicle: meta?.vehicle_types.find((v) => v.id === vehicleId)?.service_name ?? '', details });
+      setStep(j.data ? 'done' : 'status');
       setDetails(EMPTY_DETAILS);
       setTime('');
       window.scrollTo({ top: 0 });
@@ -151,13 +164,39 @@ export function BookingClient({ token }: { token: string }) {
     }
   }
 
-  /** Inside LINE: let the customer pick the driver's chat and drop the job card there. */
-  function shareDriver(b: PublicBooking) {
+  /** Inside LINE: let the customer pick the driver's chat and drop the job card there. False = picker unavailable or failed. */
+  async function shareDriver(b: PublicBooking): Promise<boolean> {
     const liff = lineBind.liff;
-    if (!liff?.shareTargetPicker || !b.driver_url || !meta) return;
+    if (!liff?.shareTargetPicker || !b.driver_url || !meta) return false;
+    if (liff.isApiAvailable && !liff.isApiAvailable('shareTargetPicker')) return false;
     const liffDriverUrl = meta.line?.liff_id ? `https://liff.line.me/${meta.line.liff_id}${new URL(b.driver_url).pathname}?via=line` : b.driver_url;
     const text = `งาน${b.direction === 'outbound' ? 'รับสินค้า' : 'ส่งสินค้า'} ${meta.site.name}\nคิว ${b.queue_number} · ${longThaiDate(b.booking_date)} ${b.start_time.slice(0, 5)} น.\nทะเบียน ${b.plate_number ?? '-'}${b.resource_name ? ` · ${b.resource_name}` : ''}${b.do_number ? ` · ${b.do_number}` : ''}\nเปิดลิงก์นี้ใน LINE เพื่อดู DO และรับแจ้งเมื่อถึงคิว:\n${liffDriverUrl}`;
-    liff.shareTargetPicker([{ type: 'text', text }]).catch(() => undefined);
+    try {
+      const result = await liff.shareTargetPicker([{ type: 'text', text }]);
+      // The SDK resolves undefined when the customer closes the picker without sending.
+      return Boolean(result);
+    } catch {
+      return false;
+    }
+  }
+
+  /** "ปิดหน้านี้" on the done screen: closes the LIFF window inside LINE, otherwise shows the status page. */
+  function finish() {
+    const liff = lineBind.liff;
+    if (liff?.isInClient?.() && liff.closeWindow) { liff.closeWindow(); return; }
+    setStep('status');
+    window.scrollTo({ top: 0 });
+  }
+
+  /** The DO as the customer may show it at the gate — same component as the portal print and the driver page. */
+  function doDataFor(b: PublicBooking): DoDocumentData {
+    return {
+      siteName: meta?.site.name ?? 'Fameline', doNumber: b.do_number, queueNumber: b.queue_number, direction: b.direction,
+      docNo: b.external_documents?.doc_no ?? meta?.document.doc_no ?? null, partnerName: b.external_documents?.partner_name ?? meta?.document.partner_name ?? null,
+      bookingDate: b.booking_date, startTime: b.start_time, endTime: b.end_time, dockName: b.resource_name, vehicleType: b.services?.service_name ?? null,
+      plate: b.plate_number_actual || b.plate_number, driverName: b.driver_name, driverPhone: b.driver_phone, receiverName: b.receiver_name, receiverPhone: b.receiver_phone,
+      note: b.note, issuedAt: b.do_issued_at, items: b.external_documents?.items ?? meta?.document.items ?? [],
+    };
   }
 
   /** Plate / driver change from the status page; the warehouse is notified server-side. */
@@ -208,9 +247,58 @@ export function BookingClient({ token }: { token: string }) {
   const vehicle = meta.vehicle_types.find((v) => v.id === vehicleId);
   const stepsOrder: Step[] = ['vehicle', 'date', 'slot', 'details', 'confirm'];
   const stepIndex = stepsOrder.indexOf(step);
+  const hasLive = meta.bookings.some((b) => LIVE.has(b.status));
+  const siteLine = [meta.site.name, meta.site.branch, meta.site.address].filter(Boolean).join(' · ');
+  const contactLine = `ต้องการเพิ่มเที่ยวรถหรือเปลี่ยนวันนัด ติดต่อเจ้าหน้าที่${meta.site.phone ? ` โทร ${meta.site.phone}` : ''}`;
+
+  if (step === 'done' && justBooked) {
+    const jb = justBooked;
+    const pendingLabel = jb.payment_pending ? 'รอชำระเงิน' : jb.status === 'pending' ? 'รอเจ้าหน้าที่ยืนยัน' : 'ยืนยันแล้ว';
+    return (
+      <Shell title="จองคิวเรียบร้อย" subtitle={siteLine}>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-slate-500">เลขคิว</p>
+              <p className="text-4xl font-extrabold leading-none tracking-tight text-slate-900">{jb.queue_number}</p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${jb.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{pendingLabel}</span>
+          </div>
+          <dl className="mt-4 grid grid-cols-3 gap-y-2 text-sm">
+            <dt className="text-slate-500">{outbound ? 'SO' : 'PO'}</dt><dd className="col-span-2 font-semibold text-slate-900">{meta.document.doc_no}</dd>
+            <dt className="text-slate-500">วันเวลา</dt><dd className="col-span-2 font-semibold text-slate-900">{longThaiDate(jb.date)} · {jb.time} น.</dd>
+            <dt className="text-slate-500">ประเภทรถ</dt><dd className="col-span-2 text-slate-900">{jb.vehicle}</dd>
+            <dt className="text-slate-500">ทะเบียน</dt><dd className="col-span-2 font-semibold text-slate-900">{jb.details.plate_number}</dd>
+            <dt className="text-slate-500">คนขับ</dt><dd className="col-span-2 text-slate-900">{jb.details.driver_name} · {jb.details.driver_phone}</dd>
+            {jb.do_number ? <><dt className="text-slate-500">เลข DO</dt><dd className="col-span-2 font-semibold text-emerald-800">{jb.do_number}</dd></> : null}
+          </dl>
+        </section>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
+          {jb.status === 'confirmed'
+            ? 'ยืนยันคิวและออกเลข DO แล้ว ปิดหน้านี้ได้เลย ไม่ต้องจองซ้ำ — ใบ DO และลิงก์สำหรับคนขับอยู่ที่หน้า "คิวของฉัน"'
+            : jb.payment_pending
+              ? 'รับคำขอแล้ว คิวจะยืนยันหลังชำระเงิน ปิดหน้านี้ได้เลย ไม่ต้องจองซ้ำ — เมื่อยืนยันระบบจะส่งเลข DO และลิงก์คนขับให้ทาง LINE หรือดูที่ลิงก์เดิมนี้'
+              : 'รับคำขอแล้ว ปิดหน้านี้ได้เลย ไม่ต้องจองซ้ำ — เมื่อเจ้าหน้าที่ยืนยัน ระบบจะส่งเลข DO และลิงก์คนขับให้ทาง LINE หรือดูที่ลิงก์เดิมนี้'}
+        </div>
+        <div className="grid gap-2">
+          {lineBind.liff?.isInClient?.() ? (
+            <>
+              <button type="button" className={btnPrimary} onClick={finish}>ปิดหน้านี้</button>
+              <button type="button" className={btnGhost} onClick={() => { setStep('status'); window.scrollTo({ top: 0 }); }}>ดูคิวของฉัน</button>
+            </>
+          ) : (
+            <button type="button" className={btnPrimary} onClick={finish}>ดูคิวของฉัน</button>
+          )}
+        </div>
+        <p className="text-center text-xs text-slate-500">{contactLine}</p>
+      </Shell>
+    );
+  }
+
+  const pageTitle = step === 'status' && meta.bookings.length > 0 ? 'คิวของฉัน' : outbound ? 'จองคิวรับสินค้า' : 'จองคิวส่งสินค้า';
 
   return (
-    <Shell title={outbound ? 'จองคิวรับสินค้า' : 'จองคิวส่งสินค้า'} subtitle={[meta.site.name, meta.site.branch, meta.site.address].filter(Boolean).join(' · ')}>
+    <Shell title={pageTitle} subtitle={siteLine}>
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-sm text-slate-500">{outbound ? 'Sales Order' : 'Purchase Order'}</p>
@@ -245,7 +333,19 @@ export function BookingClient({ token }: { token: string }) {
           {meta.bookings.map((b) => (
             <BookingCard key={b.id} b={b} showDriverLink paymentPending={meta.payment?.pending} onShareDriver={lineBind.liff?.shareTargetPicker && lineBind.state.phase === 'bound' ? shareDriver : undefined}
               footer={
-                b.vehicle_editable || b.cancellable ? (
+                <>
+                  {b.do_number && LIVE.has(b.status) ? (
+                    <section className="mt-4">
+                      <div className="mb-2 flex items-baseline justify-between">
+                        <h2 className="text-base font-bold text-slate-900">ใบ DO</h2>
+                        <span className="text-xs text-slate-500">แสดงที่ป้อมยามได้</span>
+                      </div>
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                        <div style={{ minWidth: 640 }}><DoDocument data={doDataFor(b)} /></div>
+                      </div>
+                    </section>
+                  ) : null}
+                  {b.vehicle_editable || b.cancellable ? (
                   <>
                     {b.vehicle_editable && editingId === b.id ? (
                       <VehicleEditForm key={`${b.id}-${b.plate_number ?? ''}-${b.driver_name ?? ''}-${b.driver_phone ?? ''}`} b={b} busy={busy} onSubmit={(v) => changeVehicle(b, v)} onCancel={() => setEditingId(null)} />
@@ -257,14 +357,16 @@ export function BookingClient({ token }: { token: string }) {
                       {b.cancellable ? <button type="button" disabled={busy} onClick={() => void cancel(b)} className="min-h-[44px] w-full rounded-xl border border-red-200 text-sm font-medium text-red-700 active:bg-red-50">ยกเลิกคิวนี้</button> : null}
                     </div>
                   </>
-                ) : null
+                  ) : null}
+                </>
               } />
           ))}
-          {meta.open ? (
-            <button type="button" className={meta.bookings.some((b) => LIVE.has(b.status)) ? btnGhost : btnPrimary} onClick={() => { setError(null); setStep('vehicle'); }}>
-              {meta.bookings.some((b) => LIVE.has(b.status)) ? 'จองคิวเพิ่ม (รับ/ส่งหลายเที่ยว)' : 'จองคิว'}
-            </button>
-          ) : <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">เอกสารนี้ปิดแล้ว ไม่สามารถจองคิวเพิ่มได้ — ติดต่อเจ้าหน้าที่{meta.site.phone ? ` ${meta.site.phone}` : ''}</p>}
+          {/* One document = one live queue. Booking is offered only when nothing is live (first visit, or after a cancel / no-show). */}
+          {meta.open && !hasLive ? (
+            <button type="button" className={btnPrimary} onClick={() => { setError(null); setStep('vehicle'); }}>จองคิว</button>
+          ) : null}
+          {!meta.open ? <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">เอกสารนี้ปิดแล้ว ไม่สามารถจองคิวได้ — ติดต่อเจ้าหน้าที่{meta.site.phone ? ` ${meta.site.phone}` : ''}</p> : null}
+          {meta.open && hasLive ? <p className="text-center text-xs text-slate-500">{contactLine}</p> : null}
         </>
       ) : (
         <ol className="flex items-center gap-1" aria-label="ขั้นตอน">

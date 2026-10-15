@@ -1,11 +1,35 @@
 'use client';
 
+import { useState } from 'react';
 import { QrCode } from '@/components/ui/qr-code';
 import { CUSTOMER_PAYMENT_NOTICE } from '@/lib/booking/payment';
 import { PUBLIC_STATUS, longThaiDate, thaiDateTimeAt, type PublicBooking } from './types';
 
 /** One queue as the customer / driver sees it: status, time, dock, plate, DO. */
-export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentPending }: { b: PublicBooking; showDriverLink?: boolean; /** SO not paid yet: the queue is held but cannot be confirmed. */ paymentPending?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. */ onShareDriver?: (b: PublicBooking) => void }) {
+export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentPending }: { b: PublicBooking; showDriverLink?: boolean; /** SO not paid yet: the queue is held but cannot be confirmed. */ paymentPending?: boolean; footer?: React.ReactNode; /** Present when inside LINE: forwards the driver card with the share picker. Resolves false when the picker could not open. */ onShareDriver?: (b: PublicBooking) => Promise<boolean> }) {
+  /** Feedback under the driver-link buttons: every tap says what happened (the LIFF webview fails silently otherwise). */
+  const [linkNotice, setLinkNotice] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  const [showRawLink, setShowRawLink] = useState(false);
+
+  async function copyDriverLink() {
+    const url = b.driver_url ?? '';
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
+      await navigator.clipboard.writeText(url);
+      setLinkNotice({ tone: 'ok', text: 'คัดลอกลิงก์คนขับแล้ว — วางส่งใน SMS หรือแชทอื่นได้' });
+    } catch {
+      // In-app browsers often block the clipboard: show the link so it can be long-pressed instead.
+      setShowRawLink(true);
+      setLinkNotice({ tone: 'warn', text: 'คัดลอกอัตโนมัติไม่ได้ในเครื่องนี้ — กดค้างที่ลิงก์ด้านล่างเพื่อคัดลอก' });
+    }
+  }
+
+  async function shareDriverLink() {
+    if (!onShareDriver) return;
+    const ok = await onShareDriver(b);
+    setLinkNotice(ok ? { tone: 'ok', text: 'ส่งการ์ดงานให้คนขับทาง LINE แล้ว' } : { tone: 'warn', text: 'ส่งทาง LINE ไม่ได้ในเครื่องนี้ — ใช้ "คัดลอกลิงก์" หรือให้คนขับสแกน QR แทน' });
+  }
+
   const base = PUBLIC_STATUS[b.status] ?? { label: b.status, tone: 'bg-slate-200 text-slate-700', hint: '' };
   const awaitingPayment = Boolean(paymentPending) && b.status === 'pending';
   const st = awaitingPayment ? { ...base, label: 'รอชำระเงิน', hint: '' } : base;
@@ -44,24 +68,25 @@ export function BookingCard({ b, showDriverLink, footer, onShareDriver, paymentP
       </dl>
 
       {showDriverLink && b.driver_url ? (
-        <div className="mt-4 flex items-center gap-4 rounded-xl bg-slate-50 p-3">
-          <QrCode value={b.driver_url} size={96} alt="ลิงก์สำหรับคนขับ" />
-          <div className="min-w-0 text-sm">
-            <p className="font-semibold text-slate-900">ส่งให้คนขับ</p>
-            <p className="text-slate-600">คนขับสแกนหรือเปิดลิงก์เพื่อดู DO และท่าที่ต้องเข้า</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {onShareDriver ? (
-                <button type="button" className="min-h-[40px] rounded-lg bg-[#06C755] px-3 text-sm font-semibold text-white active:opacity-90" onClick={() => onShareDriver(b)}>ส่งให้คนขับทาง LINE</button>
-              ) : null}
-              <button
-                type="button"
-                className="min-h-[40px] rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 active:bg-slate-100"
-                onClick={() => { void navigator.clipboard?.writeText(b.driver_url ?? ''); }}
-              >
-                คัดลอกลิงก์คนขับ
-              </button>
+        <div className="mt-4 rounded-xl bg-slate-50 p-3">
+          <div className="flex items-center gap-4">
+            <QrCode value={b.driver_url} size={96} alt="ลิงก์สำหรับคนขับ" />
+            <div className="min-w-0 text-sm">
+              <p className="font-semibold text-slate-900">ส่งงานให้คนขับ</p>
+              <p className="text-slate-600">คนขับสแกนหรือเปิดลิงก์เพื่อดูใบ DO ท่าที่ต้องเข้า และรับแจ้งเมื่อถึงคิว</p>
             </div>
           </div>
+          <div className="mt-3 grid gap-2">
+            {onShareDriver ? (
+              <button type="button" className="min-h-[48px] w-full rounded-xl bg-[#06C755] px-3 text-base font-semibold text-white active:opacity-90" onClick={() => void shareDriverLink()}>ส่งให้คนขับทาง LINE</button>
+            ) : null}
+            <button type="button" className="min-h-[44px] w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 active:bg-slate-100" onClick={() => void copyDriverLink()}>คัดลอกลิงก์คนขับ (ส่งทาง SMS / แชทอื่น)</button>
+          </div>
+          {linkNotice ? (
+            <p className={`mt-2 rounded-lg p-2 text-sm ${linkNotice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`} role="status">{linkNotice.text}</p>
+          ) : null}
+          {showRawLink ? <p className="mt-2 select-all break-all rounded-lg border border-dashed border-slate-300 bg-white p-2 text-xs text-slate-700">{b.driver_url}</p> : null}
+          <p className="mt-2 text-xs text-slate-500">อย่าเปิดลิงก์คนขับด้วย LINE ของคุณเอง — ระบบจะบันทึกว่าคุณคือคนขับ และแจ้งเตือนเรียกคิวจะมาที่คุณแทน</p>
         </div>
       ) : null}
       {footer}

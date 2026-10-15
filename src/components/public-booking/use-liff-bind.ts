@@ -11,6 +11,8 @@ type Liff = {
   getFriendship: () => Promise<{ friendFlag: boolean }>;
   shareTargetPicker?: (messages: object[]) => Promise<unknown>;
   isApiAvailable?: (api: string) => boolean;
+  /** Closes the LIFF window; only works inside the LINE app. */
+  closeWindow?: () => void;
 };
 
 declare global {
