@@ -24,6 +24,14 @@ export function LineBanner({ line, state, viaLine, path, who }: { line: LineMeta
     );
   }
   if (state.phase === 'binding') return <div className="rounded-xl bg-slate-100 p-3 text-sm text-slate-600">กำลังเชื่อมต่อ LINE…</div>;
+  if (state.phase === 'error' && state.code === 'is_customer') {
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+        <p className="font-semibold">คุณคือผู้จองคิวนี้ ไม่ใช่คนขับ</p>
+        <p>ลิงก์นี้มีไว้ส่งต่อให้คนขับ — ไม่ได้ผูก LINE ของคุณเป็นคนขับ ยังดูใบ DO และสถานะที่หน้านี้ได้ตามปกติ</p>
+      </div>
+    );
+  }
   if (state.phase === 'error' && viaLine) {
     return <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">เชื่อมต่อ LINE ไม่สำเร็จ ยังใช้หน้านี้ได้ตามปกติ แต่จะไม่มีแจ้งเตือนทาง LINE</div>;
   }

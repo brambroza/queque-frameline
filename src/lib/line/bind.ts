@@ -13,7 +13,7 @@ export type BindTarget =
 
 export type BindResult =
   | { ok: true; lineUserRowId: string; displayName: string | null }
-  | { ok: false; reason: 'not_configured' | 'invalid_token' | 'db_error' };
+  | { ok: false; reason: 'not_configured' | 'invalid_token' | 'db_error' | 'is_customer' };
 
 /** Upsert `line_users` for this site and return the row id. */
 export async function upsertLineUser(
@@ -70,6 +70,9 @@ export async function bindLineUser(
     // The person who opened the link is the one to notify about this document's queues.
     await admin.from('bookings').update({ line_user_id: rowId }).eq('document_id', target.documentId).eq('shop_id', site.shopId).eq('is_deleted', false);
   } else {
+    // The customer tapping their own "driver link" must not become the driver — the gate calls would go to them.
+    const { data: b } = await admin.from('bookings').select('line_user_id').eq('id', target.bookingId).eq('shop_id', site.shopId).maybeSingle();
+    if (b && b.line_user_id === rowId) return { ok: false, reason: 'is_customer' };
     await admin.from('bookings').update({ driver_line_user_id: rowId }).eq('id', target.bookingId).eq('shop_id', site.shopId);
   }
   return { ok: true, lineUserRowId: rowId, displayName: verified.name ?? null };

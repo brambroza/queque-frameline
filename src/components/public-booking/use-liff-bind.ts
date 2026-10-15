@@ -37,7 +37,7 @@ export type LiffBindState =
   | { phase: 'idle' }
   | { phase: 'binding' }
   | { phase: 'bound'; displayName: string | null; isFriend: boolean | null }
-  | { phase: 'error'; message: string };
+  | { phase: 'error'; message: string; code?: string };
 
 /**
  * When the page was opened through LIFF (`?via=line`), initialise the SDK,
@@ -64,8 +64,8 @@ export function useLiffBind(liffId: string | null | undefined, bindUrl: string):
       const idToken = sdk.getIDToken();
       if (!idToken) throw new Error('no id token');
       const res = await fetch(bindUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id_token: idToken }) });
-      const j = (await res.json().catch(() => ({}))) as { data?: { display_name?: string | null }; error?: string };
-      if (!res.ok) throw new Error(j.error ?? 'bind failed');
+      const j = (await res.json().catch(() => ({}))) as { data?: { display_name?: string | null }; error?: string; code?: string };
+      if (!res.ok) { setState({ phase: 'error', message: j.error ?? 'bind failed', code: j.code }); return; }
       let isFriend: boolean | null = null;
       try { isFriend = (await sdk.getFriendship()).friendFlag; } catch { isFriend = null; }
       setState({ phase: 'bound', displayName: j.data?.display_name ?? null, isFriend });

@@ -17,7 +17,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (!parsed.success) return NextResponse.json({ error: 'ข้อมูลไม่ถูกต้อง' }, { status: 400 });
     const { booking } = resolved;
     const r = await bindLineUser(admin, { shopId: booking.shop_id, companyId: booking.company_id }, parsed.data.id_token, { kind: 'driver', bookingId: booking.id });
-    if (!r.ok) return NextResponse.json({ error: r.reason === 'invalid_token' ? 'ยืนยันตัวตน LINE ไม่สำเร็จ กรุณาเปิดลิงก์ใหม่' : 'ระบบยังไม่เปิดใช้ LINE', code: r.reason }, { status: r.reason === 'invalid_token' ? 401 : 503 });
+    if (!r.ok) {
+      if (r.reason === 'is_customer') return NextResponse.json({ error: 'คุณคือผู้จองคิวนี้ ไม่ใช่คนขับ — ลิงก์นี้มีไว้ส่งต่อให้คนขับ', code: r.reason }, { status: 409 });
+      return NextResponse.json({ error: r.reason === 'invalid_token' ? 'ยืนยันตัวตน LINE ไม่สำเร็จ กรุณาเปิดลิงก์ใหม่' : 'ระบบยังไม่เปิดใช้ LINE', code: r.reason }, { status: r.reason === 'invalid_token' ? 401 : 503 });
+    }
     return NextResponse.json({ data: { display_name: r.displayName } });
   } catch (e) {
     console.error('[public/driver/line-link]', e instanceof Error ? e.message : e);

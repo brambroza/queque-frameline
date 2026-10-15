@@ -170,7 +170,7 @@ export function BookingClient({ token }: { token: string }) {
     if (!liff?.shareTargetPicker || !b.driver_url || !meta) return false;
     if (liff.isApiAvailable && !liff.isApiAvailable('shareTargetPicker')) return false;
     const liffDriverUrl = meta.line?.liff_id ? `https://liff.line.me/${meta.line.liff_id}${new URL(b.driver_url).pathname}?via=line` : b.driver_url;
-    const text = `งาน${b.direction === 'outbound' ? 'รับสินค้า' : 'ส่งสินค้า'} ${meta.site.name}\nคิว ${b.queue_number} · ${longThaiDate(b.booking_date)} ${b.start_time.slice(0, 5)} น.\nทะเบียน ${b.plate_number ?? '-'}${b.resource_name ? ` · ${b.resource_name}` : ''}${b.do_number ? ` · ${b.do_number}` : ''}\nเปิดลิงก์นี้ใน LINE เพื่อดู DO และรับแจ้งเมื่อถึงคิว:\n${liffDriverUrl}`;
+    const text = `งาน${b.direction === 'outbound' ? 'รับสินค้า' : 'ส่งสินค้า'} ${meta.site.name}\nคิว ${b.queue_number} · ${longThaiDate(b.booking_date)} ${b.start_time.slice(0, 5)} น.\nทะเบียน ${b.plate_number ?? '-'}${b.resource_name ? ` · ${b.resource_name}` : ''}${b.do_number ? ` · ${b.do_number}` : ''}\nเปิดลิงก์นี้ใน LINE เพื่อดู DO และรับแจ้งเมื่อถึงคิว:\n${liffDriverUrl}\n(ไม่ใช้ LINE เปิดได้ที่ ${b.driver_url})`;
     try {
       const result = await liff.shareTargetPicker([{ type: 'text', text }]);
       // The SDK resolves undefined when the customer closes the picker without sending.
