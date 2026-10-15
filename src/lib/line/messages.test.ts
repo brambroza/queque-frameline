@@ -56,6 +56,13 @@ describe('flex builders', () => {
     expect(bookingCalledFlex({ ...booking, callCount: 2 }).altText).toContain('เรียกครั้งที่ 2');
   });
 
+  it('adds a clipboard button with the plain driver link when one is given', () => {
+    const json = JSON.stringify(bookingConfirmedFlex({ ...booking, driverWebUrl: 'https://x/driver/d' }));
+    expect(json).toContain('"type":"clipboard"');
+    expect(json).toContain('"clipboardText":"https://x/driver/d"');
+    expect(JSON.stringify(bookingConfirmedFlex(booking))).not.toContain('"type":"clipboard"');
+  });
+
   it('omits the driver button when there is no driver link', () => {
     const json = JSON.stringify(bookingConfirmedFlex({ ...booking, driverUrl: null }));
     expect(json).not.toContain('ลิงก์สำหรับคนขับ');

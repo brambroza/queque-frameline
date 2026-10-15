@@ -38,6 +38,11 @@ function button(label: string, uri: string, style: 'primary' | 'secondary' = 'pr
   return { type: 'button', style, height: 'sm', action: { type: 'uri', label, uri }, ...(color ? { color } : {}) };
 }
 
+/** Copies `text` to the phone's clipboard (LINE clipboard action; older LINE versions ignore the tap). */
+function clipboardButton(label: string, text: string) {
+  return { type: 'button', style: 'secondary', height: 'sm', action: { type: 'clipboard', label, clipboardText: text } };
+}
+
 function card(opts: {
   altText: string; header: string; headerColor: string; sub?: string; body: unknown[]; footer?: unknown[]; note?: string;
 }): Flex {
@@ -86,6 +91,8 @@ export function bookingLinkFlex(i: LinkInput): Flex {
 export type BookingInput = {
   siteName: string; queueNo: string; direction: BookingDirection; docNo: string | null; date: string; startTime: string; endTime?: string | null;
   dock: string | null; plate: string; vehicleType: string | null; doNo: string | null; statusUrl: string; driverUrl?: string | null;
+  /** Plain web driver link (no LIFF) for the copy button — works in SMS and for drivers without LINE. */
+  driverWebUrl?: string | null;
   /** SO not paid yet: the queue is held but will not be confirmed until payment. */
   paymentPending?: boolean;
   /** ISO instant the unpaid queue is cancelled automatically (auto-cancel on). */
@@ -152,8 +159,9 @@ export function paymentWarningFlex(b: BookingInput & { dueAt: string }): Flex {
 
 /** Confirmed (DO issued). Also the "job card" a customer forwards to the driver. */
 export function bookingConfirmedFlex(b: BookingInput): Flex {
-  const footer = [button('ดู DO และสถานะ', b.statusUrl)];
+  const footer: unknown[] = [button('ดู DO และสถานะ', b.statusUrl)];
   if (b.driverUrl) footer.push(button('ลิงก์สำหรับคนขับ', b.driverUrl, 'secondary'));
+  if (b.driverWebUrl) footer.push(clipboardButton('คัดลอกลิงก์คนขับ', b.driverWebUrl));
   return card({
     altText: `ยืนยันคิว ${b.queueNo} · ${b.doNo ?? ''} · ${thaiDate(b.date)} ${hhmm(b.startTime)}`,
     header: `ยืนยันคิว${dirLabel(b.direction)}แล้ว`,
@@ -161,7 +169,7 @@ export function bookingConfirmedFlex(b: BookingInput): Flex {
     sub: b.siteName,
     body: bookingRows(b),
     footer,
-    note: 'กรุณามาตามเวลานัด แจ้งเลขคิวที่ป้อมยาม ส่งต่อลิงก์คนขับให้ผู้ขับรถเพื่อรับแจ้งเมื่อถึงคิว',
+    note: 'กรุณามาตามเวลานัด แจ้งเลขคิวที่ป้อมยาม · กด "คัดลอกลิงก์คนขับ" แล้ววางส่งให้ผู้ขับรถ (LINE/SMS) คนขับเปิดลิงก์เพื่อดู DO และกด "แสดง QR ให้ป้อมยาม" เมื่อถึงคลัง',
   });
 }
 
@@ -174,7 +182,7 @@ export function driverJobFlex(b: BookingInput & { driverUrl: string }): Flex {
     sub: `คิว ${b.queueNo}`,
     body: bookingRows(b),
     footer: [button('เปิด DO และดูท่า', b.driverUrl)],
-    note: 'เปิดลิงก์นี้ใน LINE เพื่อรับแจ้งเตือนเมื่อถึงคิวของคุณ',
+    note: 'เปิดลิงก์นี้ใน LINE เพื่อรับแจ้งเตือนเมื่อถึงคิวของคุณ · เมื่อถึงคลังกด "แสดง QR ให้ป้อมยาม" ในหน้า DO',
   });
 }
 

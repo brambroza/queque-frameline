@@ -59,13 +59,13 @@ async function lineUserId(admin: SupabaseClient, shopId: string, rowId: string |
 }
 
 /** Links for the customer: LIFF form when a LIFF app exists (so they stay in LINE), plain web otherwise. */
-function linksFor(cfg: LineConfig, b: BookingRowForLine): { statusUrl: string; driverUrl: string | null } {
+function linksFor(cfg: LineConfig, b: BookingRowForLine): { statusUrl: string; driverUrl: string | null; driverWebUrl: string | null } {
   const doc = b.external_documents;
   const bookingToken = doc?.booking_token_hash ? deriveLinkToken('booking', doc.id, Number(doc.booking_token_version ?? 0)) : null;
   const driverToken = b.driver_token_hash ? deriveLinkToken('driver', b.id, Number(b.driver_token_version ?? 0)) : null;
   const status = bookingToken ? liffUrl(cfg, `/book/${bookingToken}`) ?? bookingUrl(bookingToken) : bookingUrl('');
   const driver = driverToken ? liffUrl(cfg, `/driver/${driverToken}`) ?? driverUrl(driverToken) : null;
-  return { statusUrl: status, driverUrl: driver };
+  return { statusUrl: status, driverUrl: driver, driverWebUrl: driverToken ? driverUrl(driverToken) : null };
 }
 
 function toInput(cfg: LineConfig, site: string, b: BookingRowForLine): BookingInput {
@@ -84,6 +84,7 @@ function toInput(cfg: LineConfig, site: string, b: BookingRowForLine): BookingIn
     doNo: b.do_number,
     statusUrl: links.statusUrl,
     driverUrl: links.driverUrl,
+    driverWebUrl: links.driverWebUrl,
     paymentPending: !isPaymentCleared(b.external_documents?.doc_type, b.external_documents?.payment_status),
   };
 }

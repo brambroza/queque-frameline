@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { DoDocument, type DoDocumentData } from '@/components/delivery-order/do-document';
+import { QrCode } from '@/components/ui/qr-code';
 import { BookingCard } from './booking-card';
 import { LineBanner, type LineMeta } from './line-banner';
 import { AlertsBanner } from './alerts-banner';
@@ -50,6 +51,8 @@ export function DriverClient({ token }: { token: string }) {
   const [fatal, setFatal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Full-screen QR + queue number for the gate to scan / read. */
+  const [showQr, setShowQr] = useState(false);
   const lineBind = useLiffBind(data?.line?.liff_id, `${api}/line-link`);
   const alerts = useDriverAlerts(api);
   const { observe } = alerts;
@@ -100,6 +103,9 @@ export function DriverClient({ token }: { token: string }) {
   if (!data) return <main className="min-h-screen bg-slate-50 p-5"><div className="mx-auto h-48 max-w-xl animate-pulse rounded-2xl bg-slate-200" /></main>;
 
   const b = data.booking;
+  // This page's own link (no LIFF query): what the printed DO carries too, so the gate sees the same QR.
+  const selfUrl = `${window.location.origin}/driver/${encodeURIComponent(token)}`;
+  const live = !(TERMINAL_STATUSES as readonly string[]).includes(b.status);
   const doData: DoDocumentData = {
     siteName: data.site.name,
     doNumber: b.do_number,
@@ -156,6 +162,13 @@ export function DriverClient({ token }: { token: string }) {
 
         <BookingCard b={b} />
 
+        {live && b.do_number ? (
+          <button type="button" onClick={() => setShowQr(true)} className="flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl border-2 border-slate-900 bg-white text-lg font-semibold text-slate-900 active:bg-slate-100">
+            <QrCode value={selfUrl} size={28} alt="" />
+            แสดง QR ให้ป้อมยาม
+          </button>
+        ) : null}
+
         {notice ? <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700" role="status">{notice}</p> : null}
         {data.can_self_check_in && data.check_in_requires_location ? (
           <p className="text-center text-xs text-slate-500">กดได้เมื่ออยู่ในระยะ {data.check_in_radius_m ?? 300} ม. จากคลัง · ระบบจะขอตำแหน่งจากโทรศัพท์</p>
@@ -170,12 +183,24 @@ export function DriverClient({ token }: { token: string }) {
 
         {b.do_number ? (
           <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-            <div style={{ minWidth: 640 }}><DoDocument data={doData} /></div>
+            <div style={{ minWidth: 640 }}><DoDocument data={doData} qr={<QrCode value={selfUrl} size={110} alt="QR ลิงก์คนขับ" />} /></div>
           </section>
         ) : null}
 
         <footer className="pb-6 text-center text-xs text-slate-500">{data.site.phone ? `ติดต่อคลัง โทร ${data.site.phone}` : ''}</footer>
       </div>
+
+      {showQr ? (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white p-6 text-center" role="dialog" aria-modal="true" aria-label="QR สำหรับป้อมยาม">
+          <p className="text-sm text-slate-500">{data.site.name} · {b.direction === 'outbound' ? 'รับสินค้า' : 'ส่งสินค้า'}</p>
+          <p className="text-xs text-slate-500">เลขคิว</p>
+          <p className="text-6xl font-extrabold leading-none tracking-tight text-slate-900">{b.queue_number}</p>
+          <p className="text-base font-semibold text-slate-900">{b.do_number} · ทะเบียน {b.plate_number_actual || b.plate_number || '-'}</p>
+          <div className="rounded-2xl border border-slate-200 p-3"><QrCode value={selfUrl} size={260} alt="QR ลิงก์คนขับ" /></div>
+          <p className="text-sm text-slate-600">ให้เจ้าหน้าที่ป้อมยามสแกน หรือแจ้งเลขคิวด้านบน</p>
+          <button type="button" onClick={() => setShowQr(false)} className="mt-2 min-h-[48px] w-full max-w-xs rounded-xl bg-slate-900 text-base font-semibold text-white active:bg-slate-700">ปิด</button>
+        </div>
+      ) : null}
     </main>
   );
 }
