@@ -115,3 +115,4 @@ h2 { font-size: 12.5pt; color: var(--green-900); margin: 5mm 0 2.5mm; padding-le
 
 .page > .eyebrow.en { letter-spacing: 0.22em; }
 .toc.dense li { padding: 1.7mm 0; }
+.toc.xdense li { padding: 1.2mm 0; }

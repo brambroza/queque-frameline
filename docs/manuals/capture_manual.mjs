@@ -20,7 +20,7 @@ const args = Object.fromEntries(process.argv.slice(2).map((a) => { const m = a.m
 const PASSWORD = process.env.MANUAL_PASSWORD;
 if (!PASSWORD) { console.error('Set MANUAL_PASSWORD'); process.exit(1); }
 const LINKS = args.links ? JSON.parse(fs.readFileSync(String(args.links), 'utf8')).links : { book: {}, driver: {} };
-const ROLES = String(args.role || 'sales,purchasing,whm,director,admin').split(',');
+const ROLES = String(args.role || 'common,sales,purchasing,whm,director,admin').split(',');
 const ONLY = args.only ? String(args.only).split(',') : null;
 const out = (role) => path.join(here, 'screenshots', role);
 
@@ -231,6 +231,10 @@ async function warehouseManager(browser) {
 
   await step('06-drawer', async () => {
     await open(page, '/portal/bookings', 800);
+    // Any day: a recapture after the seed day still finds the called queue.
+    await page.getByRole('button', { name: 'ทั้งหมด', exact: true }).click(); await settle(page, 800);
+    await page.locator('#bookings-status').click();
+    await page.getByRole('option', { name: /กำลังเรียก/ }).first().click(); await settle(page, 1200);
     const row = page.locator('tbody tr').filter({ hasText: 'กำลังเรียก' }).first();
     await row.getByRole('button', { name: 'รายละเอียด' }).click();
     const drawer = page.locator('.MuiDrawer-paper').last(); await drawer.waitFor(); await settle(page, 900);
@@ -428,6 +432,36 @@ async function admin(browser) {
   await ctx.close();
 }
 
+// ───────────────────────── first sign-in (shared by every manual) ─────────────────────────
+
+/**
+ * Invite email + the "set your password" page a new user lands on from its link.
+ * The email is the real Supabase template (supabase/templates/invite.html) filled
+ * with sample values; the page is the real /set-password signed in as a fresh account
+ * (newstaff@manual.local, created with scripts/create-admin.mjs — see README).
+ */
+async function firstSignIn(browser) {
+  const dir = out('common');
+  await step('00-invite-email', async () => {
+    const site = process.env.MANUAL_PUBLIC_URL || 'https://queque-frameline.vercel.app';
+    const link = `https://….supabase.co/auth/v1/verify?token=…&type=invite&redirect_to=${site}/auth/callback`;
+    const tpl = fs.readFileSync(path.join(here, '../../supabase/templates/invite.html'), 'utf8')
+      .replace(/\{\{ if \.Data\.full_name \}\}(.*?)\{\{ \.Data\.full_name \}\}\{\{ else \}\}.*?\{\{ end \}\}/s, '$1อรุณี พนักงานใหม่')
+      .replaceAll('{{ .ConfirmationURL }}', link)
+      .replaceAll('{{ .Email }}', 'newstaff@manual.local');
+    const c2 = await desktop(browser, { viewport: { width: 720, height: 900 } }); const p2 = await c2.newPage();
+    await p2.setContent(tpl, { waitUntil: 'networkidle' }); await p2.evaluate(() => document.fonts.ready); await p2.waitForTimeout(500);
+    await shot(p2, dir, '00-invite-email', null, { fullPage: true }); await c2.close();
+  });
+  await step('00-set-password', async () => {
+    const c2 = await desktop(browser, { viewport: { width: 1000, height: 640 } }); const p2 = await c2.newPage();
+    await login(p2, 'newstaff@manual.local', PASSWORD);
+    await open(p2, '/set-password', 800);
+    await p2.locator('#confirm-password').waitFor();
+    await shot(p2, dir, '00-set-password', p2.locator('section.card')); await c2.close();
+  });
+}
+
 // ───────────────────────── main ─────────────────────────
 
 const browser = await launch();
@@ -445,6 +479,7 @@ try {
     if (role === 'whm') { await warehouseManager(browser); await driverPhone(browser, 'whm'); }
     if (role === 'director') await director(browser);
     if (role === 'admin') await admin(browser);
+    if (role === 'common') await firstSignIn(browser);
   }
 } finally {
   await browser.close();

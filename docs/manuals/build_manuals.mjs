@@ -37,18 +37,18 @@ function cover(m) {
 
 function toc(m, total) {
   const rows = m.pages.map((p, i) => `<li><span class="n">${String(i + 1).padStart(2, '0')}</span><span class="t">${p.title}</span><span class="p">${i + 3}</span></li>`).join('');
-  return `<section class="page"><p class="eyebrow en">Contents</p><h1>สารบัญ</h1><p class="lead">คู่มือการใช้งานสำหรับ${m.role}</p><ul class="toc ${m.pages.length > 15 ? 'dense' : ''}">${rows}</ul>${footer(2, total)}</section>`;
+  return `<section class="page"><p class="eyebrow en">Contents</p><h1>สารบัญ</h1><p class="lead">คู่มือการใช้งานสำหรับ${m.role}</p><ul class="toc ${m.pages.length > 20 ? 'dense xdense' : m.pages.length > 15 ? 'dense' : ''}">${rows}</ul>${footer(2, total)}</section>`;
 }
 
-const contact = () => `<section class="page contact"><div class="top"><p class="eyebrow">Contact us</p><h1>ติดต่อเรา</h1><div class="rule"></div>
+const contact = (m) => `<section class="page contact"><div class="top"><p class="eyebrow">Contact us</p><h1>ติดต่อเรา</h1><div class="rule"></div>
   <dl><dt>อีเมล</dt><dd>info@goalong.co.th</dd><dt>โทรศัพท์</dt><dd>085-608-3298</dd><dt>เว็บไซต์</dt><dd>www.goalong.co.th</dd><dt>ที่อยู่</dt><dd>918/288 หมู่ 10 ต.ในคลองบางปลากด อ.พระสมุทรเจดีย์ จ.สมุทรปราการ 10290</dd><dt>เวลาทำการ</dt><dd>จันทร์–ศุกร์ 08:30–17:30 น.</dd></dl></div>
   <div class="bottom"><div class="brand">${logo('#5cb85c')}<span>Go Along Co., Ltd.</span></div><p><b style="color:#14452f;font-size:13pt">บริษัท โกอะลอง จำกัด</b><br>Software &amp; Mobile Development</p>
-  <p>พบปัญหาการใช้งาน แจ้งได้จากปุ่มแจ้งปัญหามุมซ้ายล่างของทุกหน้าในระบบ หรือติดต่อตามช่องทางด้านบนในเวลาทำการ</p></div></section>`;
+  <p>${m.contactNote ?? 'พบปัญหาการใช้งาน แจ้งได้จากปุ่มแจ้งปัญหามุมซ้ายล่างของทุกหน้าในระบบ หรือติดต่อตามช่องทางด้านบนในเวลาทำการ'}</p></div></section>`;
 
 function render(m) {
   const total = m.pages.length + 3;
   const body = m.pages.map((p, i) => `<section class="page"><p class="eyebrow">${p.eyebrow}</p><h1>${p.title}</h1><p class="lead">${p.lead}</p>${p.html}${footer(i + 3, total)}</section>`).join('\n');
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><title>คู่มือการใช้งาน — ${m.role}</title><base href="${pathToFileURL(here + '/').href}"><link rel="stylesheet" href="assets/manual.css"></head><body>${cover(m)}${toc(m, total)}${body}${contact()}</body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><title>คู่มือการใช้งาน — ${m.role}</title><base href="${pathToFileURL(here + '/').href}"><link rel="stylesheet" href="assets/manual.css"></head><body>${cover(m)}${toc(m, total)}${body}${contact(m)}</body></html>`;
 }
 
 fs.mkdirSync(OUT, { recursive: true });

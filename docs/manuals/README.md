@@ -9,6 +9,8 @@ PDF ขนาด A4 จำนวน 5 เล่ม อยู่ใน `out/`
 | `คู่มือ-ฝ่ายจัดซื้อ.pdf` | ฝ่ายจัดซื้อ (`purchasing`) |
 | `คู่มือ-ผู้จัดการคลัง.pdf` | ผู้จัดการคลัง (`wh_manager`) |
 | `คู่มือ-ผู้บริหาร.pdf` | ผู้บริหาร (`director`) |
+| `คู่มือ-LINE-ลูกค้าและคนขับ.pdf` | ลูกค้า / ผู้ขาย / คนขับ ที่ใช้ LINE OA |
+| `คู่มือ-กลุ่ม-LINE-คลัง.pdf` | ทีมคลังหน้างานในกลุ่ม LINE (WMS) |
 
 ## โครงสร้าง
 
@@ -62,6 +64,7 @@ node docs/manuals/build_manuals.mjs --only=ฝ่ายขาย   # เฉพ�
    node scripts/create-admin.mjs purchasing@manual.local "$MANUAL_PASSWORD" "ธนพล ฝ่ายจัดซื้อ"     purchasing
    node scripts/create-admin.mjs whm@manual.local        "$MANUAL_PASSWORD" "ประเสริฐ ผู้จัดการคลัง" wh_manager
    node scripts/create-admin.mjs director@manual.local   "$MANUAL_PASSWORD" "กิตติพงษ์ ผู้บริหาร"   director
+   node scripts/create-admin.mjs newstaff@manual.local   "$MANUAL_PASSWORD" "อรุณี พนักงานใหม่"     wh_admin   # ภาพหน้าตั้งรหัสผ่าน
    NEXT_PUBLIC_APP_URL=http://localhost:3100 node docs/manuals/seed_manual_demo.mjs --out=/tmp/fameline-manual/links.json
    ```
 
@@ -75,9 +78,25 @@ node docs/manuals/build_manuals.mjs --only=ฝ่ายขาย   # เฉพ�
 
 ข้อควรรู้
 
+- `--role=common` = ภาพหน้า "เข้าใช้งานครั้งแรก" ที่ทุกเล่มใช้ร่วม (`screenshots/common/`): อีเมลเชิญ render จาก `supabase/templates/invite.html` (แก้ template แล้วแคปใหม่) + หน้า `/set-password` ของ `newstaff@manual.local`
 - `seed_manual_demo.mjs` ล้างคู่ค้า เอกสาร และคิวของ site ก่อนสร้างใหม่ จึงปฏิเสธการรันถ้า URL ไม่ใช่ localhost
 - ข้อมูลของ "วันนี้" อิงวันที่รัน ควร seed และแคปในวันทำการ
 - ภาพ Walk-in ขึ้นกับเวลาปัจจุบัน: ภาพกรณี **ว่าง** (`sales|purchasing 06`, `whm 15-walkin`) แคปขณะขยาย `working_hours.close_time` ของสาขา BN ใน DB local เป็น 20:00 ชั่วคราว ส่วนภาพ **ต่อท้ายคิว** (`whm 15b`, `15c` — กดสร้างคิวจริง) แคปด้วยเวลาทำการปกติ 17:00 ช่วงท้ายวัน เลือกกรณีด้วย `MANUAL_WALKIN_CASE=15-walkin|15b`
 - local DB ต้องมี migration `202610010001_walk_in_overflow` (ลงด้วย psql ใน container ถ้าเปิด stack จาก volume เดิม)
 - ขั้นตอน `b1`–`b6` จองคิวจริงผ่านลิงก์ลูกค้า รันซ้ำต้อง seed ใหม่ก่อน
 - `next dev` compile ทีละหน้า ครั้งแรกช้า ถ้า timeout ให้รันซ้ำด้วย `--only`
+
+## ภาพแชท LINE (2 เล่ม LINE)
+
+แคปจากแอป LINE จริงด้วย headless browser ไม่ได้ ภาพใน `screenshots/line/` จึงวาดเป็นหน้าจอแชทขนาดโทรศัพท์
+โดยใช้ข้อความจริงจาก `src/lib/line/messages.ts` (Flex JSON ชุดเดียวกับที่ OA ส่ง) และเมนูจาก `rich-menu-canvas.ts`
+ไม่ต้องใช้ฐานข้อมูลหรือ LINE API — แก้ข้อความในโค้ดแล้วรันใหม่ภาพจะตรงตาม
+
+```bash
+node docs/manuals/capture_line.mjs                 # ทุกภาพ
+node docs/manuals/capture_line.mjs --only=l5,g2    # เฉพาะบางภาพ
+OA_NAME="ชื่อ OA จริง" GROUP_NAME="WMS" node docs/manuals/capture_line.mjs
+```
+
+QR ของ OA (`screenshots/line/oa-qr.png`) ดาวน์โหลดจาก LINE ครั้งแรกที่รัน — ลบไฟล์ถ้า OA เปลี่ยน
+ข้อมูลตัวอย่าง (SO-2609106 / R-004) ตรงกับภาพหน้าจองคิว `sales/b1–b6`

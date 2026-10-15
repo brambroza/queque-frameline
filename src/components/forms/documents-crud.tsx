@@ -22,7 +22,7 @@ import { STATUS_LABEL as BOOKING_STATUS_LABEL, hhmm } from '@/components/booking
 import { WalkInDialog } from '@/components/bookings/walk-in-dialog';
 import { PAYMENT_COLOR, PAYMENT_LABEL, PAYMENT_STATUSES, isPaymentStatus, type PaymentStatus } from '@/lib/booking/payment';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { formatDateDMY, formatDateTimeDMY } from '@/lib/utils/date-format';
+import { formatDateDMY, formatDateTimeDMY, getTodayISOInBangkok } from '@/lib/utils/date-format';
 import { useBranchScope } from '@/components/layout/branch-scope-provider';
 import type { DocType } from '@/lib/auth/document-access';
 
@@ -261,7 +261,8 @@ export function DocumentsCrud({ docType, canEdit }: { docType: DocType; canEdit:
 
   function openCreate() {
     setEditingId(null);
-    setForm({ ...EMPTY_FORM, branch_id: defaultBranch });
+    // New documents default the document date to today (Bangkok) so the sales admin only edits it when back-dating.
+    setForm({ ...EMPTY_FORM, branch_id: defaultBranch, doc_date: getTodayISOInBangkok() });
     setItems([{ ...EMPTY_ITEM }]);
     setPickedPartner(null);
     setPartnerOptions([]);
