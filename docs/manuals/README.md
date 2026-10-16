@@ -1,11 +1,11 @@
 # คู่มือผู้ใช้งานแยกตามบทบาท
 
-PDF ขนาด A4 จำนวน 5 เล่ม อยู่ใน `out/`
+PDF และ DOCX ขนาด A4 จำนวน 7 เล่ม อยู่ใน `out/`
 
 | ไฟล์ | บทบาท (role code) |
 |---|---|
 | `คู่มือ-ผู้ดูแลระบบ.pdf` | ผู้ดูแลระบบ (`admin`) |
-| `คู่มือ-แอดมินฝ่ายขาย.pdf` | แอดมินฝ่ายขาย (`sales_admin`) |
+| `คู่มือ-ฝ่ายขาย.pdf` | ฝ่ายขาย (`sales_admin`) |
 | `คู่มือ-ฝ่ายจัดซื้อ.pdf` | ฝ่ายจัดซื้อ (`purchasing`) |
 | `คู่มือ-ผู้จัดการคลัง.pdf` | ผู้จัดการคลัง (`wh_manager`) |
 | `คู่มือ-ผู้บริหาร.pdf` | ผู้บริหาร (`director`) |
@@ -19,6 +19,7 @@ PDF ขนาด A4 จำนวน 5 เล่ม อยู่ใน `out/`
 | `content.mjs` | เนื้อหาทุกเล่ม (1 รายการ = 1 หน้า A4) — แก้ข้อความที่นี่ |
 | `assets/manual.css` | รูปแบบหน้า (สี ฟอนต์ IBM Plex Sans Thai ปก ส่วนท้าย) |
 | `build_manuals.mjs` | ประกอบ HTML แล้วพิมพ์เป็น PDF เตือนเมื่อเนื้อหาล้นหน้าหรือภาพหาย |
+| `build_docx.mjs` | ประกอบเนื้อหาเดียวกันเป็น Word (.docx) สำหรับส่งให้ลูกค้าแก้ไขต่อ |
 | `capture_manual.mjs` + `capture_lib.mjs` | แคปภาพหน้าจอจริงโดยล็อกอินด้วยบัญชีของแต่ละบทบาท |
 | `seed_manual_demo.mjs` | ข้อมูลตัวอย่างสำหรับแคปภาพ — **รันได้เฉพาะ Supabase local** |
 | `screenshots/<role>/` | ภาพที่แคปได้ |
@@ -26,9 +27,15 @@ PDF ขนาด A4 จำนวน 5 เล่ม อยู่ใน `out/`
 ## แก้ข้อความแล้วสร้าง PDF ใหม่
 
 ```bash
-node docs/manuals/build_manuals.mjs                 # ทุกเล่ม
+node docs/manuals/build_manuals.mjs                 # ทุกเล่ม (PDF)
 node docs/manuals/build_manuals.mjs --only=ฝ่ายขาย   # เฉพาะเล่ม
+DOCX_LIB_DIR=<โฟลเดอร์ที่มี node_modules/docx และ cheerio> node docs/manuals/build_docx.mjs   # ทุกเล่ม (Word)
 ```
+
+`build_docx.mjs` ใช้แพ็กเกจ `docx` กับ `cheerio` ซึ่งไม่ได้อยู่ใน package.json ให้ติดตั้งไว้ในโฟลเดอร์แยก
+(`mkdir /tmp/docxlib && cd /tmp/docxlib && npm init -y && npm i docx@9 cheerio@1`) แล้วชี้ด้วย `DOCX_LIB_DIR`
+ภาพใช้ชุดเดียวกับ PDF (รูปแบบ `crop` ถูกตัดด้วย `sharp` ของโปรเจกต์) หน้าใน Word ยาวกว่า PDF เพราะระยะบรรทัดของ Word
+สารบัญเป็นลิงก์ภายในไม่มีเลขหน้า
 
 ต้องต่ออินเทอร์เน็ต (โหลดฟอนต์จาก Google Fonts) Playwright ใช้ตัวเดียวกับ `docs/proposal/capture_*.mjs`
 (npx cache; กำหนดเองได้ด้วย `PLAYWRIGHT_CORE`)

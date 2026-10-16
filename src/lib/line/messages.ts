@@ -169,7 +169,7 @@ export function bookingConfirmedFlex(b: BookingInput): Flex {
     sub: b.siteName,
     body: bookingRows(b),
     footer,
-    note: 'กรุณามาตามเวลานัด แจ้งเลขคิวที่ป้อมยาม · กด "คัดลอกลิงก์คนขับ" แล้ววางส่งให้ผู้ขับรถ (LINE/SMS) คนขับเปิดลิงก์เพื่อดู DO และกด "แสดง QR ให้ป้อมยาม" เมื่อถึงคลัง',
+    note: 'กรุณามาตามเวลานัด แจ้งเลขคิวที่ป้อมยาม · กด "คัดลอกลิงก์คนขับ" แล้ววางส่งให้ผู้ขับรถ (LINE/SMS) คนขับเปิดลิงก์เพื่อดู DO และกด "แสดง QR " เมื่อถึงคลัง',
   });
 }
 
@@ -182,7 +182,7 @@ export function driverJobFlex(b: BookingInput & { driverUrl: string }): Flex {
     sub: `คิว ${b.queueNo}`,
     body: bookingRows(b),
     footer: [button('เปิด DO และดูท่า', b.driverUrl)],
-    note: 'เปิดลิงก์นี้ใน LINE เพื่อรับแจ้งเตือนเมื่อถึงคิวของคุณ · เมื่อถึงคลังกด "แสดง QR ให้ป้อมยาม" ในหน้า DO',
+    note: 'เปิดลิงก์นี้ใน LINE เพื่อรับแจ้งเตือนเมื่อถึงคิวของคุณ · เมื่อถึงคลังกด "แสดง QR " ในหน้า DO',
   });
 }
 

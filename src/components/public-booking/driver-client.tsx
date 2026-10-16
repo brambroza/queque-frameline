@@ -165,7 +165,7 @@ export function DriverClient({ token }: { token: string }) {
         {live && b.do_number ? (
           <button type="button" onClick={() => setShowQr(true)} className="flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl border-2 border-slate-900 bg-white text-lg font-semibold text-slate-900 active:bg-slate-100">
             <QrCode value={selfUrl} size={28} alt="" />
-            แสดง QR ให้ป้อมยาม
+            แสดง QR 
           </button>
         ) : null}
 
